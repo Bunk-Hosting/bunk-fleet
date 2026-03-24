@@ -1,0 +1,97 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { Server, Menu } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet";
+
+const navLinks = [
+  { href: "/", label: "Home" },
+  { href: "/products", label: "Producten" },
+];
+
+export function Navbar() {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-16 items-center">
+        {/* Logo */}
+        <Link href="/" className="mr-6 flex items-center space-x-2">
+          <Server className="h-6 w-6 text-primary" />
+          <span className="text-xl font-bold">
+            <span className="text-primary">Bunk</span>
+            <span>Hosting</span>
+          </span>
+        </Link>
+
+        {/* Desktop nav */}
+        <nav className="hidden md:flex md:flex-1 md:items-center md:gap-6">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Desktop auth buttons */}
+        <div className="hidden md:flex md:items-center md:gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/login">Inloggen</Link>
+          </Button>
+          <Button asChild>
+            <Link href="/register">Registreren</Link>
+          </Button>
+        </div>
+
+        {/* Mobile hamburger */}
+        <div className="flex flex-1 justify-end md:hidden">
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Menu openen</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right">
+              <SheetTitle className="sr-only">Navigatie</SheetTitle>
+              <div className="flex flex-col gap-4 mt-6">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="text-lg font-medium text-foreground"
+                    onClick={() => setOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+                <hr className="my-2" />
+                <Button variant="outline" asChild>
+                  <Link href="/login" onClick={() => setOpen(false)}>
+                    Inloggen
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/register" onClick={() => setOpen(false)}>
+                    Registreren
+                  </Link>
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
+    </header>
+  );
+}
