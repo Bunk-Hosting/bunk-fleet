@@ -10,7 +10,7 @@ export default function NotFound() {
         De pagina die je zoekt bestaat niet.
       </p>
       <Button asChild className="mt-4">
-        <Link href="/">Terug naar home</Link>
+        <Link href="/dashboard">Terug naar dashboard</Link>
       </Button>
     </div>
   );

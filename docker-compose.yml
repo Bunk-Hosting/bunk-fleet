@@ -4,11 +4,12 @@ services:
       context: .
       target: dev
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WEBSITE_URL=http://localhost:3000
       - WATCHPACK_POLLING=true

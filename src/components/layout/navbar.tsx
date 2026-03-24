@@ -11,10 +11,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/products", label: "Producten" },
-];
+const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL || "http://localhost:3000";
 
 export function Navbar() {
   const [open, setOpen] = React.useState(false);
@@ -22,26 +19,29 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center">
-        {/* Logo */}
-        <Link href="/" className="mr-6 flex items-center space-x-2">
+        {/* Logo – links naar marketingsite */}
+        <a href={WEBSITE_URL} className="mr-6 flex items-center space-x-2">
           <Server className="h-6 w-6 text-primary" />
           <span className="text-xl font-bold">
             <span className="text-primary">Bunk</span>
             <span>Hosting</span>
           </span>
-        </Link>
+        </a>
 
         {/* Desktop nav */}
         <nav className="hidden md:flex md:flex-1 md:items-center md:gap-6">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {link.label}
-            </Link>
-          ))}
+          <a
+            href={WEBSITE_URL}
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Home
+          </a>
+          <a
+            href={`${WEBSITE_URL}/products`}
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Producten
+          </a>
         </nav>
 
         {/* Desktop auth buttons */}
@@ -66,16 +66,20 @@ export function Navbar() {
             <SheetContent side="right">
               <SheetTitle className="sr-only">Navigatie</SheetTitle>
               <div className="flex flex-col gap-4 mt-6">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="text-lg font-medium text-foreground"
-                    onClick={() => setOpen(false)}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+                <a
+                  href={WEBSITE_URL}
+                  className="text-lg font-medium text-foreground"
+                  onClick={() => setOpen(false)}
+                >
+                  Home
+                </a>
+                <a
+                  href={`${WEBSITE_URL}/products`}
+                  className="text-lg font-medium text-foreground"
+                  onClick={() => setOpen(false)}
+                >
+                  Producten
+                </a>
                 <hr className="my-2" />
                 <Button variant="outline" asChild>
                   <Link href="/login" onClick={() => setOpen(false)}>

@@ -32,7 +32,7 @@ export interface VpsPackage {
   ram_gb: number;
   disk_gb: number;
   bandwidth_tb: number;
-  price_monthly: number;
+  price_monthly: string;
   description: string;
 }
 

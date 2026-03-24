@@ -6,9 +6,9 @@ import { Toaster } from "@/components/ui/toaster";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Bunk Hosting - VPS Hosting",
+  title: "Bunk Hosting - VPS Beheer",
   description:
-    "Betrouwbare en snelle VPS hosting uit Nederland. Krachtige virtuele servers met NVMe SSD opslag en een uitstekend Nederlands netwerk.",
+    "Beheer je virtuele servers via het Bunk Hosting dashboard.",
 };
 
 export default function RootLayout({
