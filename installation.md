@@ -22,12 +22,14 @@ Maak `.env.local` aan:
 
 ```env
 NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl
+NEXT_PUBLIC_WS_URL=wss://api.bunkhosting.nl
 NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl
 ```
 
 | Variabele | Uitleg |
 |-----------|--------|
-| `NEXT_PUBLIC_API_URL` | URL van de backend API |
+| `NEXT_PUBLIC_API_URL` | URL van de backend REST API |
+| `NEXT_PUBLIC_WS_URL` | WebSocket URL van de backend (voor VPS console) |
 | `NEXT_PUBLIC_WEBSITE_URL` | URL van de marketingwebsite (voor Home/Producten links in navbar) |
 
 ### Stap 3 – Docker image bouwen
@@ -35,6 +37,7 @@ NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl
 ```bash
 docker build -t bunk-hosting-app:latest \
   --build-arg NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl \
+  --build-arg NEXT_PUBLIC_WS_URL=wss://api.bunkhosting.nl \
   --build-arg NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl \
   .
 ```
@@ -107,6 +110,7 @@ Maak `.env.local` aan:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
 NEXT_PUBLIC_WEBSITE_URL=http://localhost:3000
 ```
 
@@ -162,6 +166,7 @@ Stel een reverse proxy in zoals beschreven in stap 5 van Optie A.
 | `/dashboard/vps` | Mijn VPS'en | Ingelogd |
 | `/dashboard/vps/new` | Nieuwe VPS aanvragen | Ingelogd |
 | `/dashboard/vps/[id]` | VPS details (start/stop/verwijder) | Eigenaar of admin |
+| `/dashboard/vps/[id]/console` | In-browser terminal (WebSocket SSH) | Eigenaar of admin |
 | `/dashboard/admin` | Admin dashboard | Admin |
 | `/dashboard/admin/users` | Gebruikersbeheer | Admin |
 | `/dashboard/admin/vps` | VPS beheer | Admin |
@@ -191,6 +196,7 @@ api.bunkhosting.nl (vps-backend, apart project)
 git pull
 docker build -t bunk-hosting-app:latest \
   --build-arg NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl \
+  --build-arg NEXT_PUBLIC_WS_URL=wss://api.bunkhosting.nl \
   --build-arg NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl \
   .
 docker stop bunk-hosting-app

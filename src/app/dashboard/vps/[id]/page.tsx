@@ -210,7 +210,17 @@ export default function VpsDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Console button */}
+          <Button
+            variant="outline"
+            disabled={vps.status !== "ACTIVE"}
+            onClick={() => router.push(`/dashboard/vps/${id}/console`)}
+          >
+            <Terminal className="mr-2 h-4 w-4" />
+            Console
+          </Button>
+
           {/* Start button */}
           <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
             <DialogTrigger asChild>
