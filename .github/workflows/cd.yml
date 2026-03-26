@@ -1,0 +1,32 @@
+name: CD – Deploy naar productie
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy frontend naar productieserver
+    runs-on: [self-hosted, linux, prod-backend]
+    # Dezelfde runner als de backend (draait op Docker Host 192.168.20.10)
+
+    steps:
+      - name: Checkout laatste versie van main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build en herstart frontend container
+        run: |
+          docker compose build frontend
+          docker compose up -d --no-deps --force-recreate frontend
+
+      - name: Build en herstart website container
+        run: |
+          docker compose build website
+          docker compose up -d --no-deps --force-recreate website
+
+      - name: Controleer gezondheid van de frontend
+        run: |
+          sleep 10
+          curl -fsSL http://localhost:3001/ || (echo "Frontend health check mislukt!" && exit 1)

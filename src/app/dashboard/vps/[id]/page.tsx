@@ -37,7 +37,7 @@ import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi } from "@/lib/api";
 import { formatDate, getOsLabel } from "@/lib/utils";
-import type { Vps } from "@/lib/types";
+import type { Vps, VpsCredentials } from "@/lib/types";
 
 export default function VpsDetailPage() {
   const params = useParams();
@@ -47,9 +47,11 @@ export default function VpsDetailPage() {
   const id = Number(params.id);
 
   const [vps, setVps] = useState<Vps | null>(null);
+  const [credentials, setCredentials] = useState<VpsCredentials | null>(null);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -68,6 +70,27 @@ export default function VpsDetailPage() {
       setLoading(false);
     }
   }, [id, toast]);
+
+  const fetchCredentials = async () => {
+    if (credentials) {
+      setShowPassword((p) => !p);
+      return;
+    }
+    setCredentialsLoading(true);
+    try {
+      const response = await vpsApi.credentials(id);
+      setCredentials(response.data);
+      setShowPassword(true);
+    } catch {
+      toast({
+        title: "Fout",
+        description: "Kon SSH-gegevens niet ophalen.",
+        variant: "destructive",
+      });
+    } finally {
+      setCredentialsLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchVps();
@@ -362,29 +385,28 @@ export default function VpsDetailPage() {
               <span className="text-muted-foreground">Wachtwoord</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-medium">
-                  {vps.ssh_password
-                    ? showPassword
-                      ? vps.ssh_password
-                      : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                    : "Niet beschikbaar"}
+                  {credentials?.ssh_password && showPassword
+                    ? credentials.ssh_password
+                    : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}
                 </span>
-                {vps.ssh_password && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                    <span className="sr-only">
-                      {showPassword ? "Verbergen" : "Tonen"}
-                    </span>
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={fetchCredentials}
+                  disabled={credentialsLoading}
+                >
+                  {credentialsLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : showPassword && credentials ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">
+                    {showPassword ? "Verbergen" : "Tonen"}
+                  </span>
+                </Button>
               </div>
             </div>
           </CardContent>

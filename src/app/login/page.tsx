@@ -95,6 +95,11 @@ export default function LoginPage() {
                 Inloggen
               </Button>
               <p className="text-sm text-muted-foreground text-center">
+                <Link href="/forgot-password" className="text-primary hover:underline">
+                  Wachtwoord vergeten?
+                </Link>
+              </p>
+              <p className="text-sm text-muted-foreground text-center">
                 Nog geen account?{" "}
                 <Link href="/register" className="text-primary hover:underline">
                   Registreer hier

@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   User,
   Vps,
+  VpsCredentials,
   VpsPackage,
   AdminStats,
   AuditLog,
@@ -104,6 +105,18 @@ export const authApi = {
   logout: () => api.post("/auth/logout/"),
 
   me: () => api.get<User>("/auth/me/"),
+
+  passwordResetRequest: (email: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/", { email }),
+
+  passwordResetConfirm: (token: string, password: string, password_confirm: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/confirm/", { token, password, password_confirm }),
+
+  verifyEmail: (token: string) =>
+    api.post<{ detail: string }>("/auth/verify-email/", { token }),
+
+  resendVerification: () =>
+    api.post<{ detail: string }>("/auth/verify-email/resend/"),
 };
 
 // ─── Packages ────────────────────────────────────────────────────────
@@ -119,6 +132,8 @@ export const vpsApi = {
 
   create: (data: { label?: string; package_id: number; os: OsChoice }) =>
     api.post<Vps>("/vps/", data),
+
+  credentials: (id: number) => api.get<VpsCredentials>(`/vps/${id}/credentials/`),
 
   delete: (id: number) => api.delete(`/vps/${id}/`),
 
