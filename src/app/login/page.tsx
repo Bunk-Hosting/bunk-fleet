@@ -19,7 +19,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { authApi } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -105,5 +105,13 @@ export default function LoginPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <LoginForm />
+    </React.Suspense>
   );
 }
