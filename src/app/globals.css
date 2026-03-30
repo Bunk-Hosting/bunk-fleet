@@ -4,48 +4,27 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    /* Bunk Hosting dark theme — matched to bunkhosting.nl */
+    --background: 225 18% 8%;           /* #111318 */
+    --foreground: 230 20% 90%;          /* #e2e2e8 */
+    --card: 225 11% 11%;               /* #1a1c20 */
+    --card-foreground: 230 20% 90%;     /* #e2e2e8 */
+    --popover: 225 11% 11%;            /* #1a1c20 */
+    --popover-foreground: 230 20% 90%;  /* #e2e2e8 */
+    --primary: 214 100% 47%;           /* #006af2 */
+    --primary-foreground: 240 100% 99%; /* #f8f7ff */
+    --secondary: 228 17% 30%;          /* #3f465c */
+    --secondary-foreground: 225 22% 82%; /* #bec6e0 */
+    --muted: 225 8% 13%;              /* #1e2024 */
+    --muted-foreground: 228 14% 55%;   /* #8c90a1 */
+    --accent: 184 100% 45%;            /* #00dbe7 — cyan accent */
+    --accent-foreground: 225 18% 8%;    /* #111318 */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 229 13% 24%;             /* #333539 */
+    --input: 229 13% 24%;              /* #333539 */
+    --ring: 214 100% 47%;             /* #006af2 */
     --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
   }
 }
 
