@@ -74,6 +74,31 @@ export interface AdminStats {
   error_vps: number;
 }
 
+export type IPAddressStatus = "FREE" | "ASSIGNED" | "RESERVED";
+
+export interface IPAddressEntry {
+  id: number;
+  address: string;
+  status: IPAddressStatus;
+  assigned_at: string | null;
+  vps_id: number | null;
+  infra_name: string | null;
+  owner_email: string | null;
+  package_name: string | null;
+}
+
+export interface NetworkSummary {
+  total: number;
+  free: number;
+  assigned: number;
+  reserved: number;
+}
+
+export interface AdminNetworkResponse {
+  summary: NetworkSummary;
+  results: IPAddressEntry[];
+}
+
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;

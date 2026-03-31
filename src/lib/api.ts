@@ -4,7 +4,9 @@ import type {
   Vps,
   VpsPackage,
   AdminStats,
+  AdminNetworkResponse,
   AuditLog,
+  IPAddressStatus,
   PaginatedResponse,
   OsChoice,
   VpsStatus,
@@ -157,6 +159,11 @@ export const adminApi = {
     start: (id: number) => api.post<{ detail: string }>(`/admin/vps/${id}/start/`),
 
     stop: (id: number) => api.post<{ detail: string }>(`/admin/vps/${id}/stop/`),
+  },
+
+  network: {
+    list: (params?: { status?: IPAddressStatus }) =>
+      api.get<AdminNetworkResponse>("/admin/network/", { params }),
   },
 
   logs: {

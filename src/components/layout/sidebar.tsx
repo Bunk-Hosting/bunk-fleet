@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  Network,
   Server,
   PlusCircle,
   Shield,
@@ -46,6 +47,7 @@ const adminNavItems: NavItem[] = [
   { label: "Admin", href: "/dashboard/admin", icon: Shield },
   { label: "Gebruikers", href: "/dashboard/admin/users", icon: Users },
   { label: "VPS Beheer", href: "/dashboard/admin/vps", icon: ServerCog },
+  { label: "Netwerk", href: "/dashboard/admin/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
 ];
 
