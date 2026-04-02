@@ -15,6 +15,7 @@ import {
   FileText,
   LogOut,
   Menu,
+  Ticket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -51,6 +52,7 @@ const adminNavItems: NavItem[] = [
   { label: "Netwerk", href: "/dashboard/admin/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
   { label: "Reconciliatie", href: "/dashboard/admin/reconcile", icon: RefreshCw },
+  { label: "Invite codes", href: "/dashboard/admin/invite-codes", icon: Ticket },
 ];
 
 const allNavItems = [...mainNavItems, ...adminNavItems];

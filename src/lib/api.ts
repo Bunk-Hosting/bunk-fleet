@@ -182,6 +182,13 @@ export const adminApi = {
     trigger: () => api.post<{ task_id: string }>("/admin/reconcile/"),
   },
 
+  listInviteCodes: () => api.get<any[]>("/admin/invite-codes/"),
+
+  createInviteCode: (data: { label?: string; max_uses?: number; expires_at?: string | null }) =>
+    api.post("/admin/invite-codes/", data),
+
+  deleteInviteCode: (id: number) => api.delete(`/admin/invite-codes/${id}/`),
+
   logs: {
     list: (params?: {
       user_id?: number;

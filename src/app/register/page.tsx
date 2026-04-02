@@ -24,6 +24,7 @@ export default function RegisterPage() {
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string[]>>({});
+  const [inviteCode, setInviteCode] = React.useState("");
   const [turnstileToken, setTurnstileToken] = React.useState("");
   const turnstileRef = React.useRef<TurnstileInstance>(null);
 
@@ -59,6 +60,7 @@ export default function RegisterPage() {
         email,
         password,
         password_confirm: passwordConfirm,
+        invite_code: inviteCode,
         ...(turnstileEnabled && { turnstile_token: turnstileToken }),
       });
       router.push("/dashboard");
@@ -193,6 +195,22 @@ export default function RegisterPage() {
                 />
                 {errors.password && (
                   <p className="text-sm text-destructive">{errors.password[0]}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite_code">Uitnodigingscode</Label>
+                <Input
+                  id="invite_code"
+                  type="text"
+                  placeholder="Voer je uitnodigingscode in"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="bg-background/60 border-border/60 focus:border-primary/60 font-mono tracking-wider"
+                />
+                {errors.invite_code && (
+                  <p className="text-sm text-destructive">{errors.invite_code[0]}</p>
                 )}
               </div>
               <div className="space-y-2">
