@@ -52,10 +52,7 @@ const adminNavItems: NavItem[] = [
 ];
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isActive =
-    item.href === "/dashboard"
-      ? pathname === "/dashboard"
-      : pathname.startsWith(item.href);
+  const isActive = pathname === item.href;
 
   return (
     <Link
