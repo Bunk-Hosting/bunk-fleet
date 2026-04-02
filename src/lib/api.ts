@@ -123,6 +123,12 @@ export const authApi = {
 
   resendVerification: () =>
     api.post<{ detail: string }>("/auth/verify-email/resend/"),
+
+  requestPasswordReset: (email: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/", { email }),
+
+  confirmPasswordReset: (token: string, password: string, password_confirm: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/confirm/", { token, password, password_confirm }),
 };
 
 // ─── Packages ────────────────────────────────────────────────────────

@@ -126,7 +126,12 @@ function LoginForm() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Wachtwoord</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Wachtwoord</Label>
+                  <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-accent transition-colors">
+                    Wachtwoord vergeten?
+                  </Link>
+                </div>
                 <Input
                   id="password"
                   type="password"
