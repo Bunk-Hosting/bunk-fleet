@@ -20,6 +20,13 @@ function getCsrfToken(): string {
   return match ? match[1] : "";
 }
 
+// Haalt de CSRF-cookie op van de backend. Aanroepen vóór de eerste POST
+// als de gebruiker nog geen cookie heeft (bijv. direct naar /login navigeren).
+export async function ensureCsrfCookie(): Promise<void> {
+  if (getCsrfToken()) return;
+  await axios.get(`${API_URL}/api/v1/health/`, { withCredentials: true });
+}
+
 const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
   withCredentials: true,
