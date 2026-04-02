@@ -71,8 +71,15 @@ export default function NewVpsPage() {
       });
       router.push("/dashboard/vps");
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Er is iets misgegaan.";
+      const err = error as { response?: { data?: Record<string, string[]> | string[] } };
+      const data = err.response?.data;
+      let message = "Er is iets misgegaan.";
+      if (Array.isArray(data)) {
+        message = data[0];
+      } else if (data && typeof data === "object") {
+        const first = Object.values(data)[0];
+        if (Array.isArray(first)) message = first[0];
+      }
       toast({
         title: "Fout bij aanvragen",
         description: message,
@@ -147,10 +154,13 @@ export default function NewVpsPage() {
           <Label htmlFor="label">Naam voor je VPS</Label>
           <Input
             id="label"
-            placeholder="Bijv. Webserver, Database, etc."
+            placeholder="bijv. webserver of mijn-database"
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => setLabel(e.target.value.replace(/\s+/g, "-"))}
           />
+          <p className="text-xs text-muted-foreground">
+            Alleen letters, cijfers, koppeltekens en underscores. Geen spaties.
+          </p>
         </div>
       </div>
 
