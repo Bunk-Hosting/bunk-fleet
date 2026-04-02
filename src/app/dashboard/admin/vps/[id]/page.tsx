@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Play, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2, Play, Square, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -55,6 +55,7 @@ export default function AdminVpsDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<VpsStatus>("ACTIVE");
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     async function fetchVps() {
@@ -237,9 +238,29 @@ export default function AdminVpsDetailPage() {
               </div>
               <div className="sm:col-span-2">
                 <p className="text-sm text-muted-foreground">SSH wachtwoord</p>
-                <p className="font-medium font-mono">
-                  {vps.ssh_password ?? "-"}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium font-mono">
+                    {vps.ssh_password
+                      ? showPassword
+                        ? vps.ssh_password
+                        : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                      : "-"}
+                  </p>
+                  {vps.ssh_password && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>
