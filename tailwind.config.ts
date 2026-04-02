@@ -19,7 +19,10 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-inter)", "Inter", "sans-serif"],
+        body: ["var(--font-inter)", "Inter", "sans-serif"],
         display: ["var(--font-manrope)", "Manrope", "sans-serif"],
+        headline: ["var(--font-manrope)", "Manrope", "sans-serif"],
+        label: ["var(--font-inter)", "Inter", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

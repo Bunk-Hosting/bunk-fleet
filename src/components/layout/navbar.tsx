@@ -20,11 +20,15 @@ export function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center">
         {/* Logo – links naar marketingsite */}
-        <a href={WEBSITE_URL} className="mr-6 flex items-center gap-2">
-          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
-          <span className="text-lg font-display font-bold">
-            <span className="gradient-text">Bunk</span>
-            <span className="text-foreground">Hosting</span>
+        <a href={WEBSITE_URL} className="mr-6 flex items-center gap-3">
+          <span
+            className="material-symbols-outlined text-accent"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            dns
+          </span>
+          <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
+            BUNK HOSTING
           </span>
         </a>
 

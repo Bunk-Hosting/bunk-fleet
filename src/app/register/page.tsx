@@ -94,10 +94,14 @@ export default function RegisterPage() {
           href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"}
           className="flex items-center gap-2"
         >
-          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
-          <span className="text-lg font-display font-bold">
-            <span className="gradient-text">Bunk</span>
-            <span className="text-foreground">Hosting</span>
+          <span
+            className="material-symbols-outlined text-accent"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            dns
+          </span>
+          <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
+            BUNK HOSTING
           </span>
         </a>
         <p className="text-sm text-muted-foreground hidden sm:block">

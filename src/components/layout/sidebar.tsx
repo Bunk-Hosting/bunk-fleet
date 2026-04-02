@@ -90,11 +90,15 @@ function SidebarContent({ user }: SidebarProps) {
     <div className="flex h-full flex-col">
       {/* Logo */}
       <div className="px-4 py-6">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
-          <span className="text-lg font-display font-bold">
-            <span className="gradient-text">Bunk</span>
-            <span className="text-foreground">Hosting</span>
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <span
+            className="material-symbols-outlined text-accent"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            dns
+          </span>
+          <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
+            BUNK HOSTING
           </span>
         </Link>
       </div>
@@ -170,11 +174,15 @@ export function Sidebar({ user }: SidebarProps) {
             </div>
           </SheetContent>
         </Sheet>
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
-          <span className="text-lg font-display font-bold">
-            <span className="gradient-text">Bunk</span>
-            <span className="text-foreground">Hosting</span>
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <span
+            className="material-symbols-outlined text-accent"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            dns
+          </span>
+          <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
+            BUNK HOSTING
           </span>
         </Link>
       </div>
