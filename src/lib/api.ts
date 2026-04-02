@@ -111,7 +111,7 @@ export const authApi = {
     return api.post<{ user: User; message: string }>("/auth/login/", data);
   },
 
-  register: (data: { name: string; email: string; password: string; password_confirm: string; turnstile_token?: string }) =>
+  register: (data: { name: string; email: string; password: string; password_confirm: string; invite_code?: string; turnstile_token?: string }) =>
     api.post<{ user: User; message: string }>("/auth/register/", data),
 
   logout: () => api.post("/auth/logout/"),
