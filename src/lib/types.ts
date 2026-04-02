@@ -106,6 +106,21 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
+export interface ReconcileResult {
+  started_at: string;
+  finished_at: string | null;
+  vms_checked: number;
+  vms_deleted: number;
+  ips_released: number;
+  orphaned_ips_released: number;
+  error: string | null;
+}
+
+export interface ReconcileStatusResponse {
+  interval_minutes: number;
+  last_result: ReconcileResult | null;
+}
+
 export interface JwtPayload {
   user_id: number;
   email: string;

@@ -10,6 +10,7 @@ import type {
   PaginatedResponse,
   OsChoice,
   VpsStatus,
+  ReconcileStatusResponse,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -171,6 +172,11 @@ export const adminApi = {
   network: {
     list: (params?: { status?: IPAddressStatus }) =>
       api.get<AdminNetworkResponse>("/admin/network/", { params }),
+  },
+
+  reconcile: {
+    status: () => api.get<ReconcileStatusResponse>("/admin/reconcile/"),
+    trigger: () => api.post<{ task_id: string }>("/admin/reconcile/"),
   },
 
   logs: {

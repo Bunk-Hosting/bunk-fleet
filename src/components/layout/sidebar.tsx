@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Network,
   PlusCircle,
+  RefreshCw,
   Shield,
   Users,
   Server,
@@ -49,6 +50,7 @@ const adminNavItems: NavItem[] = [
   { label: "VPS Beheer", href: "/dashboard/admin/vps", icon: ServerCog },
   { label: "Netwerk", href: "/dashboard/admin/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
+  { label: "Reconciliatie", href: "/dashboard/admin/reconcile", icon: RefreshCw },
 ];
 
 const allNavItems = [...mainNavItems, ...adminNavItems];
