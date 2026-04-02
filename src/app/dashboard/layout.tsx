@@ -51,7 +51,7 @@ export default function DashboardLayout({
         <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
       </div>
       <Sidebar user={user} />
-      <div className="relative z-10 md:pl-64">
+      <div className="relative z-0 md:pl-64">
         <main className="p-4 md:p-8">{children}</main>
       </div>
       <Toaster />
