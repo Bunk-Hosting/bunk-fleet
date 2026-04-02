@@ -20,11 +20,11 @@ export function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center">
         {/* Logo – links naar marketingsite */}
-        <a href={WEBSITE_URL} className="mr-6 flex items-center space-x-2">
-          <Server className="h-6 w-6 text-primary" />
-          <span className="text-xl font-bold">
-            <span className="text-primary">Bunk</span>
-            <span>Hosting</span>
+        <a href={WEBSITE_URL} className="mr-6 flex items-center gap-2">
+          <Server className="h-5 w-5 text-primary" />
+          <span className="text-lg font-display font-bold">
+            <span className="gradient-text">Bunk</span>
+            <span className="text-foreground">Hosting</span>
           </span>
         </a>
 

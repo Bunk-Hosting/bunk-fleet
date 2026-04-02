@@ -35,4 +35,42 @@
   body {
     @apply bg-background text-foreground;
   }
+  h1, h2, h3 {
+    font-family: var(--font-manrope), Manrope, sans-serif;
+    font-weight: 700;
+  }
+}
+
+@layer utilities {
+  /* Dot grid background — matches bunkhosting.nl hero */
+  .bg-dot-grid {
+    background-image: radial-gradient(circle, hsl(214 100% 47% / 0.12) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Glow effects */
+  .glow-primary {
+    box-shadow: 0 0 30px hsl(214 100% 47% / 0.2), 0 0 60px hsl(214 100% 47% / 0.06);
+  }
+  .glow-accent {
+    box-shadow: 0 0 24px hsl(184 100% 45% / 0.25);
+  }
+  .card-glow {
+    box-shadow: 0 0 0 1px hsl(214 100% 47% / 0.15), 0 4px 24px hsl(214 100% 47% / 0.08);
+  }
+
+  /* Gradient text — matches website headings */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Gradient border card */
+  .card-gradient-border {
+    background: linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+                linear-gradient(135deg, hsl(214 100% 47% / 0.4), hsl(184 100% 45% / 0.2)) border-box;
+    border: 1px solid transparent;
+  }
 }

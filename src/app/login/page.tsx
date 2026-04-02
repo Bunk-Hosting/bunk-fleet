@@ -3,19 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
-import { Navbar } from "@/components/layout/navbar";
 import { authApi } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -51,19 +42,49 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
+    <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
+      {/* Glow orbs — matches website */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-accent/8 blur-3xl" />
+      </div>
 
-      <main className="flex-1 flex items-center justify-center py-12">
-        <Card className="w-full max-w-md mx-4">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Inloggen</CardTitle>
-            <CardDescription>
+      {/* Minimal nav */}
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 border-b border-border/40">
+        <a
+          href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"}
+          className="flex items-center gap-2"
+        >
+          <Server className="h-5 w-5 text-primary" />
+          <span className="text-lg font-display font-bold">
+            <span className="gradient-text">Bunk</span>
+            <span className="text-foreground">Hosting</span>
+          </span>
+        </a>
+        <p className="text-sm text-muted-foreground hidden sm:block">
+          Nog geen account?{" "}
+          <Link href="/register" className="text-primary hover:text-accent transition-colors">
+            Registreren
+          </Link>
+        </p>
+      </header>
+
+      {/* Form */}
+      <main className="relative z-10 flex-1 flex items-center justify-center py-12 px-4">
+        <div className="w-full max-w-md">
+          {/* Heading */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-display font-bold mb-2">
+              Welkom terug
+            </h1>
+            <p className="text-muted-foreground">
               Log in op je Bunk Hosting account
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
+            </p>
+          </div>
+
+          {/* Card */}
+          <div className="card-gradient-border rounded-xl p-6 bg-card">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="email">E-mailadres</Label>
                 <Input
@@ -74,6 +95,7 @@ function LoginForm() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
+                  className="bg-background/60 border-border/60 focus:border-primary/60"
                 />
               </div>
               <div className="space-y-2">
@@ -86,23 +108,23 @@ function LoginForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   disabled={loading}
+                  className="bg-background/60 border-border/60 focus:border-primary/60"
                 />
               </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full py-5" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Inloggen
               </Button>
-              <p className="text-sm text-muted-foreground text-center">
-                Nog geen account?{" "}
-                <Link href="/register" className="text-primary hover:underline">
-                  Registreer hier
-                </Link>
-              </p>
-            </CardFooter>
-          </form>
-        </Card>
+            </form>
+          </div>
+
+          <p className="text-center text-sm text-muted-foreground mt-6 sm:hidden">
+            Nog geen account?{" "}
+            <Link href="/register" className="text-primary hover:text-accent transition-colors">
+              Registreren
+            </Link>
+          </p>
+        </div>
       </main>
     </div>
   );
@@ -110,7 +132,13 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
       <LoginForm />
     </React.Suspense>
   );
