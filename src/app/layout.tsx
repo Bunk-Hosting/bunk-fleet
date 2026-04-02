@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: "Bunk Hosting - VPS Beheer",
   description:
     "Beheer je virtuele servers via het Bunk Hosting dashboard.",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({
@@ -18,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="nl">
+    <html lang="nl" className="dark">
       <body className={`${inter.variable} ${manrope.variable} font-sans`}>
         {children}
         <Toaster />

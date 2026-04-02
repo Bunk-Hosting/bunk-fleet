@@ -24,7 +24,7 @@
     --border: 229 13% 24%;             /* #333539 */
     --input: 229 13% 24%;              /* #333539 */
     --ring: 214 100% 47%;             /* #006af2 */
-    --radius: 0.5rem;
+    --radius: 0.25rem;
   }
 }
 
@@ -42,21 +42,21 @@
 }
 
 @layer utilities {
-  /* Dot grid background — matches bunkhosting.nl hero */
+  /* Dot grid background — exact match bunkhosting.nl */
   .bg-dot-grid {
-    background-image: radial-gradient(circle, hsl(214 100% 47% / 0.12) 1px, transparent 1px);
-    background-size: 24px 24px;
+    background-image: radial-gradient(rgba(0, 219, 231, 0.12) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 
   /* Glow effects */
   .glow-primary {
-    box-shadow: 0 0 30px hsl(214 100% 47% / 0.2), 0 0 60px hsl(214 100% 47% / 0.06);
+    box-shadow: 0 0 30px rgba(0, 106, 242, 0.2), 0 0 60px rgba(0, 106, 242, 0.06);
   }
   .glow-accent {
-    box-shadow: 0 0 24px hsl(184 100% 45% / 0.25);
+    box-shadow: 0 0 24px rgba(0, 219, 231, 0.25);
   }
   .card-glow {
-    box-shadow: 0 0 0 1px hsl(214 100% 47% / 0.15), 0 4px 24px hsl(214 100% 47% / 0.08);
+    box-shadow: 0 0 0 1px rgba(0, 219, 231, 0.2), 0 8px 32px rgba(0, 219, 231, 0.10);
   }
 
   /* Gradient text — matches website headings */

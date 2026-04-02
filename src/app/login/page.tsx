@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Server } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,7 +55,7 @@ function LoginForm() {
           href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"}
           className="flex items-center gap-2"
         >
-          <Server className="h-5 w-5 text-primary" />
+          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
           <span className="text-lg font-display font-bold">
             <span className="gradient-text">Bunk</span>
             <span className="text-foreground">Hosting</span>

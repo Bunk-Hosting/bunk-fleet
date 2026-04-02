@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Server, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -21,7 +21,7 @@ export function Navbar() {
       <div className="container flex h-16 items-center">
         {/* Logo – links naar marketingsite */}
         <a href={WEBSITE_URL} className="mr-6 flex items-center gap-2">
-          <Server className="h-5 w-5 text-primary" />
+          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
           <span className="text-lg font-display font-bold">
             <span className="gradient-text">Bunk</span>
             <span className="text-foreground">Hosting</span>

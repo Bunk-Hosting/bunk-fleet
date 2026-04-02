@@ -6,10 +6,10 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Network,
-  Server,
   PlusCircle,
   Shield,
   Users,
+  Server,
   ServerCog,
   FileText,
   LogOut,
@@ -91,9 +91,10 @@ function SidebarContent({ user }: SidebarProps) {
       {/* Logo */}
       <div className="px-4 py-6">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <Server className="h-6 w-6 text-primary" />
-          <span className="text-lg">
-            <span className="font-bold">Bunk</span>Hosting
+          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
+          <span className="text-lg font-display font-bold">
+            <span className="gradient-text">Bunk</span>
+            <span className="text-foreground">Hosting</span>
           </span>
         </Link>
       </div>
@@ -170,9 +171,11 @@ export function Sidebar({ user }: SidebarProps) {
           </SheetContent>
         </Sheet>
         <Link href="/dashboard" className="flex items-center gap-2">
-          <Server className="h-5 w-5 text-primary" />
-          <span className="font-bold">Bunk</span>
-          <span>Hosting</span>
+          <img src="/favicon.svg" alt="Bunk Hosting" className="h-7 w-7" />
+          <span className="text-lg font-display font-bold">
+            <span className="gradient-text">Bunk</span>
+            <span className="text-foreground">Hosting</span>
+          </span>
         </Link>
       </div>
     </>
