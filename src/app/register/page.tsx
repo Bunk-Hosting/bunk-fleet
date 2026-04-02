@@ -198,22 +198,6 @@ export default function RegisterPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="invite_code">Uitnodigingscode</Label>
-                <Input
-                  id="invite_code"
-                  type="text"
-                  placeholder="Voer je uitnodigingscode in"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  required
-                  disabled={loading}
-                  className="bg-background/60 border-border/60 focus:border-primary/60 font-mono tracking-wider"
-                />
-                {errors.invite_code && (
-                  <p className="text-sm text-destructive">{errors.invite_code[0]}</p>
-                )}
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="password_confirm">Wachtwoord bevestigen</Label>
                 <Input
                   id="password_confirm"
@@ -227,6 +211,22 @@ export default function RegisterPage() {
                 />
                 {errors.password_confirm && (
                   <p className="text-sm text-destructive">{errors.password_confirm[0]}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite_code">Uitnodigingscode</Label>
+                <Input
+                  id="invite_code"
+                  type="text"
+                  placeholder="Voer je uitnodigingscode in"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="bg-background/60 border-border/60 focus:border-primary/60 font-mono tracking-wider"
+                />
+                {errors.invite_code && (
+                  <p className="text-sm text-destructive">{errors.invite_code[0]}</p>
                 )}
               </div>
 
