@@ -117,6 +117,12 @@ export const authApi = {
   logout: () => api.post("/auth/logout/"),
 
   me: () => api.get<User>("/auth/me/"),
+
+  verifyEmail: (token: string) =>
+    api.post<{ detail: string }>("/auth/verify-email/", { token }),
+
+  resendVerification: () =>
+    api.post<{ detail: string }>("/auth/verify-email/resend/"),
 };
 
 // ─── Packages ────────────────────────────────────────────────────────

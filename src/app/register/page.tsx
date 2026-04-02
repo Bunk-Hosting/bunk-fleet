@@ -63,7 +63,11 @@ export default function RegisterPage() {
         invite_code: inviteCode,
         ...(turnstileEnabled && { turnstile_token: turnstileToken }),
       });
-      router.push("/dashboard");
+      toast({
+        title: "Account aangemaakt!",
+        description: "Controleer je e-mail om je adres te bevestigen.",
+      });
+      setTimeout(() => router.push("/dashboard"), 2000);
     } catch (err: unknown) {
       const error = err as {
         response?: { data?: Record<string, string[] | string> };
