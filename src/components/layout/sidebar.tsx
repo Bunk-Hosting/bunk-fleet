@@ -56,9 +56,12 @@ const allNavItems = [...mainNavItems, ...adminNavItems];
 function isActive(itemHref: string, pathname: string): boolean {
   if (pathname === itemHref) return true;
   if (!pathname.startsWith(itemHref + "/")) return false;
-  // Controleer of een specifiekere sibling beter matcht
+  // Alleen een langere (specifiekere) sibling wint
   return !allNavItems.some(
-    (other) => other.href !== itemHref && pathname.startsWith(other.href)
+    (other) =>
+      other.href !== itemHref &&
+      other.href.length > itemHref.length &&
+      pathname.startsWith(other.href)
   );
 }
 
