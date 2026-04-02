@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Loader2,
   ArrowLeft,
@@ -187,7 +188,15 @@ export default function VpsDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* Terminal button */}
+          <Link href={`/dashboard/vps/${id}/terminal`}>
+            <Button variant="outline" disabled={vps.status !== "ACTIVE"}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Terminal
+            </Button>
+          </Link>
+
           {/* Start button */}
           <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
             <DialogTrigger asChild>
