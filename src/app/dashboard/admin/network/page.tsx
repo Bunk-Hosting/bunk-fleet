@@ -66,29 +66,27 @@ function SummaryCard({
   );
 }
 
-function exportCsv(entries: IPAddressEntry[], filter: string) {
-  const header = ["IP-adres", "Status", "VM-naam", "Pakket", "Eigenaar", "Toegewezen op"];
-  const rows = entries.map((e) => [
-    e.address,
-    STATUS_LABELS[e.status],
-    e.infra_name ?? "",
-    e.package_name ?? "",
-    e.owner_email ?? "",
-    e.assigned_at ? new Date(e.assigned_at).toLocaleDateString("nl-NL") : "",
-  ]);
+async function exportExcel(entries: IPAddressEntry[], filter: string) {
+  const XLSX = await import("xlsx");
 
-  const csv = [header, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-    .join("\r\n");
+  const rows = entries.map((e) => ({
+    "IP-adres": e.address,
+    "Status": STATUS_LABELS[e.status],
+    "VM-naam": e.infra_name ?? "",
+    "Pakket": e.package_name ?? "",
+    "Eigenaar": e.owner_email ?? "",
+    "Toegewezen op": e.assigned_at ? new Date(e.assigned_at).toLocaleDateString("nl-NL") : "",
+  }));
 
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
+  const ws = XLSX.utils.json_to_sheet(rows);
+  // Kolombreedte instellen
+  ws["!cols"] = [16, 14, 24, 12, 30, 14].map((w) => ({ wch: w }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "IP-plan");
+
   const suffix = filter !== "ALL" ? `-${filter.toLowerCase()}` : "";
-  a.download = `ip-plan${suffix}-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  XLSX.writeFile(wb, `ip-plan${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 export default function AdminNetworkPage() {
@@ -184,10 +182,10 @@ export default function AdminNetworkPage() {
             variant="outline"
             size="sm"
             disabled={loading || entries.length === 0}
-            onClick={() => exportCsv(entries, statusFilter)}
+            onClick={() => exportExcel(entries, statusFilter)}
           >
             <Download className="mr-2 h-4 w-4" />
-            Exporteer CSV
+            Exporteer Excel
           </Button>
         </div>
       </div>

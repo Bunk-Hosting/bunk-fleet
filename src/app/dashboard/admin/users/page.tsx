@@ -27,8 +27,6 @@ import { adminApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,15 +34,30 @@ export default function AdminUsersPage() {
   const [avgDialogOpen, setAvgDialogOpen] = useState(false);
   const { toast } = useToast();
 
-  function handleExport() {
-    // Download via gewone navigatie; cookies worden meegestuurd,
-    // audit middleware logt de aanroep automatisch.
-    const url = `${API_URL}/api/v1/admin/users/export/`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.click();
+  async function handleExport() {
+    const XLSX = await import("xlsx");
+
+    const rows = users.map((u) => ({
+      "ID": u.id,
+      "Naam": u.name,
+      "E-mailadres": u.email,
+      "Rol": u.role,
+      "Aangemeld op": new Date(u.date_joined).toLocaleDateString("nl-NL"),
+      "Actief": u.is_active ? "Ja" : "Nee",
+      "Aantal VPS'en": u.vps_count ?? 0,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [6, 24, 34, 8, 14, 8, 14].map((w) => ({ wch: w }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Gebruikers");
+
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `gebruikers-${date}.xlsx`);
+
     setAvgDialogOpen(false);
-    toast({ title: "Export gestart", description: "Het CSV-bestand wordt gedownload." });
+    toast({ title: "Export klaar", description: "Het Excel-bestand is gedownload." });
   }
 
   useEffect(() => {
@@ -87,7 +100,7 @@ export default function AdminUsersPage() {
         <h1 className="text-3xl font-bold">Gebruikersbeheer</h1>
         <Button variant="outline" size="sm" onClick={() => setAvgDialogOpen(true)} disabled={loading}>
           <Download className="mr-2 h-4 w-4" />
-          Exporteer CSV
+          Exporteer Excel
         </Button>
       </div>
 
