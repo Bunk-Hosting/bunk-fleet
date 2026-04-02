@@ -95,39 +95,41 @@ export default function InviteCodesPage() {
       {/* Nieuwe code aanmaken */}
       <div className="card-gradient-border rounded-xl p-6 bg-card">
         <h2 className="text-base font-semibold mb-4">Nieuwe code aanmaken</h2>
-        <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-          <div className="space-y-1">
-            <Label htmlFor="label">Omschrijving</Label>
-            <Input
-              id="label"
-              placeholder="bijv. voor Jan Jansen"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              className="bg-background/60"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="max_uses">Max. gebruik</Label>
-            <Input
-              id="max_uses"
-              type="number"
-              min="0"
-              placeholder="1"
-              value={maxUses}
-              onChange={(e) => setMaxUses(e.target.value)}
-              className="bg-background/60"
-            />
-            <p className="text-xs text-muted-foreground">0 = onbeperkt</p>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="expires_at">Verloopt op</Label>
-            <Input
-              id="expires_at"
-              type="datetime-local"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              className="bg-background/60"
-            />
+        <form onSubmit={handleCreate} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="label">Omschrijving</Label>
+              <Input
+                id="label"
+                placeholder="bijv. voor Jan Jansen"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                className="bg-background/60"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="max_uses">Max. gebruik</Label>
+              <Input
+                id="max_uses"
+                type="number"
+                min="0"
+                placeholder="1"
+                value={maxUses}
+                onChange={(e) => setMaxUses(e.target.value)}
+                className="bg-background/60"
+              />
+              <p className="text-xs text-muted-foreground">0 = onbeperkt</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="expires_at">Verloopt op</Label>
+              <Input
+                id="expires_at"
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                className="bg-background/60"
+              />
+            </div>
           </div>
           <Button type="submit" disabled={creating}>
             <Plus className="h-4 w-4 mr-2" />
