@@ -1,203 +1,107 @@
 # Installatie – Bunk Hosting VPS-applicatie
 
-De VPS management applicatie voor Bunk Hosting. Draait op `app.bunkhosting.nl` en biedt het dashboard voor gebruikers en admins om VPS'en te beheren.
+De VPS management applicatie voor Bunk Hosting. Draait op `app.bunkhosting.nl`.
 
 ## Vereisten
 
-- Node.js 20+ (of Docker)
-- De [vps-backend](https://github.com/<jouw-org>/vps-backend) moet draaien
+- Docker Engine 24+ en Docker Compose v2
+- De [vps-backend](https://github.com/Bunk-Hosting/vps-backend) moet draaien op `api.bunkhosting.nl`
 
-## Optie A – Docker (aanbevolen voor productie)
+## Productie deployment
 
-### Stap 1 – Repository klonen
+In productie wordt de frontend gedeployed via het script op de server:
 
 ```bash
-git clone https://github.com/<jouw-org>/vps-frontend.git
+ssh administrator@<server-ip>
+bash /home/administrator/deploy-frontend.sh
+```
+
+Het script gebruikt `-p vps-frontend` zodat containernamen consistent blijven.
+
+### Handmatig deployen
+
+```bash
+git clone https://github.com/Bunk-Hosting/vps-frontend.git
 cd vps-frontend
+
+docker compose -p vps-frontend -f docker-compose.prod.yml build
+docker compose -p vps-frontend -f docker-compose.prod.yml down --remove-orphans
+docker compose -p vps-frontend -f docker-compose.prod.yml up -d
 ```
 
-### Stap 2 – Omgevingsvariabelen instellen
+> **Let op:** `NEXT_PUBLIC_*` variabelen worden ingebakken tijdens de build. Ze staan in `.env.production` en worden automatisch meegenomen.
 
-Maak `.env.local` aan:
+### Omgevingsvariabelen (.env.production)
 
-```env
-NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl
-NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl
-```
+| Variabele | Waarde | Uitleg |
+|-----------|--------|--------|
+| `NEXT_PUBLIC_API_URL` | `https://api.bunkhosting.nl` | Backend REST API URL |
+| `NEXT_PUBLIC_WS_URL` | `wss://api.bunkhosting.nl` | WebSocket URL voor SSH-terminal |
+| `NEXT_PUBLIC_WEBSITE_URL` | `https://bunkhosting.nl` | Marketingwebsite URL |
 
-| Variabele | Uitleg |
-|-----------|--------|
-| `NEXT_PUBLIC_API_URL` | URL van de backend API |
-| `NEXT_PUBLIC_WEBSITE_URL` | URL van de marketingwebsite (voor Home/Producten links in navbar) |
+### Reverse proxy (Cloudflare Tunnel)
 
-### Stap 3 – Docker image bouwen
-
-```bash
-docker build -t bunk-hosting-app:latest \
-  --build-arg NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl \
-  --build-arg NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl \
-  .
-```
-
-> **Let op:** `NEXT_PUBLIC_*` variabelen worden ingebakken tijdens de build. Ze moeten als build-arg meegegeven worden.
-
-### Stap 4 – Container starten
-
-```bash
-docker run -d \
-  --name bunk-hosting-app \
-  --restart unless-stopped \
-  -p 3001:3000 \
-  bunk-hosting-app:latest
-```
-
-### Stap 5 – Reverse proxy instellen
-
-Stel een reverse proxy in die `app.bunkhosting.nl` doorstuurt naar poort 3001.
-
-**Voorbeeld met Cloudflare Tunnel:**
+De frontend draait op poort 3001. Cloudflare Tunnel stuurt `app.bunkhosting.nl` door:
 
 ```yaml
-# ~/.cloudflared/config.yml
+# ~/.cloudflared/config.yml (tunnel-machine)
 ingress:
   - hostname: app.bunkhosting.nl
     service: http://localhost:3001
   - service: http_status:404
 ```
 
-**Voorbeeld met nginx:**
+Cloudflare geeft WebSocket-verbindingen standaard door (nodig voor de SSH-terminal).
 
-```nginx
-server {
-    listen 80;
-    server_name app.bunkhosting.nl;
-
-    location / {
-        proxy_pass http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-### Stap 6 – Verificatie
-
-Open `https://app.bunkhosting.nl/login` in je browser. Je zou moeten zien:
-
-- Login pagina met e-mail en wachtwoord velden
-- Navbar met links naar `bunkhosting.nl` (Home, Producten)
-- Na inloggen: dashboard met VPS overzicht
-
-## Optie B – Lokale development
-
-### Stap 1 – Repository klonen en dependencies installeren
+## Lokale development
 
 ```bash
-git clone https://github.com/<jouw-org>/vps-frontend.git
+git clone https://github.com/Bunk-Hosting/vps-frontend.git
 cd vps-frontend
 npm install
 ```
-
-### Stap 2 – Omgevingsvariabelen instellen
 
 Maak `.env.local` aan:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
 NEXT_PUBLIC_WEBSITE_URL=http://localhost:3000
 ```
 
-### Stap 3 – Development server starten
-
 ```bash
-npm run dev -- -p 3001
+npm run dev
 ```
-
-De applicatie draait nu op `http://localhost:3001`.
-
-> **Tip:** Start de volledige stack lokaal:
-> - Backend: `http://localhost:8000` (via `docker compose up` in vps-backend)
-> - Website: `http://localhost:3000` (via `npm run dev` in bunkhosting-website)
-> - VPS-app: `http://localhost:3001` (deze applicatie)
-
-### Stap 4 – Docker Compose (alternatief)
-
-```bash
-docker compose up
-```
-
-Dit start de development server met hot-reload op poort 3001.
-
-## Optie C – Productie build zonder Docker
-
-### Stap 1 – Dependencies installeren en bouwen
-
-```bash
-npm ci
-NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl \
-NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl \
-npm run build
-```
-
-### Stap 2 – Standalone server starten
-
-```bash
-cd .next/standalone
-PORT=3001 node server.js
-```
-
-Stel een reverse proxy in zoals beschreven in stap 5 van Optie A.
 
 ## Routes
 
-| Route | Beschrijving | Toegang |
-|-------|-------------|---------|
-| `/` | Redirect naar `/login` | Publiek |
-| `/login` | Inloggen | Publiek |
-| `/register` | Registreren | Publiek |
-| `/dashboard` | Dashboard overzicht | Ingelogd |
-| `/dashboard/vps` | Mijn VPS'en | Ingelogd |
-| `/dashboard/vps/new` | Nieuwe VPS aanvragen | Ingelogd |
-| `/dashboard/vps/[id]` | VPS details (start/stop/verwijder) | Eigenaar of admin |
-| `/dashboard/admin` | Admin dashboard | Admin |
-| `/dashboard/admin/users` | Gebruikersbeheer | Admin |
-| `/dashboard/admin/vps` | VPS beheer | Admin |
-| `/dashboard/admin/logs` | Auditlogs | Admin |
+| Route | Toegang | Omschrijving |
+|-------|---------|-------------|
+| `/login` | Publiek | Inloggen |
+| `/register` | Publiek | Registreren |
+| `/dashboard` | Ingelogd | Dashboard overzicht |
+| `/dashboard/vps` | Ingelogd | Eigen VPS-lijst |
+| `/dashboard/vps/new` | Ingelogd | Nieuwe VPS aanvragen (Starter/Basic/Pro) |
+| `/dashboard/vps/[id]` | Eigenaar/Admin | VPS-detail (start/stop/verwijder) |
+| `/dashboard/vps/[id]/terminal` | Eigenaar/Admin | In-browser SSH-terminal via WebSocket |
+| `/dashboard/admin` | Admin | Admin-dashboard met statistieken |
+| `/dashboard/admin/users` | Admin | Gebruikersbeheer + AVG-conforme Excel-export |
+| `/dashboard/admin/vps` | Admin | VPS-beheer (forceer status, start/stop/verwijder) |
+| `/dashboard/admin/network` | Admin | IP-pool overzicht + Excel-export |
+| `/dashboard/admin/logs` | Admin | Auditlogs met filters en CSV-export |
+| `/dashboard/admin/reconcile` | Admin | Reconciliatie DB ↔ vCenter |
 
-## Overzicht architectuur
+## SSH-terminal
 
-```
-bunkhosting.nl (bunkhosting-website, apart project)
-├── / ..................... Homepage
-└── /products ............. Pakketten overzicht
+De pagina `/dashboard/vps/[id]/terminal` opent xterm.js in de browser. De WebSocket-verbinding loopt via `wss://api.bunkhosting.nl/ws/console/{id}/`. De backend verbindt vervolgens als `bunk-console` servicegebruiker via SSH met de VM, met de private key uit Vault.
 
-app.bunkhosting.nl (deze applicatie)
-├── /login ................ Inloggen
-├── /register ............. Registreren
-├── /dashboard ............ Overzicht
-├── /dashboard/vps ........ VPS lijst + beheer
-└── /dashboard/admin ...... Admin panel
-
-api.bunkhosting.nl (vps-backend, apart project)
-└── /api/v1/ .............. REST API
-```
+- VPS moet status `ACTIVE` hebben
+- Knop is uitgeschakeld voor niet-actieve VPS'en
 
 ## Updaten
 
 ```bash
-git pull
-docker build -t bunk-hosting-app:latest \
-  --build-arg NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl \
-  --build-arg NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl \
-  .
-docker stop bunk-hosting-app
-docker rm bunk-hosting-app
-docker run -d \
-  --name bunk-hosting-app \
-  --restart unless-stopped \
-  -p 3001:3000 \
-  bunk-hosting-app:latest
+ssh administrator@<server-ip>
+cd /home/administrator/vps-frontend && git pull
+bash /home/administrator/deploy-frontend.sh
 ```
