@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Network, Globe, CheckCircle2, Lock, Loader2 } from "lucide-react";
+import { Network, Globe, CheckCircle2, Lock, Loader2, Download } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { adminApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
@@ -63,6 +64,31 @@ function SummaryCard({
       </CardContent>
     </Card>
   );
+}
+
+function exportCsv(entries: IPAddressEntry[], filter: string) {
+  const header = ["IP-adres", "Status", "VM-naam", "Pakket", "Eigenaar", "Toegewezen op"];
+  const rows = entries.map((e) => [
+    e.address,
+    STATUS_LABELS[e.status],
+    e.infra_name ?? "",
+    e.package_name ?? "",
+    e.owner_email ?? "",
+    e.assigned_at ? new Date(e.assigned_at).toLocaleDateString("nl-NL") : "",
+  ]);
+
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const suffix = filter !== "ALL" ? `-${filter.toLowerCase()}` : "";
+  a.download = `ip-plan${suffix}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function AdminNetworkPage() {
@@ -133,8 +159,8 @@ export default function AdminNetworkPage() {
         </div>
       )}
 
-      {/* Filter */}
-      <div className="flex items-center gap-3">
+      {/* Filter + export */}
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">Filter op status:</span>
         <Select
           value={statusFilter}
@@ -153,6 +179,17 @@ export default function AdminNetworkPage() {
         <span className="text-sm text-muted-foreground">
           {loading ? "Laden…" : `${entries.length.toLocaleString()} adressen`}
         </span>
+        <div className="ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || entries.length === 0}
+            onClick={() => exportCsv(entries, statusFilter)}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Exporteer CSV
+          </Button>
+        </div>
       </div>
 
       {/* Tabel */}
