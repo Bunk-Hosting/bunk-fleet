@@ -13,26 +13,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { packagesApi, vpsApi } from "@/lib/api";
-import { cn, formatPrice, getOsLabel } from "@/lib/utils";
-import type { VpsPackage, OsChoice } from "@/lib/types";
-
-const osChoices: OsChoice[] = [
-  "ubuntu-22.04",
-  "ubuntu-20.04",
-  "debian-12",
-  "debian-11",
-  "centos-9",
-  "alpine-3.19",
-];
+import { cn, formatPrice } from "@/lib/utils";
+import type { VpsPackage } from "@/lib/types";
 
 export default function NewVpsPage() {
   const router = useRouter();
@@ -43,7 +27,6 @@ export default function NewVpsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
-  const [selectedOs, setSelectedOs] = useState<OsChoice | "">("");
   const [label, setLabel] = useState("");
 
   useEffect(() => {
@@ -74,20 +57,11 @@ export default function NewVpsPage() {
       return;
     }
 
-    if (!selectedOs) {
-      toast({
-        title: "Selecteer een besturingssysteem",
-        description: "Kies een OS om verder te gaan.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setSubmitting(true);
     try {
       await vpsApi.create({
         package_id: selectedPackageId,
-        os: selectedOs as OsChoice,
+        os: "ubuntu-22.04",
         label: label || undefined,
       });
       toast({
@@ -119,17 +93,15 @@ export default function NewVpsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Nieuwe VPS Aanvragen
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Nieuwe VPS Aanvragen</h1>
         <p className="text-muted-foreground">
-          Kies een pakket, besturingssysteem en optioneel een label.
+          Kies een pakket en geef je VPS optioneel een naam.
         </p>
       </div>
 
-      {/* Step 1: Select Package */}
+      {/* Pakket kiezen */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">1. Kies een pakket</h2>
+        <h2 className="text-xl font-semibold">Kies een pakket</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {packages.map((pkg) => (
             <Card
@@ -167,31 +139,9 @@ export default function NewVpsPage() {
         </div>
       </div>
 
-      {/* Step 2: Select OS */}
+      {/* Naam */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">2. Kies een besturingssysteem</h2>
-        <div className="max-w-sm">
-          <Select
-            value={selectedOs}
-            onValueChange={(value) => setSelectedOs(value as OsChoice)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecteer een OS" />
-            </SelectTrigger>
-            <SelectContent>
-              {osChoices.map((os) => (
-                <SelectItem key={os} value={os}>
-                  {getOsLabel(os)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Step 3: Label */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold">3. Label (optioneel)</h2>
+        <h2 className="text-xl font-semibold">Naam (optioneel)</h2>
         <div className="max-w-sm space-y-2">
           <Label htmlFor="label">Naam voor je VPS</Label>
           <Input
