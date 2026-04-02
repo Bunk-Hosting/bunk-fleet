@@ -51,15 +51,26 @@ const adminNavItems: NavItem[] = [
   { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
 ];
 
+const allNavItems = [...mainNavItems, ...adminNavItems];
+
+function isActive(itemHref: string, pathname: string): boolean {
+  if (pathname === itemHref) return true;
+  if (!pathname.startsWith(itemHref + "/")) return false;
+  // Controleer of een specifiekere sibling beter matcht
+  return !allNavItems.some(
+    (other) => other.href !== itemHref && pathname.startsWith(other.href)
+  );
+}
+
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isActive = pathname === item.href;
+  const active = isActive(item.href, pathname);
 
   return (
     <Link
       href={item.href}
       className={cn(
         "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-        isActive
+        active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
