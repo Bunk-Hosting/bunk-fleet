@@ -43,38 +43,28 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
-      {/* Glow orbs — matches website */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full bg-accent/8 blur-3xl" />
+      {/* Ambient glow orbs — exact match bunkhosting.nl */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
       </div>
 
-      {/* Minimal nav */}
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 border-b border-border/40">
-        <a
-          href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"}
-          className="flex items-center gap-2"
-        >
-          <span
-            className="material-symbols-outlined text-accent"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            dns
-          </span>
-          <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
-            BUNK HOSTING
-          </span>
-        </a>
-        <p className="text-sm text-muted-foreground hidden sm:block">
-          Nog geen account?{" "}
-          <Link href="/register" className="text-primary hover:text-accent transition-colors">
-            Registreren
-          </Link>
-        </p>
+      {/* Header — exact bunkhosting stijl */}
+      <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10 transition-all duration-300">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
+          <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
+            <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
+          </a>
+          <p className="text-sm text-muted-foreground hidden sm:block">
+            Nog geen account?{" "}
+            <Link href="/register" className="text-accent hover:text-foreground transition-colors font-semibold">Registreren</Link>
+          </p>
+        </div>
       </header>
 
       {/* Form */}
-      <main className="relative z-10 flex-1 flex items-center justify-center py-12 px-4">
+      <main className="relative z-10 flex-1 flex items-center justify-center py-12 px-4 pt-28">
         <div className="w-full max-w-md">
           {/* Heading */}
           <div className="text-center mb-8">

@@ -29,11 +29,14 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
   * {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground bg-dot-grid;
   }
   h1, h2, h3 {
     font-family: var(--font-manrope), Manrope, sans-serif;
@@ -41,6 +44,11 @@
   }
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  ::selection {
+    background-color: rgba(0, 219, 231, 0.3);
+    color: #e2e2e8;
   }
 }
 
@@ -49,6 +57,17 @@
   .bg-dot-grid {
     background-image: radial-gradient(rgba(0, 219, 231, 0.12) 1px, transparent 1px);
     background-size: 32px 32px;
+  }
+
+  /* Hero radial gradient overlay */
+  .hero-gradient {
+    background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0, 219, 231, 0.10) 0%, rgba(17, 19, 24, 0) 70%);
+  }
+
+  /* Divider glow — matches bunkhosting section dividers */
+  .divider-glow {
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(0, 219, 231, 0.35) 35%, rgba(0, 106, 242, 0.35) 65%, transparent 100%);
   }
 
   /* Glow effects */
@@ -60,6 +79,11 @@
   }
   .card-glow {
     box-shadow: 0 0 0 1px rgba(0, 219, 231, 0.2), 0 8px 32px rgba(0, 219, 231, 0.10);
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+  }
+  .card-glow:hover {
+    box-shadow: 0 0 0 1px rgba(0, 219, 231, 0.3), 0 8px 32px rgba(0, 219, 231, 0.15);
+    transform: translateY(-2px);
   }
 
   /* Gradient text — matches website headings */
@@ -77,3 +101,11 @@
     border: 1px solid transparent;
   }
 }
+
+/* Ambient glow pulse — matches bunkhosting.nl background orbs */
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.18; transform: scale(1); }
+  50%       { opacity: 0.30; transform: scale(1.1); }
+}
+.animate-glow      { animation: glow-pulse 9s ease-in-out infinite; }
+.animate-glow-slow { animation: glow-pulse 13s ease-in-out infinite 3s; }

@@ -44,9 +44,14 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background bg-dot-grid">
+      {/* Ambient glow orbs — exact match bunkhosting.nl */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
+      </div>
       <Sidebar user={user} />
-      <div className="md:pl-64">
+      <div className="relative z-10 md:pl-64">
         <main className="p-4 md:p-8">{children}</main>
       </div>
       <Toaster />

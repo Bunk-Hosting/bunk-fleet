@@ -58,6 +58,14 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        /* bunkhosting-website kleur tokens */
+        "outline-variant": "#424656",
+        "surface-container": "#1e2024",
+        "surface-container-high": "#282a2e",
+        "surface-container-lowest": "#0c0e12",
+        tertiary: "#00dbe7",
+        "on-surface": "#e2e2e8",
+        "on-surface-variant": "#c2c6d8",
       },
       borderRadius: {
         lg: "var(--radius)",
