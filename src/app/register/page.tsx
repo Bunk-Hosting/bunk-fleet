@@ -4,11 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -20,6 +24,10 @@ export default function RegisterPage() {
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string[]>>({});
+  const [turnstileToken, setTurnstileToken] = React.useState("");
+  const turnstileRef = React.useRef<TurnstileInstance>(null);
+
+  const turnstileEnabled = !!TURNSTILE_SITE_KEY;
 
   React.useEffect(() => {
     ensureCsrfCookie();
@@ -34,6 +42,15 @@ export default function RegisterPage() {
       return;
     }
 
+    if (turnstileEnabled && !turnstileToken) {
+      toast({
+        variant: "destructive",
+        title: "Verificatie vereist",
+        description: "Los de human verificatie op om door te gaan.",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -42,12 +59,20 @@ export default function RegisterPage() {
         email,
         password,
         password_confirm: passwordConfirm,
+        ...(turnstileEnabled && { turnstile_token: turnstileToken }),
       });
       router.push("/dashboard");
     } catch (err: unknown) {
       const error = err as {
         response?: { data?: Record<string, string[] | string> };
       };
+
+      // Reset Turnstile widget bij een fout
+      if (turnstileRef.current) {
+        turnstileRef.current.reset();
+      }
+      setTurnstileToken("");
+
       if (error.response?.data) {
         const data = error.response.data;
         const fieldErrors: Record<string, string[]> = {};
@@ -186,7 +211,25 @@ export default function RegisterPage() {
                   <p className="text-sm text-destructive">{errors.password_confirm[0]}</p>
                 )}
               </div>
-              <Button type="submit" className="w-full py-5 mt-2" disabled={loading}>
+
+              {/* Turnstile — altijd zichtbaar als sitekey ingesteld is */}
+              {turnstileEnabled && (
+                <div className="pt-1">
+                  <Turnstile
+                    ref={turnstileRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onSuccess={(token) => setTurnstileToken(token)}
+                    onError={() => setTurnstileToken("")}
+                    onExpire={() => setTurnstileToken("")}
+                  />
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full py-5 mt-2"
+                disabled={loading || (turnstileEnabled && !turnstileToken)}
+              >
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Account aanmaken
               </Button>

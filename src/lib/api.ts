@@ -105,10 +105,13 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ user: User; message: string }>("/auth/login/", { email, password }),
+  login: (email: string, password: string, turnstileToken?: string) => {
+    const data: Record<string, string> = { email, password };
+    if (turnstileToken) data.turnstile_token = turnstileToken;
+    return api.post<{ user: User; message: string }>("/auth/login/", data);
+  },
 
-  register: (data: { name: string; email: string; password: string; password_confirm: string }) =>
+  register: (data: { name: string; email: string; password: string; password_confirm: string; turnstile_token?: string }) =>
     api.post<{ user: User; message: string }>("/auth/register/", data),
 
   logout: () => api.post("/auth/logout/"),

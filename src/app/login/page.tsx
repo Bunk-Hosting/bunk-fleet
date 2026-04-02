@@ -4,11 +4,16 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+const TURNSTILE_REQUIRED_AFTER = 2;
 
 function LoginForm() {
   const router = useRouter();
@@ -18,6 +23,11 @@ function LoginForm() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [failedAttempts, setFailedAttempts] = React.useState(0);
+  const [turnstileToken, setTurnstileToken] = React.useState("");
+  const turnstileRef = React.useRef<TurnstileInstance>(null);
+
+  const showTurnstile = failedAttempts >= TURNSTILE_REQUIRED_AFTER && !!TURNSTILE_SITE_KEY;
 
   React.useEffect(() => {
     ensureCsrfCookie();
@@ -25,14 +35,33 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (showTurnstile && !turnstileToken) {
+      toast({
+        variant: "destructive",
+        title: "Verificatie vereist",
+        description: "Los de human verificatie op voordat je inlogt.",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authApi.login(email, password);
+      await authApi.login(email, password, showTurnstile ? turnstileToken : undefined);
       const next = searchParams.get("next") || "/dashboard";
       router.push(next);
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } } };
+      const error = err as { response?: { data?: { detail?: string; turnstile_required?: boolean } } };
+      const newFails = failedAttempts + 1;
+      setFailedAttempts(newFails);
+
+      // Reset Turnstile widget zodat de gebruiker opnieuw kan verifiëren
+      if (turnstileRef.current) {
+        turnstileRef.current.reset();
+      }
+      setTurnstileToken("");
+
       toast({
         variant: "destructive",
         title: "Inloggen mislukt",
@@ -109,7 +138,28 @@ function LoginForm() {
                   className="bg-background/60 border-border/60 focus:border-primary/60"
                 />
               </div>
-              <Button type="submit" className="w-full py-5" disabled={loading}>
+
+              {/* Turnstile — verschijnt na 2 mislukte pogingen */}
+              {showTurnstile && (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-sm text-muted-foreground">
+                    Bevestig dat je een mens bent om door te gaan.
+                  </p>
+                  <Turnstile
+                    ref={turnstileRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onSuccess={(token) => setTurnstileToken(token)}
+                    onError={() => setTurnstileToken("")}
+                    onExpire={() => setTurnstileToken("")}
+                  />
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full py-5"
+                disabled={loading || (showTurnstile && !turnstileToken)}
+              >
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Inloggen
               </Button>
