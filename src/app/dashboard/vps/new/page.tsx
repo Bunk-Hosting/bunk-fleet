@@ -33,8 +33,7 @@ export default function NewVpsPage() {
     async function fetchPackages() {
       try {
         const response = await packagesApi.list();
-        const allowed = ["Starter", "Basic", "Pro"];
-        setPackages(response.data.results.filter((p) => allowed.includes(p.name)));
+        setPackages(response.data.results);
       } catch {
         toast({
           title: "Fout",

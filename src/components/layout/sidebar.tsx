@@ -16,6 +16,9 @@ import {
   LogOut,
   Menu,
   Ticket,
+  CreditCard,
+  Receipt,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -45,6 +48,11 @@ const mainNavItems: NavItem[] = [
   { label: "Nieuwe VPS", href: "/dashboard/vps/new", icon: PlusCircle },
 ];
 
+const billingNavItems: NavItem[] = [
+  { label: "Finance", href: "/dashboard/billing", icon: CreditCard },
+  { label: "Facturen", href: "/dashboard/billing/invoices", icon: Receipt },
+];
+
 const adminNavItems: NavItem[] = [
   { label: "Admin", href: "/dashboard/admin", icon: Shield },
   { label: "Gebruikers", href: "/dashboard/admin/users", icon: Users },
@@ -55,12 +63,22 @@ const adminNavItems: NavItem[] = [
   { label: "Invite codes", href: "/dashboard/admin/invite-codes", icon: Ticket },
 ];
 
-const allNavItems = [...mainNavItems, ...adminNavItems];
+const adminSettingsItem: NavItem = {
+  label: "Instellingen",
+  href: "/dashboard/admin/settings",
+  icon: Settings,
+};
+
+const allNavItems = [
+  ...mainNavItems,
+  ...billingNavItems,
+  ...adminNavItems,
+  adminSettingsItem,
+];
 
 function isActive(itemHref: string, pathname: string): boolean {
   if (pathname === itemHref) return true;
   if (!pathname.startsWith(itemHref + "/")) return false;
-  // Alleen een langere (specifiekere) sibling wint
   return !allNavItems.some(
     (other) =>
       other.href !== itemHref &&
@@ -120,12 +138,20 @@ function SidebarContent({ user }: SidebarProps) {
 
       <Separator />
 
-      {/* Main navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      {/* Scrollable nav area */}
+      <nav className="flex-1 overflow-y-auto space-y-1 px-3 py-4">
         <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Menu
         </p>
         {mainNavItems.map((item) => (
+          <NavLink key={item.href} item={item} pathname={pathname} />
+        ))}
+
+        <Separator className="my-4" />
+        <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Finance
+        </p>
+        {billingNavItems.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
 
@@ -144,9 +170,12 @@ function SidebarContent({ user }: SidebarProps) {
 
       <Separator />
 
-      {/* User info + logout */}
-      <div className="px-3 py-4">
-        <div className="mb-3 px-3">
+      {/* Bodem: instellingen (admin) + uitloggen */}
+      <div className="px-3 py-4 space-y-1">
+        {user.role === "admin" && (
+          <NavLink item={adminSettingsItem} pathname={pathname} />
+        )}
+        <div className="px-3 pt-2">
           <p className="text-sm font-medium">{user.name}</p>
           <p className="text-xs text-muted-foreground">{user.email}</p>
         </div>

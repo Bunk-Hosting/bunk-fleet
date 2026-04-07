@@ -11,6 +11,11 @@ import type {
   OsChoice,
   VpsStatus,
   ReconcileStatusResponse,
+  BillingSettings,
+  BillingOverview,
+  Invoice,
+  CompanySettings,
+  AdminBillingOverview,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -217,6 +222,48 @@ export const adminApi = {
       const searchParams = new URLSearchParams(params);
       return `${API_URL}/api/v1/admin/logs/export/?${searchParams.toString()}`;
     },
+  },
+};
+
+// ─── Billing (gebruiker) ──────────────────────────────────────────────────────
+export const billingApi = {
+  overview: () => api.get<BillingOverview>("/billing/overview/"),
+
+  settings: {
+    get: () => api.get<BillingSettings>("/billing/settings/"),
+    update: (data: Partial<BillingSettings>) =>
+      api.post<BillingSettings>("/billing/settings/", data),
+  },
+
+  invoices: {
+    list: (params?: { status?: string }) =>
+      api.get<{ count: number; results: Invoice[] }>("/invoices/", { params }),
+    get: (id: number) => api.get<Invoice>(`/invoices/${id}/`),
+    pay: (id: number) =>
+      api.post<{ detail: string; invoice_status: string; paid_at: string }>(
+        `/invoices/${id}/pay/`
+      ),
+    downloadUrl: (id: number) =>
+      `${API_URL}/api/v1/invoices/${id}/download/`,
+  },
+};
+
+// ─── Admin Billing ────────────────────────────────────────────────────────────
+export const adminBillingApi = {
+  overview: () => api.get<AdminBillingOverview>("/admin/billing/overview/"),
+
+  company: {
+    get: () => api.get<CompanySettings>("/admin/billing/company/"),
+    update: (data: Partial<CompanySettings>) =>
+      api.post<CompanySettings>("/admin/billing/company/", data),
+  },
+
+  invoices: {
+    list: (params?: { status?: string; user_id?: number }) =>
+      api.get<{ count: number; results: Invoice[] }>("/admin/billing/invoices/", { params }),
+    get: (id: number) => api.get<Invoice>(`/admin/billing/invoices/${id}/`),
+    update: (id: number, data: { status: string }) =>
+      api.patch<Invoice>(`/admin/billing/invoices/${id}/`, data),
   },
 };
 

@@ -1,35 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Toaster } from "@/components/ui/toaster";
-import { authApi } from "@/lib/api";
-import type { User } from "@/lib/types";
+import { UserProvider, useUser } from "@/contexts/UserContext";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchUser() {
-      try {
-        const response = await authApi.me();
-        setUser(response.data);
-      } catch {
-        router.push("/login");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchUser();
-  }, [router]);
+function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useUser();
 
   if (loading) {
     return (
@@ -56,5 +33,17 @@ export default function DashboardLayout({
       </div>
       <Toaster />
     </div>
+  );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <UserProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </UserProvider>
   );
 }
