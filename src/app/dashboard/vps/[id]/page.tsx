@@ -6,8 +6,6 @@ import Link from "next/link";
 import {
   Loader2,
   ArrowLeft,
-  Eye,
-  EyeOff,
   Server,
   Cpu,
   HardDrive,
@@ -50,7 +48,6 @@ export default function VpsDetailPage() {
   const [vps, setVps] = useState<Vps | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -337,61 +334,24 @@ export default function VpsDetailPage() {
           </CardContent>
         </Card>
 
-        {/* SSH details */}
+        {/* Toegang via webterminal */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Terminal className="h-5 w-5" />
-              SSH Gegevens
+              Toegang
             </CardTitle>
             <CardDescription>
-              Gebruik deze gegevens om verbinding te maken via SSH.
+              Verbind met je VPS via de ingebouwde webterminal.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">IP-adres</span>
-              <span className="font-mono font-medium">
-                {vps.ip_address || "Niet beschikbaar"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Poort</span>
-              <span className="font-mono font-medium">{vps.ssh_port}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Gebruikersnaam</span>
-              <span className="font-mono font-medium">{vps.ssh_username}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Wachtwoord</span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-medium">
-                  {vps.ssh_password
-                    ? showPassword
-                      ? vps.ssh_password
-                      : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                    : "Niet beschikbaar"}
-                </span>
-                {vps.ssh_password && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                    <span className="sr-only">
-                      {showPassword ? "Verbergen" : "Tonen"}
-                    </span>
-                  </Button>
-                )}
-              </div>
-            </div>
+          <CardContent>
+            <Link href={`/dashboard/vps/${vps.id}/terminal`}>
+              <Button className="w-full gap-2" disabled={vps.status !== "active"}>
+                <Terminal className="h-4 w-4" />
+                Webterminal openen
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
