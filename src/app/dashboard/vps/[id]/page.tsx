@@ -347,7 +347,7 @@ export default function VpsDetailPage() {
           </CardHeader>
           <CardContent>
             <Link href={`/dashboard/vps/${vps.id}/terminal`}>
-              <Button className="w-full gap-2" disabled={vps.status !== "active"}>
+              <Button className="w-full gap-2" disabled={vps.status !== "ACTIVE"}>
                 <Terminal className="h-4 w-4" />
                 Webterminal openen
               </Button>
