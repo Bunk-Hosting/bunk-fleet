@@ -1,15 +1,45 @@
 name: CD – Deploy naar productie
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 jobs:
+  # ── SAST: statische codeanalyse vóór deployment ──
+  sast:
+    name: SAST – Statische codeanalyse
+    runs-on: self-hosted
+    steps:
+      - name: Pull laatste code
+        run: |
+          cd ~/vps-frontend
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Installeer dependencies
+        run: |
+          cd ~/vps-frontend
+          npm ci
+
+      - name: Run SAST met Semgrep
+        run: |
+          pip install semgrep --break-system-packages
+          cd ~/vps-frontend
+          semgrep scan --config=auto --error --json --output=semgrep-results.json
+        continue-on-error: false
+
+      - name: Upload SAST resultaten
+        if: always()
+        run: |
+          echo "SAST scan voltooid. Resultaten opgeslagen in semgrep-results.json"
+          cd ~/vps-frontend
+          cat semgrep-results.json || true
+
+  # ── DEPLOY: alleen als SAST slaagt ──
   deploy:
     name: Deploy frontend
     runs-on: self-hosted
-
+    needs: sast
     steps:
       - name: Pull laatste code
         run: |
@@ -41,3 +71,64 @@ jobs:
           cd ~/vps-frontend
           docker compose -f docker-compose.prod.yml logs --tail=20
           exit 1
+
+  # ── DAST: dynamische scan nádat de app draait ──
+  dast:
+    name: DAST – Dynamische scan
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Wacht tot frontend stabiel is
+        run: sleep 10
+
+      - name: Pull OWASP ZAP image
+        run: docker pull ghcr.io/zaproxy/zaproxy:stable
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          docker run --rm \
+            --network host \
+            -v ~/zap-reports:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://localhost:3001 \
+              -r zap-report.html \
+              -J zap-report.json \
+              -I
+        continue-on-error: true
+
+      - name: Toon ZAP samenvatting
+        run: |
+          echo "DAST scan voltooid."
+          cat ~/zap-reports/zap-report.json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          sites = data.get('site', [])
+          for site in sites:
+              alerts = site.get('alerts', [])
+              print(f'Gevonden alerts: {len(alerts)}')
+              for alert in alerts:
+                  risk = alert.get('riskdesc', 'Onbekend')
+                  name = alert.get('name', 'Onbekend')
+                  print(f'  [{risk}] {name}')
+          " || echo "Kon rapport niet parsen"
+
+      - name: Blokkeer bij hoog risico
+        run: |
+          HIGH=$(cat ~/zap-reports/zap-report.json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          count = 0
+          for site in data.get('site', []):
+              for alert in site.get('alerts', []):
+                  if alert.get('riskcode') == '3':
+                      count += 1
+          print(count)
+          " 2>/dev/null || echo "0")
+
+          echo "Aantal hoog-risico bevindingen: $HIGH"
+          if [ "$HIGH" -gt "0" ]; then
+            echo "Hoog-risico kwetsbaarheden gevonden! Pipeline gefaald."
+            exit 1
+          fi
+          echo "Geen hoog-risico kwetsbaarheden gevonden."
