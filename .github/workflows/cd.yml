@@ -81,17 +81,18 @@ jobs:
       - name: Pull OWASP ZAP image
         run: docker pull ghcr.io/zaproxy/zaproxy:stable
 
-      - name: Create ZAP reports directory with correct permissions
+      - name: Create ZAP reports directory
         run: |
-          mkdir -p ~/zap-reports
-          chmod 777 ~/zap-reports
+          sudo mkdir -p ~/zap-reports
+          sudo chown -R $(id -u):$(id -g) ~/zap-reports
+          sudo chmod 755 ~/zap-reports
 
       - name: Run OWASP ZAP baseline scan
         run: |
           docker run --rm \
             --network host \
+            --user $(id -u):$(id -g) \
             -v ~/zap-reports:/zap/wrk:rw \
-            -u zap \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
               -t http://localhost:3001 \
