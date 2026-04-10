@@ -16,11 +16,6 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Install dependencies
-        run: |
-          cd ~/vps-frontend
-          npm ci
-
       - name: Run SAST with Semgrep (Docker)
         run: |
           cd ~/vps-frontend
@@ -33,7 +28,7 @@ jobs:
       - name: Display SAST results
         if: always()
         run: |
-          echo "SAST scan completed. Results saved in semgrep-results.json"
+          echo "SAST scan completed."
           cd ~/vps-frontend
           cat semgrep-results.json || true
 
