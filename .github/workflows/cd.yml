@@ -81,18 +81,13 @@ jobs:
       - name: Pull OWASP ZAP image
         run: docker pull ghcr.io/zaproxy/zaproxy:stable
 
-      - name: Create ZAP reports directory
-        run: |
-          sudo mkdir -p ~/zap-reports
-          sudo chown -R $(id -u):$(id -g) ~/zap-reports
-          sudo chmod 755 ~/zap-reports
-
       - name: Run OWASP ZAP baseline scan
         run: |
+          mkdir -p /tmp/zap-reports
           docker run --rm \
             --network host \
             --user $(id -u):$(id -g) \
-            -v ~/zap-reports:/zap/wrk:rw \
+            -v /tmp/zap-reports:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
               -t http://localhost:3001 \
@@ -104,7 +99,7 @@ jobs:
       - name: Display ZAP summary
         run: |
           echo "DAST scan completed."
-          cat ~/zap-reports/zap-report.json | python3 -c "
+          cat /tmp/zap-reports/zap-report.json | python3 -c "
           import json, sys
           data = json.load(sys.stdin)
           sites = data.get('site', [])
@@ -119,7 +114,7 @@ jobs:
 
       - name: Block on high risk findings
         run: |
-          HIGH=$(cat ~/zap-reports/zap-report.json | python3 -c "
+          HIGH=$(cat /tmp/zap-reports/zap-report.json | python3 -c "
           import json, sys
           data = json.load(sys.stdin)
           count = 0
