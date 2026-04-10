@@ -1,4 +1,75 @@
-# ── DAST: dynamic scan after the app is running ──
+name: CD – Deploy to production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ── SAST: static code analysis before deployment ──
+  sast:
+    name: SAST – Static code analysis
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          cd ~/vps-frontend
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Run SAST with Semgrep (Docker)
+        run: |
+          cd ~/vps-frontend
+          docker run --rm \
+            -v $(pwd):/src \
+            returntocorp/semgrep:latest \
+            semgrep scan --config=auto --error --json --output=/src/semgrep-results.json
+        continue-on-error: false
+
+      - name: Display SAST results
+        if: always()
+        run: |
+          echo "SAST scan completed."
+          cd ~/vps-frontend
+          cat semgrep-results.json || true
+
+  # ── DEPLOY: only runs if SAST passes ──
+  deploy:
+    name: Deploy frontend
+    runs-on: self-hosted
+    needs: sast
+    steps:
+      - name: Pull latest code
+        run: |
+          cd ~/vps-frontend
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Build Docker image
+        run: |
+          cd ~/vps-frontend
+          docker compose -f docker-compose.prod.yml build
+
+      - name: Restart frontend
+        run: |
+          cd ~/vps-frontend
+          docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+      - name: Wait for healthy frontend
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsSL -o /dev/null -w '%{http_code}' http://localhost:3001/ 2>/dev/null | grep -qE '200|307'; then
+              echo "Frontend is healthy"
+              exit 0
+            fi
+            echo "Waiting for frontend... ($i/12)"
+            sleep 5
+          done
+          echo "Health check failed!"
+          cd ~/vps-frontend
+          docker compose -f docker-compose.prod.yml logs --tail=20
+          exit 1
+
+  # ── DAST: dynamic scan after the app is running ──
   dast:
     name: DAST – Dynamic scan
     runs-on: self-hosted
