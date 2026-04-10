@@ -21,14 +21,16 @@ jobs:
           cd ~/vps-frontend
           npm ci
 
-      - name: Run SAST with Semgrep
+      - name: Run SAST with Semgrep (Docker)
         run: |
-          pip install semgrep --break-system-packages
           cd ~/vps-frontend
-          semgrep scan --config=auto --error --json --output=semgrep-results.json
+          docker run --rm \
+            -v $(pwd):/src \
+            returntocorp/semgrep:latest \
+            semgrep scan --config=auto --error --json --output=/src/semgrep-results.json
         continue-on-error: false
 
-      - name: Upload SAST results
+      - name: Display SAST results
         if: always()
         run: |
           echo "SAST scan completed. Results saved in semgrep-results.json"
