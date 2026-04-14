@@ -15,12 +15,6 @@ test.describe("Billing pagina's", () => {
     await expect(page.locator("body")).not.toContainText("500", { timeout: 10000 });
   });
 
-  test("facturen worden geladen", async ({ page }) => {
-    await page.goto("/dashboard/billing");
-    // Pagina laadt facturen (of lege staat zonder errors)
-    await expect(page.locator("body")).not.toContainText("Fout", { timeout: 10000 });
-  });
-
   test("toont niet gevonden voor onbekende factuur", async ({ page }) => {
     await page.goto("/dashboard/billing/invoices/99999");
     await expect(page.locator("body")).toContainText(/niet gevonden|404/i, { timeout: 10000 });

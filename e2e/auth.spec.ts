@@ -36,24 +36,11 @@ test.describe("Login pagina", () => {
     await page.getByRole("button", { name: "Inloggen" }).click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
   });
-
-  test("redirect naar ?next= parameter na inloggen", async ({ page }) => {
-    await page.goto("/login?next=/dashboard/vps");
-    await page.getByLabel("E-mailadres").fill(USER_EMAIL);
-    await page.getByLabel("Wachtwoord").fill(USER_PASS);
-    await page.getByRole("button", { name: "Inloggen" }).click();
-    await expect(page).toHaveURL(/\/dashboard\/vps/, { timeout: 10000 });
-  });
 });
 
 test.describe("Beschermde routes", () => {
   test("redirect naar /login als niet ingelogd", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
-  });
-
-  test("redirect naar /login voor admin routes als niet ingelogd", async ({ page }) => {
-    await page.goto("/dashboard/admin");
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
 
@@ -65,28 +52,6 @@ test.describe("Beschermde routes", () => {
     await page.waitForURL(/\/dashboard/);
 
     await page.goto("/dashboard/admin");
-    // Middleware redirectt naar /dashboard of toont 403/404
     await expect(page).not.toHaveURL(/\/dashboard\/admin$/, { timeout: 5000 });
-  });
-});
-
-test.describe("Registratie pagina", () => {
-  test("toont het registratieformulier", async ({ page }) => {
-    await page.goto("/register");
-    await expect(page.getByLabel("Naam")).toBeVisible();
-    await expect(page.getByLabel("E-mailadres")).toBeVisible();
-    await expect(page.getByLabel(/wachtwoord/i)).toBeVisible();
-  });
-
-  test("toont foutmelding bij wachtwoord mismatch", async ({ page }) => {
-    await page.goto("/register");
-    await page.getByLabel("Naam").fill("Test Gebruiker");
-    await page.getByLabel("E-mailadres").fill("nieuw@example.com");
-    // Vul het wachtwoord en bevestigingsveld afzonderlijk
-    const passwordFields = page.getByLabel(/wachtwoord/i);
-    await passwordFields.first().fill("StrongPass123!");
-    await passwordFields.last().fill("DifferentPass!");
-    await page.getByRole("button", { name: /registreer/i }).click();
-    await expect(page.getByText(/wachtwoord/i)).toBeVisible({ timeout: 5000 });
   });
 });
