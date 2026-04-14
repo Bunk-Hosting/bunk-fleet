@@ -7,7 +7,7 @@ import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authApi, ensureCsrfCookie } from "@/lib/api";
+import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
 
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
@@ -41,11 +41,7 @@ function ResetPasswordContent() {
       setStatus("success");
       setTimeout(() => router.push("/login"), 3000);
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string | string[] } } };
-      const detail = error.response?.data?.detail;
-      setErrorMessage(
-        Array.isArray(detail) ? detail.join(" ") : (detail ?? "Er is een fout opgetreden.")
-      );
+      setErrorMessage(parseApiError(err, "De resetlink is ongeldig of verlopen. Vraag een nieuwe aan."));
       setStatus("error");
     } finally {
       setLoading(false);

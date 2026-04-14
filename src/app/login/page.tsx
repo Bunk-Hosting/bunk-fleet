@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import axios from "axios";
-import { authApi, ensureCsrfCookie } from "@/lib/api";
+import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
 type Step = "credentials" | "otp" | "verify_required";
@@ -65,22 +65,17 @@ function LoginForm() {
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        const data = err.response?.data as { detail?: string; verification_required?: boolean } | undefined;
+        const data = err.response?.data as { verification_required?: boolean } | undefined;
         if (data?.verification_required) {
           setStep("verify_required");
           return;
         }
-        toast({
-          variant: "destructive",
-          title: "Inloggen mislukt",
-          description:
-            err.response?.status === 429
-              ? "Te veel pogingen. Probeer het over 15 minuten opnieuw."
-              : (data?.detail ?? "Ongeldig e-mailadres of wachtwoord."),
-        });
-        return;
       }
-      toast({ variant: "destructive", title: "Inloggen mislukt" });
+      toast({
+        variant: "destructive",
+        title: "Inloggen mislukt",
+        description: parseApiError(err, "Ongeldig e-mailadres of wachtwoord."),
+      });
     } finally {
       setLoading(false);
     }

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { packagesApi, vpsApi } from "@/lib/api";
+import { packagesApi, vpsApi, parseApiError } from "@/lib/api";
 import { cn, formatPrice } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
@@ -70,18 +70,9 @@ export default function NewVpsPage() {
       });
       router.push("/dashboard/vps");
     } catch (error: unknown) {
-      const err = error as { response?: { data?: Record<string, string[]> | string[] } };
-      const data = err.response?.data;
-      let message = "Er is iets misgegaan.";
-      if (Array.isArray(data)) {
-        message = data[0];
-      } else if (data && typeof data === "object") {
-        const first = Object.values(data)[0];
-        if (Array.isArray(first)) message = first[0];
-      }
       toast({
         title: "Fout bij aanvragen",
-        description: message,
+        description: parseApiError(error, "Kon VPS niet aanvragen. Probeer het opnieuw."),
         variant: "destructive",
       });
     } finally {

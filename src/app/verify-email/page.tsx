@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { authApi } from "@/lib/api";
+import { authApi, parseApiError } from "@/lib/api";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -29,9 +29,7 @@ function VerifyEmailContent() {
       })
       .catch((err) => {
         setStatus("error");
-        setMessage(
-          err?.response?.data?.detail ?? "De link is ongeldig of verlopen."
-        );
+        setMessage(parseApiError(err, "De link is ongeldig of verlopen."));
       });
   }, [token]);
 

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { adminBillingApi } from "@/lib/api";
+import { adminBillingApi, parseApiError } from "@/lib/api";
 import type { CompanySettings } from "@/lib/types";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -104,13 +104,9 @@ export default function AdminSettingsPage() {
         description: "Bedrijfsinstellingen zijn bijgewerkt.",
       });
     } catch (err: unknown) {
-      const error = err as { response?: { data?: Record<string, string[]> } };
-      const firstError = error.response?.data
-        ? Object.values(error.response.data).flat()[0]
-        : "Er is een fout opgetreden.";
       toast({
         title: "Opslaan mislukt",
-        description: firstError,
+        description: parseApiError(err, "Controleer de ingevulde gegevens."),
         variant: "destructive",
       });
     } finally {
