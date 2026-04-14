@@ -6,6 +6,7 @@ import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import axios from "axios";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -63,22 +64,23 @@ function LoginForm() {
         router.push(next);
       }
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      const data = (err as { response?: { data?: { detail?: string; verification_required?: boolean } } })?.response?.data;
-
-      if (data?.verification_required) {
-        setStep("verify_required");
+      if (axios.isAxiosError(err)) {
+        const data = err.response?.data as { detail?: string; verification_required?: boolean } | undefined;
+        if (data?.verification_required) {
+          setStep("verify_required");
+          return;
+        }
+        toast({
+          variant: "destructive",
+          title: "Inloggen mislukt",
+          description:
+            err.response?.status === 429
+              ? "Te veel pogingen. Probeer het over 15 minuten opnieuw."
+              : (data?.detail ?? "Ongeldig e-mailadres of wachtwoord."),
+        });
         return;
       }
-
-      toast({
-        variant: "destructive",
-        title: "Inloggen mislukt",
-        description:
-          status === 429
-            ? "Te veel pogingen. Probeer het over 15 minuten opnieuw."
-            : (data?.detail ?? "Ongeldig e-mailadres of wachtwoord."),
-      });
+      toast({ variant: "destructive", title: "Inloggen mislukt" });
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import { Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import axios from "axios";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -36,14 +37,16 @@ function RegisterForm() {
       await authApi.register(name, email, password, passwordConfirm);
       setDone(true);
     } catch (err: unknown) {
-      const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
-      const first = data
-        ? Object.values(data).flat().find((v) => typeof v === "string")
-        : null;
+      let description = "Controleer de ingevulde gegevens.";
+      if (axios.isAxiosError(err)) {
+        const data = err.response?.data as Record<string, unknown> | undefined;
+        const first = data ? Object.values(data).flat().find((v) => typeof v === "string") : null;
+        if (typeof first === "string") description = first;
+      }
       toast({
         variant: "destructive",
         title: "Registratie mislukt",
-        description: typeof first === "string" ? first : "Controleer de ingevulde gegevens.",
+        description,
       });
     } finally {
       setLoading(false);
