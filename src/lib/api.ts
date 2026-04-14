@@ -284,4 +284,28 @@ export const adminBillingApi = {
   },
 };
 
+// ─── Error helper ─────────────────────────────────────────────────────────────
+/**
+ * Vertaalt een onbekende fout naar een veilige, gebruiksvriendelijke melding.
+ * Nooit raw backend-data doorsturen naar de gebruiker.
+ *
+ * @param err      De gevangen fout (unknown)
+ * @param fallback Melding bij een 400 of onverwachte status (context-specifiek)
+ */
+export function parseApiError(err: unknown, fallback = "Er is een fout opgetreden."): string {
+  if (!axios.isAxiosError(err)) return fallback;
+  if (!err.response) return "Geen verbinding. Controleer je internetverbinding.";
+  switch (err.response.status) {
+    case 400: return fallback;
+    case 401: return "Je bent niet ingelogd.";
+    case 403: return "Je hebt geen toegang.";
+    case 404: return "Niet gevonden.";
+    case 429: return "Te veel pogingen. Probeer het later opnieuw.";
+    default:
+      return err.response.status >= 500
+        ? "Er is een serverfout opgetreden. Probeer het later opnieuw."
+        : fallback;
+  }
+}
+
 export default api;

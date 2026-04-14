@@ -3,7 +3,7 @@ import * as React from "react";
 import { Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { adminApi } from "@/lib/api";
+import { adminApi, parseApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
 type AllowedEmail = {
@@ -50,11 +50,10 @@ export default function AllowedEmailsPage() {
       setNewEmail("");
       toast({ title: "Toegevoegd", description: trimmed });
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string } } };
       toast({
         variant: "destructive",
         title: "Fout",
-        description: e.response?.data?.detail || "Kon e-mailadres niet toevoegen.",
+        description: parseApiError(err, "Kon e-mailadres niet toevoegen."),
       });
     } finally {
       setAdding(false);
