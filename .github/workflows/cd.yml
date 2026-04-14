@@ -8,28 +8,23 @@ jobs:
   # ── SAST: static code analysis before deployment ──
   sast:
     name: SAST – Static code analysis
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
-      - name: Pull latest code
-        run: |
-          cd ~/vps-frontend
-          git fetch origin main
-          git reset --hard origin/main
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Run SAST with Semgrep (Docker)
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run SAST with Semgrep
         run: |
-          cd ~/vps-frontend
-          docker run --rm \
-            -v $(pwd):/src \
-            returntocorp/semgrep:latest \
-            semgrep scan --config=auto --error --json --output=/src/semgrep-results.json
+          semgrep scan --config=auto --error --json --output=semgrep-results.json src/
         continue-on-error: false
 
       - name: Display SAST results
         if: always()
         run: |
           echo "SAST scan completed."
-          cd ~/vps-frontend
           cat semgrep-results.json || true
 
   # ── DEPLOY: only runs if SAST passes ──
@@ -70,6 +65,7 @@ jobs:
           exit 1
 
   # ── DAST: dynamic scan after the app is running ──
+  # Runs on self-hosted because it needs to reach localhost:3001.
   dast:
     name: DAST – Dynamic scan
     runs-on: self-hosted
@@ -125,7 +121,7 @@ jobs:
           print(count)
           " 2>/dev/null || echo "0")
 
-          echo "Number of high risk findings: $HIGH"
+          echo "High risk findings: $HIGH"
           if [ "$HIGH" -gt "0" ]; then
             echo "High risk vulnerabilities found! Pipeline failed."
             exit 1
