@@ -124,6 +124,12 @@ export const authApi = {
 
   me: () => api.get<User>("/auth/me/"),
 
+  requestOtp: (email: string) =>
+    api.post<{ detail: string }>("/auth/request-otp/", { email }),
+
+  verifyOtp: (email: string, code: string) =>
+    api.post<{ user: User; message: string }>("/auth/verify-otp/", { email, code }),
+
   verifyEmail: (token: string) =>
     api.post<{ detail: string }>("/auth/verify-email/", { token }),
 
@@ -202,12 +208,18 @@ export const adminApi = {
     trigger: () => api.post<{ task_id: string }>("/admin/reconcile/"),
   },
 
-  listInviteCodes: () => api.get<any[]>("/admin/invite-codes/"),
-
-  createInviteCode: (data: { label?: string; max_uses?: number; expires_at?: string | null }) =>
-    api.post("/admin/invite-codes/", data),
-
-  deleteInviteCode: (id: number) => api.delete(`/admin/invite-codes/${id}/`),
+  // Allowed emails (whitelist)
+  listAllowedEmails: () =>
+    api.get<{ id: number; email: string; created_at: string; created_by: string | null }[]>(
+      "/admin/allowed-emails/"
+    ),
+  addAllowedEmail: (email: string) =>
+    api.post<{ id: number; email: string; created_at: string; created_by: string | null }>(
+      "/admin/allowed-emails/",
+      { email }
+    ),
+  removeAllowedEmail: (id: number) =>
+    api.delete(`/admin/allowed-emails/${id}/`),
 
   logs: {
     list: (params?: {

@@ -1,78 +1,87 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { Turnstile } from "@marsidev/react-turnstile";
-import type { TurnstileInstance } from "@marsidev/react-turnstile";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
-const TURNSTILE_REQUIRED_AFTER = 2;
+type Step = "email" | "otp";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
+  const [step, setStep] = React.useState<Step>("email");
   const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [failedAttempts, setFailedAttempts] = React.useState(0);
-  const [turnstileToken, setTurnstileToken] = React.useState("");
-  const turnstileRef = React.useRef<TurnstileInstance>(null);
-
-  const showTurnstile = failedAttempts >= TURNSTILE_REQUIRED_AFTER && !!TURNSTILE_SITE_KEY;
+  const [secondsLeft, setSecondsLeft] = React.useState(0);
 
   React.useEffect(() => {
     ensureCsrfCookie();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (showTurnstile && !turnstileToken) {
-      toast({
-        variant: "destructive",
-        title: "Verificatie vereist",
-        description: "Los de human verificatie op voordat je inlogt.",
+  // Countdown timer — start wanneer step "otp" wordt
+  React.useEffect(() => {
+    if (step !== "otp") return;
+    setSecondsLeft(600);
+    const interval = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return s - 1;
       });
-      return;
-    }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step]);
 
+  function formatTime(s: number) {
+    const m = Math.floor(s / 60).toString().padStart(2, "0");
+    const sec = (s % 60).toString().padStart(2, "0");
+    return `${m}:${sec}`;
+  }
+
+  async function handleRequestOtp(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
-
     try {
-      await authApi.login(email, password, showTurnstile ? turnstileToken : undefined);
-      const next = searchParams.get("next") || "/dashboard";
-      router.push(next);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string; turnstile_required?: boolean } } };
-      const newFails = failedAttempts + 1;
-      setFailedAttempts(newFails);
-
-      // Reset Turnstile widget zodat de gebruiker opnieuw kan verifiëren
-      if (turnstileRef.current) {
-        turnstileRef.current.reset();
-      }
-      setTurnstileToken("");
-
+      await authApi.requestOtp(email);
+      setStep("otp");
+    } catch {
       toast({
         variant: "destructive",
-        title: "Inloggen mislukt",
-        description:
-          error.response?.data?.detail ||
-          "Controleer je e-mailadres en wachtwoord.",
+        title: "Er is een fout opgetreden. Probeer het opnieuw.",
       });
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await authApi.verifyOtp(email, code);
+      const next = searchParams.get("next") || "/dashboard";
+      router.push(next);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Inloggen mislukt",
+        description: "Ongeldige of verlopen code.",
+      });
+      setCode("");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
@@ -89,10 +98,6 @@ function LoginForm() {
             <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
             <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
           </a>
-          <p className="text-sm text-muted-foreground hidden sm:block">
-            Nog geen account?{" "}
-            <Link href="/register" className="text-accent hover:text-foreground transition-colors font-semibold">Registreren</Link>
-          </p>
         </div>
       </header>
 
@@ -102,81 +107,91 @@ function LoginForm() {
           {/* Heading */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-display font-bold mb-2">
-              Welkom terug
+              {step === "email" ? "Welkom terug" : "Controleer je e-mail"}
             </h1>
             <p className="text-muted-foreground">
-              Log in op je Bunk Hosting account
+              {step === "email"
+                ? "Log in op je Bunk Hosting account"
+                : `We hebben een code gestuurd naar ${email}`}
             </p>
           </div>
 
           {/* Card */}
           <div className="card-gradient-border rounded-xl p-6 bg-card">
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="email">E-mailadres</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="naam@voorbeeld.nl"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                  className="bg-background/60 border-border/60 focus:border-primary/60"
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Wachtwoord</Label>
-                  <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-accent transition-colors">
-                    Wachtwoord vergeten?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                  className="bg-background/60 border-border/60 focus:border-primary/60"
-                />
-              </div>
-
-              {/* Turnstile — verschijnt na 2 mislukte pogingen */}
-              {showTurnstile && (
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-sm text-muted-foreground">
-                    Bevestig dat je een mens bent om door te gaan.
-                  </p>
-                  <Turnstile
-                    ref={turnstileRef}
-                    siteKey={TURNSTILE_SITE_KEY}
-                    onSuccess={(token) => setTurnstileToken(token)}
-                    onError={() => setTurnstileToken("")}
-                    onExpire={() => setTurnstileToken("")}
+            {step === "email" ? (
+              <form onSubmit={handleRequestOtp} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="email">E-mailadres</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="naam@voorbeeld.nl"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="bg-background/60 border-border/60 focus:border-primary/60"
                   />
                 </div>
-              )}
 
-              <Button
-                type="submit"
-                className="w-full py-5"
-                disabled={loading || (showTurnstile && !turnstileToken)}
-              >
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Inloggen
-              </Button>
-            </form>
+                <Button
+                  type="submit"
+                  className="w-full py-5"
+                  disabled={loading || !email.trim()}
+                >
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Stuur inlogcode
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="otp">Inlogcode</Label>
+                  <Input
+                    id="otp"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="123456"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    required
+                    disabled={loading}
+                    autoFocus
+                    className="bg-background/60 border-border/60 focus:border-primary/60 text-center tracking-widest text-lg"
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    {secondsLeft > 0
+                      ? `Code geldig tot: ${formatTime(secondsLeft)}`
+                      : "Code is verlopen. Ga terug en probeer opnieuw."}
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full py-5"
+                  disabled={loading || code.length !== 6 || secondsLeft === 0}
+                >
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Inloggen
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => {
+                    setStep("email");
+                    setCode("");
+                  }}
+                  disabled={loading}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Terug
+                </Button>
+              </form>
+            )}
           </div>
-
-          <p className="text-center text-sm text-muted-foreground mt-6 sm:hidden">
-            Nog geen account?{" "}
-            <Link href="/register" className="text-primary hover:text-accent transition-colors">
-              Registreren
-            </Link>
-          </p>
         </div>
       </main>
     </div>
