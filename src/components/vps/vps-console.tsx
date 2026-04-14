@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, WifiOff } from "lucide-react";
+import "xterm/css/xterm.css";
 
 interface VpsConsoleProps {
   vpsId: number;
@@ -29,7 +30,6 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       // Dynamisch laden zodat xterm niet server-side wordt gerenderd
       const { Terminal } = await import("xterm");
       const { FitAddon } = await import("xterm-addon-fit");
-      await import("xterm/css/xterm.css");
 
       if (destroyed) return;
 

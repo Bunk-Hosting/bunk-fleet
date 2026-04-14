@@ -29,9 +29,9 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
-import { adminApi } from "@/lib/api";
+import { adminApi, vpsApi } from "@/lib/api";
 import { formatDateTime, formatPrice, getOsLabel } from "@/lib/utils";
-import type { Vps, VpsStatus } from "@/lib/types";
+import type { Vps, VpsCredentials, VpsStatus } from "@/lib/types";
 
 const ALL_STATUSES: VpsStatus[] = [
   "PENDING",
@@ -50,6 +50,8 @@ export default function AdminVpsDetailPage() {
   const { toast } = useToast();
 
   const [vps, setVps] = useState<Vps | null>(null);
+  const [credentials, setCredentials] = useState<VpsCredentials | null>(null);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -153,6 +155,27 @@ export default function AdminVpsDetailPage() {
     }
   }
 
+  async function fetchCredentials() {
+    if (credentials) {
+      setShowPassword((p) => !p);
+      return;
+    }
+    setCredentialsLoading(true);
+    try {
+      const response = await vpsApi.credentials(vpsId);
+      setCredentials(response.data);
+      setShowPassword(true);
+    } catch {
+      toast({
+        title: "Fout",
+        description: "Kon SSH-gegevens niet ophalen.",
+        variant: "destructive",
+      });
+    } finally {
+      setCredentialsLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -240,26 +263,25 @@ export default function AdminVpsDetailPage() {
                 <p className="text-sm text-muted-foreground">SSH wachtwoord</p>
                 <div className="flex items-center gap-2">
                   <p className="font-medium font-mono">
-                    {vps.ssh_password
+                    {credentials?.ssh_password
                       ? showPassword
-                        ? vps.ssh_password
+                        ? credentials.ssh_password
                         : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
                       : "-"}
                   </p>
-                  {vps.ssh_password && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={fetchCredentials}
+                    disabled={credentialsLoading}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
             </div>
