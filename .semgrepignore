@@ -1,0 +1,4 @@
+# Semgrep ignore — secrets in env files are managed outside of git
+.env
+.env.*
+*.env
