@@ -8,7 +8,7 @@ interface VpsConsoleProps {
   vpsId: number;
 }
 
-type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
+type ConnectionState = "connecting" | "connected" | "disconnected" | "expired" | "error";
 
 const WS_URL =
   (process.env.NEXT_PUBLIC_WS_URL || "wss://api.bunkhosting.nl") +
@@ -87,10 +87,16 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         term.write(new Uint8Array(e.data as ArrayBuffer));
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e: CloseEvent) => {
         if (destroyed) return;
-        setState("disconnected");
-        term.write("\r\n\x1b[33m[Verbinding verbroken]\x1b[0m\r\n");
+        if (e.code === 4001) {
+          // JWT verlopen — aparte state zodat de UI dit duidelijk kan tonen
+          setState("expired");
+          term.write("\r\n\x1b[33m[Sessie verlopen — log opnieuw in]\x1b[0m\r\n");
+        } else {
+          setState("disconnected");
+          term.write("\r\n\x1b[33m[Verbinding verbroken]\x1b[0m\r\n");
+        }
       };
 
       ws.onerror = () => {
@@ -138,6 +144,16 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
             <Loader2 className="h-6 w-6 animate-spin" />
             <span className="text-sm">Verbinding maken met server…</span>
           </div>
+        </div>
+      )}
+
+      {state === "expired" && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-md bg-orange-900/80 px-3 py-2 text-orange-200 text-sm">
+          <WifiOff className="h-4 w-4" />
+          Sessie verlopen —{" "}
+          <a href="/login" className="underline font-medium">
+            opnieuw inloggen
+          </a>
         </div>
       )}
 
