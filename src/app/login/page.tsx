@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,10 @@ function LoginForm() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [secondsLeft, setSecondsLeft] = React.useState(0);
+  const [turnstileRequired, setTurnstileRequired] = React.useState(false);
+  const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
+
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   React.useEffect(() => {
     ensureCsrfCookie();
@@ -54,7 +59,7 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await authApi.login(email, password);
+      const res = await authApi.login(email, password, turnstileToken || undefined);
       if (res.data.otp_required) {
         setStep("otp");
       } else if (res.data.verification_required) {
@@ -65,10 +70,17 @@ function LoginForm() {
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        const data = err.response?.data as { verification_required?: boolean } | undefined;
+        const data = err.response?.data as {
+          verification_required?: boolean;
+          turnstile_required?: boolean;
+        } | undefined;
         if (data?.verification_required) {
           setStep("verify_required");
           return;
+        }
+        if (data?.turnstile_required) {
+          setTurnstileRequired(true);
+          setTurnstileToken(null);
         }
       }
       toast({
@@ -166,10 +178,28 @@ function LoginForm() {
                   />
                 </div>
 
+                {turnstileRequired && (
+                  <div className="space-y-2">
+                    <Label>Bevestig dat je een mens bent</Label>
+                    {turnstileSiteKey ? (
+                      <Turnstile
+                        siteKey={turnstileSiteKey}
+                        onSuccess={(token) => setTurnstileToken(token)}
+                        onExpire={() => setTurnstileToken(null)}
+                        onError={() => setTurnstileToken(null)}
+                      />
+                    ) : (
+                      <p className="text-sm text-destructive">
+                        CAPTCHA configuratie ontbreekt. Zet NEXT_PUBLIC_TURNSTILE_SITE_KEY.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !email.trim() || !password}
+                  disabled={loading || !email.trim() || !password || (turnstileRequired && !turnstileToken)}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Inloggen
