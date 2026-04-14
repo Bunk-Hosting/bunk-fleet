@@ -3,76 +3,101 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { Navbar } from "@/components/layout/navbar";
 import { authApi } from "@/lib/api";
 
-type State = "loading" | "success" | "error";
-
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
-  const [state, setState] = React.useState<State>("loading");
+
+  const [status, setStatus] = React.useState<"loading" | "success" | "error">("loading");
+  const [message, setMessage] = React.useState("");
 
   React.useEffect(() => {
     if (!token) {
-      setState("error");
+      setStatus("error");
+      setMessage("Geen verificatietoken gevonden in de link.");
       return;
     }
+
     authApi
       .verifyEmail(token)
-      .then(() => setState("success"))
-      .catch(() => setState("error"));
+      .then(() => {
+        setStatus("success");
+        setMessage("Je e-mailadres is succesvol bevestigd. Je kunt nu inloggen.");
+      })
+      .catch((err) => {
+        setStatus("error");
+        setMessage(
+          err?.response?.data?.detail ?? "De link is ongeldig of verlopen."
+        );
+      });
   }, [token]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1 flex items-center justify-center py-12">
-        <Card className="w-full max-w-md mx-4">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">E-mailverificatie</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center space-y-6">
-            {state === "loading" && (
+    <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
+      {/* Ambient glow orbs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
+      </div>
+
+      {/* Header */}
+      <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
+          <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
+            <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
+          </a>
+        </div>
+      </header>
+
+      <main className="relative z-10 flex-1 flex items-center justify-center py-12 px-4 pt-28">
+        <div className="w-full max-w-md">
+          <div className="card-gradient-border rounded-xl p-8 bg-card text-center">
+            {status === "loading" && (
               <>
-                <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-                <CardDescription>Je e-mailadres wordt bevestigd...</CardDescription>
+                <Loader2 className="h-12 w-12 animate-spin text-accent mx-auto mb-4" />
+                <h1 className="text-xl font-display font-bold mb-2">Bezig met verifiëren…</h1>
+                <p className="text-muted-foreground text-sm">Even geduld.</p>
               </>
             )}
-            {state === "success" && (
+
+            {status === "success" && (
               <>
-                <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-                <p className="text-sm text-muted-foreground">
-                  Je e-mailadres is succesvol bevestigd. Je kunt nu volledig gebruik maken van je account.
-                </p>
-                <Link href="/dashboard">
-                  <Button className="w-full">Naar dashboard</Button>
-                </Link>
+                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <h1 className="text-xl font-display font-bold mb-2">E-mail bevestigd!</h1>
+                <p className="text-muted-foreground text-sm mb-6">{message}</p>
+                <Button asChild className="w-full">
+                  <Link href="/login">Inloggen</Link>
+                </Button>
               </>
             )}
-            {state === "error" && (
+
+            {status === "error" && (
               <>
-                <XCircle className="mx-auto h-12 w-12 text-destructive" />
-                <p className="text-sm text-muted-foreground">
-                  De verificatielink is ongeldig of verlopen. Vraag een nieuwe link aan via je dashboard.
-                </p>
-                <Link href="/login">
-                  <Button variant="outline" className="w-full">Terug naar inloggen</Button>
-                </Link>
+                <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+                <h1 className="text-xl font-display font-bold mb-2">Verificatie mislukt</h1>
+                <p className="text-muted-foreground text-sm mb-6">{message}</p>
+                <div className="flex flex-col gap-3">
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href="/login">Terug naar inloggen</Link>
+                  </Button>
+                </div>
               </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </main>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <VerifyEmailContent />
+    </React.Suspense>
   );
 }

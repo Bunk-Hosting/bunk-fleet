@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Loader2,
   ArrowLeft,
-  Eye,
-  EyeOff,
   Server,
   Cpu,
   HardDrive,
@@ -210,16 +209,14 @@ export default function VpsDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2 flex-wrap">
-          {/* Console button */}
-          <Button
-            variant="outline"
-            disabled={vps.status !== "ACTIVE"}
-            onClick={() => router.push(`/dashboard/vps/${id}/console`)}
-          >
-            <Terminal className="mr-2 h-4 w-4" />
-            Console
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* Terminal button */}
+          <Link href={`/dashboard/vps/${id}/terminal`}>
+            <Button variant="outline" disabled={vps.status !== "ACTIVE"}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Terminal
+            </Button>
+          </Link>
 
           {/* Start button */}
           <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
@@ -355,70 +352,30 @@ export default function VpsDetailPage() {
               <StatusBadge status={vps.status} />
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Besturingssysteem</span>
-              <span className="font-medium">{getOsLabel(vps.os)}</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-muted-foreground">Aangemaakt op</span>
               <span className="font-medium">{formatDate(vps.created_at)}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* SSH details */}
+        {/* Toegang via webterminal */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Terminal className="h-5 w-5" />
-              SSH Gegevens
+              Toegang
             </CardTitle>
             <CardDescription>
-              Gebruik deze gegevens om verbinding te maken via SSH.
+              Verbind met je VPS via de ingebouwde webterminal.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">IP-adres</span>
-              <span className="font-mono font-medium">
-                {vps.ip_address || "Niet beschikbaar"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Poort</span>
-              <span className="font-mono font-medium">{vps.ssh_port}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Gebruikersnaam</span>
-              <span className="font-mono font-medium">{vps.ssh_username}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Wachtwoord</span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-medium">
-                  {credentials?.ssh_password && showPassword
-                    ? credentials.ssh_password
-                    : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchCredentials}
-                  disabled={credentialsLoading}
-                >
-                  {credentialsLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : showPassword && credentials ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                  <span className="sr-only">
-                    {showPassword ? "Verbergen" : "Tonen"}
-                  </span>
-                </Button>
-              </div>
-            </div>
+          <CardContent>
+            <Link href={`/dashboard/vps/${vps.id}/terminal`}>
+              <Button className="w-full gap-2" disabled={vps.status !== "ACTIVE"}>
+                <Terminal className="h-4 w-4" />
+                Webterminal openen
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 

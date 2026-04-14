@@ -5,10 +5,18 @@ import type {
   VpsCredentials,
   VpsPackage,
   AdminStats,
+  AdminNetworkResponse,
   AuditLog,
+  IPAddressStatus,
   PaginatedResponse,
   OsChoice,
   VpsStatus,
+  ReconcileStatusResponse,
+  BillingSettings,
+  BillingOverview,
+  Invoice,
+  CompanySettings,
+  AdminBillingOverview,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -17,6 +25,13 @@ function getCsrfToken(): string {
   if (typeof document === "undefined") return "";
   const match = document.cookie.match(/csrftoken=([^;]+)/);
   return match ? match[1] : "";
+}
+
+// Haalt de CSRF-cookie op van de backend. Aanroepen vóór de eerste POST
+// als de gebruiker nog geen cookie heeft (bijv. direct naar /login navigeren).
+export async function ensureCsrfCookie(): Promise<void> {
+  if (getCsrfToken()) return;
+  await axios.get(`${API_URL}/api/v1/health/`, { withCredentials: true });
 }
 
 const api = axios.create({
@@ -96,27 +111,30 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ user: User; message: string }>("/auth/login/", { email, password }),
+  login: (email: string, password: string, turnstileToken?: string) => {
+    const data: Record<string, string> = { email, password };
+    if (turnstileToken) data.turnstile_token = turnstileToken;
+    return api.post<{ user: User; message: string }>("/auth/login/", data);
+  },
 
-  register: (data: { name: string; email: string; password: string; password_confirm: string }) =>
+  register: (data: { name: string; email: string; password: string; password_confirm: string; invite_code?: string; turnstile_token?: string }) =>
     api.post<{ user: User; message: string }>("/auth/register/", data),
 
   logout: () => api.post("/auth/logout/"),
 
   me: () => api.get<User>("/auth/me/"),
 
-  passwordResetRequest: (email: string) =>
-    api.post<{ detail: string }>("/auth/password-reset/", { email }),
-
-  passwordResetConfirm: (token: string, password: string, password_confirm: string) =>
-    api.post<{ detail: string }>("/auth/password-reset/confirm/", { token, password, password_confirm }),
-
   verifyEmail: (token: string) =>
     api.post<{ detail: string }>("/auth/verify-email/", { token }),
 
   resendVerification: () =>
     api.post<{ detail: string }>("/auth/verify-email/resend/"),
+
+  requestPasswordReset: (email: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/", { email }),
+
+  confirmPasswordReset: (token: string, password: string, password_confirm: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/confirm/", { token, password, password_confirm }),
 };
 
 // ─── Packages ────────────────────────────────────────────────────────
@@ -174,6 +192,23 @@ export const adminApi = {
     stop: (id: number) => api.post<{ detail: string }>(`/admin/vps/${id}/stop/`),
   },
 
+  network: {
+    list: (params?: { status?: IPAddressStatus }) =>
+      api.get<AdminNetworkResponse>("/admin/network/", { params }),
+  },
+
+  reconcile: {
+    status: () => api.get<ReconcileStatusResponse>("/admin/reconcile/"),
+    trigger: () => api.post<{ task_id: string }>("/admin/reconcile/"),
+  },
+
+  listInviteCodes: () => api.get<any[]>("/admin/invite-codes/"),
+
+  createInviteCode: (data: { label?: string; max_uses?: number; expires_at?: string | null }) =>
+    api.post("/admin/invite-codes/", data),
+
+  deleteInviteCode: (id: number) => api.delete(`/admin/invite-codes/${id}/`),
+
   logs: {
     list: (params?: {
       user_id?: number;
@@ -190,6 +225,48 @@ export const adminApi = {
       const searchParams = new URLSearchParams(params);
       return `${API_URL}/api/v1/admin/logs/export/?${searchParams.toString()}`;
     },
+  },
+};
+
+// ─── Billing (gebruiker) ──────────────────────────────────────────────────────
+export const billingApi = {
+  overview: () => api.get<BillingOverview>("/billing/overview/"),
+
+  settings: {
+    get: () => api.get<BillingSettings>("/billing/settings/"),
+    update: (data: Partial<BillingSettings>) =>
+      api.post<BillingSettings>("/billing/settings/", data),
+  },
+
+  invoices: {
+    list: (params?: { status?: string }) =>
+      api.get<{ count: number; results: Invoice[] }>("/invoices/", { params }),
+    get: (id: number) => api.get<Invoice>(`/invoices/${id}/`),
+    pay: (id: number) =>
+      api.post<{ detail: string; invoice_status: string; paid_at: string }>(
+        `/invoices/${id}/pay/`
+      ),
+    downloadUrl: (id: number) =>
+      `${API_URL}/api/v1/invoices/${id}/download/`,
+  },
+};
+
+// ─── Admin Billing ────────────────────────────────────────────────────────────
+export const adminBillingApi = {
+  overview: () => api.get<AdminBillingOverview>("/admin/billing/overview/"),
+
+  company: {
+    get: () => api.get<CompanySettings>("/admin/billing/company/"),
+    update: (data: Partial<CompanySettings>) =>
+      api.post<CompanySettings>("/admin/billing/company/", data),
+  },
+
+  invoices: {
+    list: (params?: { status?: string; user_id?: number }) =>
+      api.get<{ count: number; results: Invoice[] }>("/admin/billing/invoices/", { params }),
+    get: (id: number) => api.get<Invoice>(`/admin/billing/invoices/${id}/`),
+    update: (id: number, data: { status: string }) =>
+      api.patch<Invoice>(`/admin/billing/invoices/${id}/`, data),
   },
 };
 

@@ -80,11 +80,51 @@ export interface AdminStats {
   error_vps: number;
 }
 
+export type IPAddressStatus = "FREE" | "ASSIGNED" | "RESERVED";
+
+export interface IPAddressEntry {
+  id: number;
+  address: string;
+  status: IPAddressStatus;
+  assigned_at: string | null;
+  vps_id: number | null;
+  infra_name: string | null;
+  owner_email: string | null;
+  package_name: string | null;
+}
+
+export interface NetworkSummary {
+  total: number;
+  free: number;
+  assigned: number;
+  reserved: number;
+}
+
+export interface AdminNetworkResponse {
+  summary: NetworkSummary;
+  results: IPAddressEntry[];
+}
+
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;
   previous: string | null;
   results: T[];
+}
+
+export interface ReconcileResult {
+  started_at: string;
+  finished_at: string | null;
+  vms_checked: number;
+  vms_deleted: number;
+  ips_released: number;
+  orphaned_ips_released: number;
+  error: string | null;
+}
+
+export interface ReconcileStatusResponse {
+  interval_minutes: number;
+  last_result: ReconcileResult | null;
 }
 
 export interface JwtPayload {
@@ -93,4 +133,89 @@ export interface JwtPayload {
   name: string;
   role: "user" | "admin";
   exp: number;
+}
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+export type InvoiceStatus = "draft" | "open" | "paid" | "void";
+export type BillingCycle = "monthly" | "yearly";
+export type PaymentStatus = "pending" | "succeeded" | "failed";
+
+export interface BillingSettings {
+  billing_cycle: BillingCycle;
+  billing_email: string;
+}
+
+export interface BillingOverview {
+  open_amount: string;
+  open_invoice_count: number;
+  monthly_cost: string;
+  active_subscriptions: number;
+  next_invoice_date: string | null;
+}
+
+export interface InvoiceLineItem {
+  id: number;
+  description: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+}
+
+export interface Payment {
+  id: number;
+  amount: string;
+  status: PaymentStatus;
+  provider: string;
+  attempted_at: string;
+  succeeded_at: string | null;
+}
+
+export interface Invoice {
+  id: number;
+  invoice_number: string;
+  status: InvoiceStatus;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+  subtotal: string;
+  discount_amount?: string;
+  vat_rate?: string;
+  vat_amount: string;
+  total: string;
+  company_name?: string;
+  company_address?: string;
+  company_vat_number?: string;
+  company_kvk_number?: string;
+  finalized_at?: string | null;
+  paid_at: string | null;
+  created_at: string;
+  lines?: InvoiceLineItem[];
+  payments?: Payment[];
+}
+
+export interface CompanySettings {
+  company_name: string;
+  address_line1: string;
+  address_line2: string;
+  postal_code: string;
+  city: string;
+  country: string;
+  kvk_number: string;
+  vat_number: string;
+  vat_rate: string;
+  vat_rate_percent: string;
+  yearly_discount_rate: string;
+  yearly_discount_percent: string;
+  support_email: string;
+  invoice_prefix: string;
+  updated_at: string;
+}
+
+export interface AdminBillingOverview {
+  open_invoices_count: number;
+  open_invoices_total: string | number;
+  paid_invoices_count: number;
+  paid_invoices_total: string | number;
+  active_subscriptions: number;
 }

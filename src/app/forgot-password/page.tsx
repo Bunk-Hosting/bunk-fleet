@@ -2,72 +2,79 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
-import { Navbar } from "@/components/layout/navbar";
-import { authApi } from "@/lib/api";
-import { useToast } from "@/components/ui/use-toast";
+import { authApi, ensureCsrfCookie } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
-  const { toast } = useToast();
   const [email, setEmail] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
+
+  React.useEffect(() => {
+    ensureCsrfCookie();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.passwordResetRequest(email);
-      setSubmitted(true);
+      await authApi.requestPasswordReset(email);
     } catch {
-      toast({
-        variant: "destructive",
-        title: "Er is iets misgegaan",
-        description: "Probeer het later opnieuw.",
-      });
+      // Altijd succes tonen — geen user-enumeration
     } finally {
       setLoading(false);
+      setSubmitted(true);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1 flex items-center justify-center py-12">
-        <Card className="w-full max-w-md mx-4">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Wachtwoord vergeten</CardTitle>
-            <CardDescription>
-              Voer je e-mailadres in en ontvang een resetlink.
-            </CardDescription>
-          </CardHeader>
+    <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
+      </div>
 
-          {submitted ? (
-            <CardContent className="text-center space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Als dit e-mailadres bekend is, ontvang je binnen enkele minuten een resetlink.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Controleer ook je spam-map.
-              </p>
-              <Link href="/login">
-                <Button variant="outline" className="w-full">Terug naar inloggen</Button>
-              </Link>
-            </CardContent>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              <CardContent className="space-y-4">
+      <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
+          <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
+            <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
+          </a>
+          <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+            <ArrowLeft className="h-4 w-4" />
+            Terug naar inloggen
+          </Link>
+        </div>
+      </header>
+
+      <main className="relative z-10 flex-1 flex items-center justify-center py-12 px-4 pt-28">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-display font-bold mb-2">Wachtwoord vergeten</h1>
+            <p className="text-muted-foreground">
+              Voer je e-mailadres in om een resetlink te ontvangen.
+            </p>
+          </div>
+
+          <div className="card-gradient-border rounded-xl p-6 bg-card">
+            {submitted ? (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-symbols-outlined text-accent text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>mark_email_read</span>
+                </div>
+                <h2 className="text-lg font-semibold mb-2">Check je inbox</h2>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Als er een account bestaat met dit e-mailadres, ontvang je binnen enkele minuten een resetlink.
+                </p>
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/login">Terug naar inloggen</Link>
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">E-mailadres</Label>
                   <Input
@@ -78,23 +85,17 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     disabled={loading}
+                    className="bg-background/60 border-border/60 focus:border-primary/60"
                   />
                 </div>
-              </CardContent>
-              <CardFooter className="flex flex-col gap-4">
-                <Button type="submit" className="w-full" disabled={loading}>
+                <Button type="submit" className="w-full py-5" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Resetlink versturen
                 </Button>
-                <p className="text-sm text-muted-foreground text-center">
-                  <Link href="/login" className="text-primary hover:underline">
-                    Terug naar inloggen
-                  </Link>
-                </p>
-              </CardFooter>
-            </form>
-          )}
-        </Card>
+              </form>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, Search, Download, ShieldAlert } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -14,6 +14,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { adminApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
@@ -23,7 +31,34 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [avgDialogOpen, setAvgDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  async function handleExport() {
+    const XLSX = await import("xlsx");
+
+    const rows = users.map((u) => ({
+      "ID": u.id,
+      "Naam": u.name,
+      "E-mailadres": u.email,
+      "Rol": u.role,
+      "Aangemeld op": new Date(u.date_joined).toLocaleDateString("nl-NL"),
+      "Actief": u.is_active ? "Ja" : "Nee",
+      "Aantal VPS'en": u.vps_count ?? 0,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [6, 24, 34, 8, 14, 8, 14].map((w) => ({ wch: w }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Gebruikers");
+
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `gebruikers-${date}.xlsx`);
+
+    setAvgDialogOpen(false);
+    toast({ title: "Export klaar", description: "Het Excel-bestand is gedownload." });
+  }
 
   useEffect(() => {
     async function fetchUsers() {
@@ -61,7 +96,13 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Gebruikersbeheer</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Gebruikersbeheer</h1>
+        <Button variant="outline" size="sm" onClick={() => setAvgDialogOpen(true)} disabled={loading}>
+          <Download className="mr-2 h-4 w-4" />
+          Exporteer Excel
+        </Button>
+      </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -123,6 +164,43 @@ export default function AdminUsersPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={avgDialogOpen} onOpenChange={setAvgDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-orange-500" />
+              Persoonsgegevens exporteren
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  Dit bestand bevat <strong>persoonsgegevens</strong> (naam, e-mailadres)
+                  en valt onder de <strong>AVG (GDPR)</strong>.
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                  <li>Gebruik het bestand alleen voor het beoogde doel.</li>
+                  <li>Sla het op een beveiligde locatie op.</li>
+                  <li>Deel het niet met onbevoegden.</li>
+                  <li>Verwijder het zodra het niet meer nodig is.</li>
+                </ul>
+                <p className="text-muted-foreground">
+                  De download wordt vastgelegd in het auditlog (ISO 27001).
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAvgDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleExport}>
+              <Download className="mr-2 h-4 w-4" />
+              Exporteren
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
