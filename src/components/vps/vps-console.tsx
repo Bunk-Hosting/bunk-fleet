@@ -8,7 +8,7 @@ interface VpsConsoleProps {
   vpsId: number;
 }
 
-type ConnectionState = "connecting" | "connected" | "disconnected" | "expired" | "error";
+type ConnectionState = "connecting" | "connected" | "disconnected" | "expired" | "error" | "forbidden" | "ssh_error" | "hostkey";
 
 const WS_URL =
   (process.env.NEXT_PUBLIC_WS_URL || "wss://api.bunkhosting.nl") +
@@ -90,9 +90,17 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       ws.onclose = (e: CloseEvent) => {
         if (destroyed) return;
         if (e.code === 4001) {
-          // JWT verlopen — aparte state zodat de UI dit duidelijk kan tonen
           setState("expired");
           term.write("\r\n\x1b[33m[Sessie verlopen — log opnieuw in]\x1b[0m\r\n");
+        } else if (e.code === 4003 || e.code === 4403) {
+          setState("forbidden");
+          term.write("\r\n\x1b[31m[Geen toegang tot deze VPS]\x1b[0m\r\n");
+        } else if (e.code === 4005) {
+          setState("ssh_error");
+          term.write("\r\n\x1b[31m[SSH-verbinding mislukt — probeer het opnieuw of neem contact op]\x1b[0m\r\n");
+        } else if (e.code === 4006) {
+          setState("hostkey");
+          term.write("\r\n\x1b[31m[SSH host key mismatch — beveiligingscontrole gefaald]\x1b[0m\r\n");
         } else {
           setState("disconnected");
           term.write("\r\n\x1b[33m[Verbinding verbroken]\x1b[0m\r\n");
@@ -168,6 +176,27 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-md bg-red-900/80 px-3 py-2 text-red-200 text-sm">
           <WifiOff className="h-4 w-4" />
           Kon geen verbinding maken
+        </div>
+      )}
+
+      {state === "forbidden" && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-md bg-red-900/80 px-3 py-2 text-red-200 text-sm">
+          <WifiOff className="h-4 w-4" />
+          Geen toegang tot deze VPS
+        </div>
+      )}
+
+      {state === "ssh_error" && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-md bg-red-900/80 px-3 py-2 text-red-200 text-sm">
+          <WifiOff className="h-4 w-4" />
+          SSH-verbinding mislukt — probeer het opnieuw
+        </div>
+      )}
+
+      {state === "hostkey" && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-md bg-red-900/80 px-3 py-2 text-red-200 text-sm">
+          <WifiOff className="h-4 w-4" />
+          SSH host key mismatch — neem contact op
         </div>
       )}
 
