@@ -46,12 +46,18 @@ export interface Vps {
   hostname: string | null;
   ssh_port: number;
   ssh_username: string;
-  ssh_password: string | null;
   vcenter_vm_id: string | null;
   created_at: string;
   updated_at: string;
   owner: number;
   owner_email: string | null;
+}
+
+export interface VpsCredentials {
+  ip_address: string | null;
+  ssh_port: number;
+  ssh_username: string;
+  ssh_password: string | null;
 }
 
 export interface AuditLog {

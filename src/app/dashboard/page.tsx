@@ -40,10 +40,12 @@ export default function DashboardPage() {
     );
   }
 
+  const RECENT_VPS_LIMIT = 5;
+
   const totalVps = vpsList.length;
   const activeVps = vpsList.filter((v) => v.status === "ACTIVE").length;
   const stoppedVps = vpsList.filter((v) => v.status === "STOPPED").length;
-  const recentVps = vpsList.slice(0, 5);
+  const recentVps = vpsList.slice(0, RECENT_VPS_LIMIT);
 
   return (
     <div className="space-y-8">

@@ -36,7 +36,7 @@ import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi } from "@/lib/api";
 import { formatDate, getOsLabel } from "@/lib/utils";
-import type { Vps } from "@/lib/types";
+import type { Vps, VpsCredentials } from "@/lib/types";
 
 export default function VpsDetailPage() {
   const params = useParams();
@@ -46,6 +46,9 @@ export default function VpsDetailPage() {
   const id = Number(params.id);
 
   const [vps, setVps] = useState<Vps | null>(null);
+  const [credentials, setCredentials] = useState<VpsCredentials | null>(null);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
@@ -66,6 +69,27 @@ export default function VpsDetailPage() {
       setLoading(false);
     }
   }, [id, toast]);
+
+  const fetchCredentials = async () => {
+    if (credentials) {
+      setShowPassword((p) => !p);
+      return;
+    }
+    setCredentialsLoading(true);
+    try {
+      const response = await vpsApi.credentials(id);
+      setCredentials(response.data);
+      setShowPassword(true);
+    } catch {
+      toast({
+        title: "Fout",
+        description: "Kon SSH-gegevens niet ophalen.",
+        variant: "destructive",
+      });
+    } finally {
+      setCredentialsLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchVps();

@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   User,
   Vps,
+  VpsCredentials,
   VpsPackage,
   AdminStats,
   AdminNetworkResponse,
@@ -149,6 +150,8 @@ export const vpsApi = {
 
   create: (data: { label?: string; package_id: number; os: OsChoice }) =>
     api.post<Vps>("/vps/", data),
+
+  credentials: (id: number) => api.get<VpsCredentials>(`/vps/${id}/credentials/`),
 
   delete: (id: number) => api.delete(`/vps/${id}/`),
 
