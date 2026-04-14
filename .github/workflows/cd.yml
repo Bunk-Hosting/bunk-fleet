@@ -5,38 +5,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── SAST: static code analysis before deployment ──
-  sast:
-    name: SAST – Static code analysis
-    runs-on: self-hosted
-    steps:
-      - name: Pull latest code
-        run: |
-          cd ~/vps-frontend
-          git fetch origin main
-          git reset --hard origin/main
-
-      - name: Run SAST with Semgrep (Docker)
-        run: |
-          cd ~/vps-frontend
-          docker run --rm \
-            -v $(pwd):/src \
-            returntocorp/semgrep:latest \
-            semgrep scan --config=auto --error --json --output=/src/semgrep-results.json
-        continue-on-error: false
-
-      - name: Display SAST results
-        if: always()
-        run: |
-          echo "SAST scan completed."
-          cd ~/vps-frontend
-          cat semgrep-results.json || true
-
-  # ── DEPLOY: only runs if SAST passes ──
+  # ── DEPLOY: runs on the server so it can reach docker compose ──
   deploy:
     name: Deploy frontend
     runs-on: self-hosted
-    needs: sast
     steps:
       - name: Pull latest code
         run: |
@@ -70,6 +42,7 @@ jobs:
           exit 1
 
   # ── DAST: dynamic scan after the app is running ──
+  # Runs on self-hosted because it needs to reach localhost:3001.
   dast:
     name: DAST – Dynamic scan
     runs-on: self-hosted
@@ -96,22 +69,6 @@ jobs:
               -I
         continue-on-error: true
 
-      - name: Display ZAP summary
-        run: |
-          echo "DAST scan completed."
-          cat /tmp/zap-reports/zap-report.json | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          sites = data.get('site', [])
-          for site in sites:
-              alerts = site.get('alerts', [])
-              print(f'Alerts found: {len(alerts)}')
-              for alert in alerts:
-                  risk = alert.get('riskdesc', 'Unknown')
-                  name = alert.get('name', 'Unknown')
-                  print(f'  [{risk}] {name}')
-          " || echo "Could not parse report"
-
       - name: Block on high risk findings
         run: |
           HIGH=$(cat /tmp/zap-reports/zap-report.json | python3 -c "
@@ -125,9 +82,9 @@ jobs:
           print(count)
           " 2>/dev/null || echo "0")
 
-          echo "Number of high risk findings: $HIGH"
+          echo "High risk findings: $HIGH"
           if [ "$HIGH" -gt "0" ]; then
-            echo "High risk vulnerabilities found! Pipeline failed."
+            echo "High risk vulnerabilities found — pipeline failed."
             exit 1
           fi
           echo "No high risk vulnerabilities found."

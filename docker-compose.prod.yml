@@ -11,3 +11,4 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=https://api.bunkhosting.nl
       - NEXT_PUBLIC_WEBSITE_URL=https://bunkhosting.nl
+      - JWT_SECRET=${JWT_SECRET}
