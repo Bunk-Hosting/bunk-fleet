@@ -15,7 +15,7 @@ import {
   FileText,
   LogOut,
   Menu,
-  Ticket,
+  ShieldCheck,
   CreditCard,
   Receipt,
   Settings,
@@ -60,7 +60,7 @@ const adminNavItems: NavItem[] = [
   { label: "Netwerk", href: "/dashboard/admin/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
   { label: "Reconciliatie", href: "/dashboard/admin/reconcile", icon: RefreshCw },
-  { label: "Invite codes", href: "/dashboard/admin/invite-codes", icon: Ticket },
+  { label: "Whitelist", href: "/dashboard/admin/allowed-emails", icon: ShieldCheck },
 ];
 
 const adminSettingsItem: NavItem = {
