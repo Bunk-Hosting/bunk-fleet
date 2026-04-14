@@ -2,22 +2,24 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import axios from "axios";
 import { authApi, ensureCsrfCookie } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
-type Step = "email" | "otp";
+type Step = "credentials" | "otp" | "verify_required";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  const [step, setStep] = React.useState<Step>("email");
+  const [step, setStep] = React.useState<Step>("credentials");
   const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [secondsLeft, setSecondsLeft] = React.useState(0);
@@ -26,10 +28,10 @@ function LoginForm() {
     ensureCsrfCookie();
   }, []);
 
-  // Countdown timer — start wanneer step "otp" wordt
+  // 15-minuten countdown start zodra OTP-stap actief wordt
   React.useEffect(() => {
     if (step !== "otp") return;
-    setSecondsLeft(600);
+    setSecondsLeft(900);
     const interval = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
@@ -48,27 +50,47 @@ function LoginForm() {
     return `${m}:${sec}`;
   }
 
-  async function handleRequestOtp(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.requestOtp(email);
-      setStep("otp");
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Er is een fout opgetreden. Probeer het opnieuw.",
-      });
+      const res = await authApi.login(email, password);
+      if (res.data.otp_required) {
+        setStep("otp");
+      } else if (res.data.verification_required) {
+        setStep("verify_required");
+      } else {
+        const next = searchParams.get("next") || "/dashboard";
+        router.push(next);
+      }
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const data = err.response?.data as { detail?: string; verification_required?: boolean } | undefined;
+        if (data?.verification_required) {
+          setStep("verify_required");
+          return;
+        }
+        toast({
+          variant: "destructive",
+          title: "Inloggen mislukt",
+          description:
+            err.response?.status === 429
+              ? "Te veel pogingen. Probeer het over 15 minuten opnieuw."
+              : (data?.detail ?? "Ongeldig e-mailadres of wachtwoord."),
+        });
+        return;
+      }
+      toast({ variant: "destructive", title: "Inloggen mislukt" });
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleVerifyOtp(e: React.FormEvent) {
+  async function handleOtp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.verifyOtp(email, code);
+      await authApi.loginOtp(email, code);
       const next = searchParams.get("next") || "/dashboard";
       router.push(next);
     } catch {
@@ -85,13 +107,13 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background bg-dot-grid">
-      {/* Ambient glow orbs — exact match bunkhosting.nl */}
+      {/* Ambient glow orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow" />
         <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow" />
       </div>
 
-      {/* Header — exact bunkhosting stijl */}
+      {/* Header */}
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10 transition-all duration-300">
         <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
           <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
@@ -107,19 +129,21 @@ function LoginForm() {
           {/* Heading */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-display font-bold mb-2">
-              {step === "email" ? "Welkom terug" : "Controleer je e-mail"}
+              {step === "credentials" && "Welkom terug"}
+              {step === "otp" && "Controleer je e-mail"}
+              {step === "verify_required" && "Bevestig je e-mailadres"}
             </h1>
             <p className="text-muted-foreground">
-              {step === "email"
-                ? "Log in op je Bunk Hosting account"
-                : `We hebben een code gestuurd naar ${email}`}
+              {step === "credentials" && "Log in op je Bunk Hosting account"}
+              {step === "otp" && `We hebben een code gestuurd naar ${email}`}
+              {step === "verify_required" && `Er is een bevestigingslink verstuurd naar ${email}`}
             </p>
           </div>
 
           {/* Card */}
           <div className="card-gradient-border rounded-xl p-6 bg-card">
-            {step === "email" ? (
-              <form onSubmit={handleRequestOtp} className="space-y-5">
+            {step === "credentials" && (
+              <form onSubmit={handleLogin} className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="email">E-mailadres</Label>
                   <Input
@@ -133,18 +157,40 @@ function LoginForm() {
                     className="bg-background/60 border-border/60 focus:border-primary/60"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Wachtwoord</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="bg-background/60 border-border/60 focus:border-primary/60"
+                  />
+                </div>
 
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !email.trim()}
+                  disabled={loading || !email.trim() || !password}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Stuur inlogcode
+                  Inloggen
                 </Button>
+
+                <p className="text-center text-sm text-muted-foreground">
+                  Nog geen account?{" "}
+                  <a href="/register" className="text-primary underline-offset-4 hover:underline">
+                    Registreren
+                  </a>
+                </p>
               </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-5">
+            )}
+
+            {step === "otp" && (
+              <form onSubmit={handleOtp} className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="otp">Inlogcode</Label>
                   <Input
@@ -162,8 +208,8 @@ function LoginForm() {
                   />
                   <p className="text-xs text-muted-foreground text-center">
                     {secondsLeft > 0
-                      ? `Code geldig tot: ${formatTime(secondsLeft)}`
-                      : "Code is verlopen. Ga terug en probeer opnieuw."}
+                      ? `Code geldig nog: ${formatTime(secondsLeft)}`
+                      : "Code is verlopen. Ga terug en log opnieuw in."}
                   </p>
                 </div>
 
@@ -173,7 +219,7 @@ function LoginForm() {
                   disabled={loading || code.length !== 6 || secondsLeft === 0}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Inloggen
+                  Bevestig code
                 </Button>
 
                 <Button
@@ -181,7 +227,7 @@ function LoginForm() {
                   variant="ghost"
                   className="w-full"
                   onClick={() => {
-                    setStep("email");
+                    setStep("credentials");
                     setCode("");
                   }}
                   disabled={loading}
@@ -190,6 +236,26 @@ function LoginForm() {
                   Terug
                 </Button>
               </form>
+            )}
+
+            {step === "verify_required" && (
+              <div className="space-y-5 text-center">
+                <div className="flex justify-center">
+                  <MailCheck className="h-12 w-12 text-primary" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Klik op de link in de e-mail om je account te activeren. Daarna kun je inloggen.
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => setStep("credentials")}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Terug naar inloggen
+                </Button>
+              </div>
             )}
           </div>
         </div>

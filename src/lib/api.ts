@@ -111,24 +111,26 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────
 export const authApi = {
+  register: (name: string, email: string, password: string, password_confirm: string) =>
+    api.post<{ detail: string }>("/auth/register/", { name, email, password, password_confirm }),
+
   login: (email: string, password: string, turnstileToken?: string) => {
     const data: Record<string, string> = { email, password };
     if (turnstileToken) data.turnstile_token = turnstileToken;
-    return api.post<{ user: User; message: string }>("/auth/login/", data);
+    return api.post<{
+      detail: string;
+      otp_required?: boolean;
+      verification_required?: boolean;
+      turnstile_required?: boolean;
+    }>("/auth/login/", data);
   },
 
-  register: (data: { name: string; email: string; password: string; password_confirm: string; invite_code?: string; turnstile_token?: string }) =>
-    api.post<{ user: User; message: string }>("/auth/register/", data),
+  loginOtp: (email: string, code: string) =>
+    api.post<{ user: User; message: string }>("/auth/login/otp/", { email, code }),
 
   logout: () => api.post("/auth/logout/"),
 
   me: () => api.get<User>("/auth/me/"),
-
-  requestOtp: (email: string) =>
-    api.post<{ detail: string }>("/auth/request-otp/", { email }),
-
-  verifyOtp: (email: string, code: string) =>
-    api.post<{ user: User; message: string }>("/auth/verify-otp/", { email, code }),
 
   verifyEmail: (token: string) =>
     api.post<{ detail: string }>("/auth/verify-email/", { token }),
