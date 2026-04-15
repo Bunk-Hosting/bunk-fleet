@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,11 @@ function LoginForm() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [secondsLeft, setSecondsLeft] = React.useState(0);
+  const [resendCooldown, setResendCooldown] = React.useState(0);
+  const [turnstileRequired, setTurnstileRequired] = React.useState(false);
+  const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
+
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   React.useEffect(() => {
     ensureCsrfCookie();
@@ -44,6 +50,13 @@ function LoginForm() {
     return () => clearInterval(interval);
   }, [step]);
 
+  // Cooldown-timer voor "Nieuwe code aanvragen"
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
   function formatTime(s: number) {
     const m = Math.floor(s / 60).toString().padStart(2, "0");
     const sec = (s % 60).toString().padStart(2, "0");
@@ -54,7 +67,7 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await authApi.login(email, password);
+      const res = await authApi.login(email, password, turnstileToken || undefined);
       if (res.data.otp_required) {
         setStep("otp");
       } else if (res.data.verification_required) {
@@ -65,10 +78,17 @@ function LoginForm() {
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        const data = err.response?.data as { verification_required?: boolean } | undefined;
+        const data = err.response?.data as {
+          verification_required?: boolean;
+          turnstile_required?: boolean;
+        } | undefined;
         if (data?.verification_required) {
           setStep("verify_required");
           return;
+        }
+        if (data?.turnstile_required) {
+          setTurnstileRequired(true);
+          setTurnstileToken(null);
         }
       }
       toast({
@@ -81,11 +101,35 @@ function LoginForm() {
     }
   }
 
+  async function handleResend() {
+    setLoading(true);
+    try {
+      await authApi.login(email, password);
+      setCode("");
+      setSecondsLeft(900);
+      setResendCooldown(60);
+      toast({
+        title: "Nieuwe code verstuurd",
+        description: "Check je e-mail voor de nieuwe inlogcode.",
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Mislukt",
+        description: "Kon geen nieuwe code versturen. Probeer opnieuw in te loggen.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleOtp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    let succeeded = false;
     try {
       await authApi.loginOtp(email, code);
+      succeeded = true;
       const next = searchParams.get("next") || "/dashboard";
       router.push(next);
     } catch {
@@ -96,7 +140,8 @@ function LoginForm() {
       });
       setCode("");
     } finally {
-      setLoading(false);
+      // Bij succes spinner aan laten staan tot navigatie klaar is
+      if (!succeeded) setLoading(false);
     }
   }
 
@@ -166,10 +211,28 @@ function LoginForm() {
                   />
                 </div>
 
+                {turnstileRequired && (
+                  <div className="space-y-2">
+                    <Label>Bevestig dat je een mens bent</Label>
+                    {turnstileSiteKey ? (
+                      <Turnstile
+                        siteKey={turnstileSiteKey}
+                        onSuccess={(token) => setTurnstileToken(token)}
+                        onExpire={() => setTurnstileToken(null)}
+                        onError={() => setTurnstileToken(null)}
+                      />
+                    ) : (
+                      <p className="text-sm text-destructive">
+                        CAPTCHA configuratie ontbreekt. Zet NEXT_PUBLIC_TURNSTILE_SITE_KEY.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !email.trim() || !password}
+                  disabled={loading || !email.trim() || !password || (turnstileRequired && !turnstileToken)}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Inloggen
@@ -230,6 +293,20 @@ function LoginForm() {
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Terug
                 </Button>
+
+                <p className="text-center text-sm text-muted-foreground">
+                  Geen code ontvangen?{" "}
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={loading || resendCooldown > 0}
+                    className="text-primary underline-offset-4 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                  >
+                    {resendCooldown > 0
+                      ? `Nieuwe code aanvragen (${resendCooldown}s)`
+                      : "Nieuwe code aanvragen"}
+                  </button>
+                </p>
               </form>
             )}
 
@@ -272,3 +349,4 @@ export default function LoginPage() {
     </React.Suspense>
   );
 }
+
