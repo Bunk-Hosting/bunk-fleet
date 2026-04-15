@@ -126,8 +126,10 @@ function LoginForm() {
   async function handleOtp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    let succeeded = false;
     try {
       await authApi.loginOtp(email, code);
+      succeeded = true;
       const next = searchParams.get("next") || "/dashboard";
       router.push(next);
     } catch {
@@ -138,7 +140,8 @@ function LoginForm() {
       });
       setCode("");
     } finally {
-      setLoading(false);
+      // Bij succes spinner aan laten staan tot navigatie klaar is
+      if (!succeeded) setLoading(false);
     }
   }
 
