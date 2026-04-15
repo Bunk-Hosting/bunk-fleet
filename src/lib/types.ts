@@ -57,7 +57,7 @@ export interface VpsCredentials {
   ip_address: string | null;
   ssh_port: number;
   ssh_username: string;
-  ssh_password: string | null;
+  sudo_password: string | null;
 }
 
 export interface AuditLog {

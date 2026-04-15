@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, Loader2, Play, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2, Play, Square, Trash2, Copy, Check } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -58,6 +58,14 @@ export default function AdminVpsDetailPage() {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<VpsStatus>("ACTIVE");
   const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyPassword = async () => {
+    if (!credentials?.sudo_password) return;
+    await navigator.clipboard.writeText(credentials.sudo_password);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     async function fetchVps() {
@@ -260,13 +268,13 @@ export default function AdminVpsDetailPage() {
                 <p className="font-medium font-mono">{vps.ssh_port}</p>
               </div>
               <div className="sm:col-span-2">
-                <p className="text-sm text-muted-foreground">SSH wachtwoord</p>
+                <p className="text-sm text-muted-foreground">Sudo wachtwoord</p>
                 <div className="flex items-center gap-2">
-                  <p className="font-medium font-mono">
-                    {credentials?.ssh_password
+                  <p className="font-medium font-mono tracking-wider">
+                    {credentials?.sudo_password
                       ? showPassword
-                        ? credentials.ssh_password
-                        : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                        ? credentials.sudo_password
+                        : "••••••••••••"
                       : "-"}
                   </p>
                   <Button
@@ -282,6 +290,21 @@ export default function AdminVpsDetailPage() {
                       <Eye className="h-4 w-4" />
                     )}
                   </Button>
+                  {credentials?.sudo_password && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={copyPassword}
+                      title="Kopiëren"
+                    >
+                      {copied ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
