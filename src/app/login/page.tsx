@@ -24,6 +24,7 @@ function LoginForm() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [secondsLeft, setSecondsLeft] = React.useState(0);
+  const [resendCooldown, setResendCooldown] = React.useState(0);
   const [turnstileRequired, setTurnstileRequired] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
 
@@ -48,6 +49,13 @@ function LoginForm() {
     }, 1000);
     return () => clearInterval(interval);
   }, [step]);
+
+  // Cooldown-timer voor "Nieuwe code aanvragen"
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
   function formatTime(s: number) {
     const m = Math.floor(s / 60).toString().padStart(2, "0");
@@ -87,6 +95,28 @@ function LoginForm() {
         variant: "destructive",
         title: "Inloggen mislukt",
         description: parseApiError(err, "Ongeldig e-mailadres of wachtwoord."),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setLoading(true);
+    try {
+      await authApi.login(email, password);
+      setCode("");
+      setSecondsLeft(900);
+      setResendCooldown(60);
+      toast({
+        title: "Nieuwe code verstuurd",
+        description: "Check je e-mail voor de nieuwe inlogcode.",
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Mislukt",
+        description: "Kon geen nieuwe code versturen. Probeer opnieuw in te loggen.",
       });
     } finally {
       setLoading(false);
@@ -260,6 +290,20 @@ function LoginForm() {
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Terug
                 </Button>
+
+                <p className="text-center text-sm text-muted-foreground">
+                  Geen code ontvangen?{" "}
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={loading || resendCooldown > 0}
+                    className="text-primary underline-offset-4 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                  >
+                    {resendCooldown > 0
+                      ? `Nieuwe code aanvragen (${resendCooldown}s)`
+                      : "Nieuwe code aanvragen"}
+                  </button>
+                </p>
               </form>
             )}
 
@@ -302,3 +346,4 @@ export default function LoginPage() {
     </React.Suspense>
   );
 }
+
