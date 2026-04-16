@@ -120,22 +120,29 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         }
       });
 
-      // Ctrl+V → plak uit klembord (navigator.clipboard vereist HTTPS)
-      // Ctrl+Shift+C → kopieer geselecteerde tekst naar klembord
+      // Plakken via paste-event (capture-fase) — werkt met Ctrl+V, Ctrl+Shift+V
+      // en "Plakken" in het browser-contextmenu zonder clipboard-read permissie.
+      // Capture-fase zodat wij de tekst sturen vóór xterm zijn eigen paste-handler
+      // uitvoert (voorkomt dubbele verzending via onData).
+      const handlePaste = (e: ClipboardEvent) => {
+        if (!containerRef.current?.contains(document.activeElement)) return;
+        e.preventDefault();
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        if (text && ws.readyState === WebSocket.OPEN) {
+          ws.send(new TextEncoder().encode(text));
+        }
+      };
+      window.addEventListener("paste", handlePaste, true);
+
+      // Ctrl+Shift+C → kopieer geselecteerde tekst
+      // Ctrl+V → doorsturen naar paste-handler hierboven (return false voorkomt \x16)
       term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
         if (e.type !== "keydown") return true;
 
-        // Plakken: Ctrl+V of Ctrl+Shift+V
-        if (e.ctrlKey && e.key === "v") {
-          navigator.clipboard.readText().then((text) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(new TextEncoder().encode(text));
-            }
-          }).catch(() => {/* klembord niet beschikbaar */});
-          return false; // niet naar terminal doorgeven
+        if (e.ctrlKey && !e.shiftKey && e.key === "v") {
+          return false; // laat browser paste-event afvuren, handlePaste pakt het op
         }
 
-        // Kopiëren: Ctrl+Shift+C
         if (e.ctrlKey && e.shiftKey && e.key === "C") {
           const selection = term.getSelection();
           if (selection) navigator.clipboard.writeText(selection).catch(() => {});
@@ -145,15 +152,14 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         return true;
       });
 
-      // Rechtsklik → plak
+      // Rechtsklik: selectie → kopieer, geen selectie → plak
       containerRef.current?.addEventListener("contextmenu", (e: MouseEvent) => {
         e.preventDefault();
         const selection = term.getSelection();
         if (selection) {
-          // Er is tekst geselecteerd — kopieer
           navigator.clipboard.writeText(selection).catch(() => {});
         } else {
-          // Geen selectie — plak
+          // Geen paste-event bij custom contextmenu — gebruik clipboard API als fallback
           navigator.clipboard.readText().then((text) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(new TextEncoder().encode(text));
@@ -173,7 +179,10 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       });
       observer.observe(containerRef.current);
 
-      return () => observer.disconnect();
+      return () => {
+        observer.disconnect();
+        window.removeEventListener("paste", handlePaste, true);
+      };
     }
 
     const cleanup = init();
