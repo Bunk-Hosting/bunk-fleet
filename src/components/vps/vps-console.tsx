@@ -120,51 +120,51 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         }
       });
 
-      // Ctrl+V: onderschep de keydown in capture-fase MET stopImmediatePropagation
-      // maar ZONDER preventDefault. Zo ziet xterm de keydown niet (stuurt geen \x16),
-      // maar de browser vuurt wél nog een paste-event — dat pakken we hieronder op.
-      const handleCtrlVKeydown = (e: KeyboardEvent) => {
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "v") {
-          e.stopImmediatePropagation();
-          // Geen preventDefault → browser stuurt paste-event naar handlePaste
-        }
-      };
-      containerRef.current.addEventListener("keydown", handleCtrlVKeydown, true);
-
-      // Paste-event (capture-fase): vangt Ctrl+V, Ctrl+Shift+V én browser-contextmenu
-      // "Plakken" op zonder clipboard-read permissie.
-      const handlePaste = (e: ClipboardEvent) => {
-        if (!containerRef.current?.contains(document.activeElement)) return;
-        e.preventDefault(); // voorkomt dat browser ook nog in xterm's textarea plakt
-        const text = e.clipboardData?.getData("text/plain") ?? "";
-        if (text && ws.readyState === WebSocket.OPEN) {
-          ws.send(new TextEncoder().encode(text));
-        }
-      };
-      window.addEventListener("paste", handlePaste, true);
-
-      // Ctrl+Shift+C → kopieer geselecteerde tekst
+      // Ctrl+V → plak via clipboard API (voorkomt dat xterm \x16 stuurt)
+      // Ctrl+Shift+C → kopieer selectie
+      // Rechtsklik bij lege selectie → native contextmenu met "Plakken"
       term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
         if (e.type !== "keydown") return true;
+
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "v") {
+          navigator.clipboard.readText().then((text) => {
+            if (text && ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(text));
+            }
+          }).catch(() => {});
+          return false;
+        }
+
         if (e.ctrlKey && e.shiftKey && e.key === "C") {
           const selection = term.getSelection();
           if (selection) navigator.clipboard.writeText(selection).catch(() => {});
           return false;
         }
+
         return true;
       });
 
-      // Rechtsklik: selectie aanwezig → kopieer (prevent default).
-      // Geen selectie → laat browser z'n eigen contextmenu zien — de gebruiker
-      // kan dan "Plakken" klikken, wat een paste-event afvuurt → handlePaste.
+      // Rechtsklik: selectie aanwezig → kopieer. Geen selectie → native menu
+      // zodat de gebruiker "Plakken" kan kiezen (triggert paste-event hieronder).
       containerRef.current.addEventListener("contextmenu", (e: MouseEvent) => {
         const selection = term.getSelection();
         if (selection) {
           e.preventDefault();
           navigator.clipboard.writeText(selection).catch(() => {});
         }
-        // Geen preventDefault bij lege selectie → browser toont native menu met "Plakken"
       });
+
+      // Paste-event: vangt rechtsklik→Plakken en Ctrl+Shift+V op.
+      // Ctrl+V wordt al afgehandeld door attachCustomKeyEventHandler hierboven.
+      const handlePaste = (e: ClipboardEvent) => {
+        if (!containerRef.current?.contains(document.activeElement)) return;
+        e.preventDefault();
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        if (text && ws.readyState === WebSocket.OPEN) {
+          ws.send(new TextEncoder().encode(text));
+        }
+      };
+      window.addEventListener("paste", handlePaste, true);
 
       // Terminalgrootte aanpassen bij resize
       const observer = new ResizeObserver(() => {
@@ -180,7 +180,6 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       return () => {
         observer.disconnect();
         window.removeEventListener("paste", handlePaste, true);
-        containerRef.current?.removeEventListener("keydown", handleCtrlVKeydown, true);
       };
     }
 
