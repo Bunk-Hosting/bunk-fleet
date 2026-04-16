@@ -90,7 +90,7 @@ api.interceptors.response.use(
         await axios.post(
           `${API_URL}/api/v1/auth/token/refresh/`,
           {},
-          { withCredentials: true }
+          { withCredentials: true, headers: { "X-CSRFToken": getCsrfToken() } }
         );
         processQueue(null);
         return api(originalRequest);
