@@ -120,6 +120,48 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         }
       });
 
+      // Ctrl+V → plak uit klembord (navigator.clipboard vereist HTTPS)
+      // Ctrl+Shift+C → kopieer geselecteerde tekst naar klembord
+      term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        if (e.type !== "keydown") return true;
+
+        // Plakken: Ctrl+V of Ctrl+Shift+V
+        if (e.ctrlKey && e.key === "v") {
+          navigator.clipboard.readText().then((text) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(text));
+            }
+          }).catch(() => {/* klembord niet beschikbaar */});
+          return false; // niet naar terminal doorgeven
+        }
+
+        // Kopiëren: Ctrl+Shift+C
+        if (e.ctrlKey && e.shiftKey && e.key === "C") {
+          const selection = term.getSelection();
+          if (selection) navigator.clipboard.writeText(selection).catch(() => {});
+          return false;
+        }
+
+        return true;
+      });
+
+      // Rechtsklik → plak
+      containerRef.current?.addEventListener("contextmenu", (e: MouseEvent) => {
+        e.preventDefault();
+        const selection = term.getSelection();
+        if (selection) {
+          // Er is tekst geselecteerd — kopieer
+          navigator.clipboard.writeText(selection).catch(() => {});
+        } else {
+          // Geen selectie — plak
+          navigator.clipboard.readText().then((text) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(new TextEncoder().encode(text));
+            }
+          }).catch(() => {});
+        }
+      });
+
       // Terminalgrootte aanpassen bij resize
       const observer = new ResizeObserver(() => {
         if (fitRef.current) {
