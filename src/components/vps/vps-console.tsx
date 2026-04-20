@@ -169,11 +169,18 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       //   - Ctrl+V        (browser vuurt paste na onze return-false hierboven)
       //   - Ctrl+Shift+V  (Linux/Wayland standaard)
       //   - Rechtsklik → Plakken (native contextmenu)
+      //
+      // stopImmediatePropagation() is cruciaal: zonder die call vuurt xterm's
+      // eigen textarea-handler ook, wat via term.onData een tweede WebSocket-send
+      // geeft (dubbele invoer in de terminal). Door propagation in capture-fase te
+      // stoppen ziet xterm de paste-event nooit.
+      //
       // We controleren termActive in plaats van document.activeElement omdat
       // het contextmenu en focuswijzigingen activeElement onbetrouwbaar maken.
       const handlePaste = (e: ClipboardEvent) => {
         if (!termActive) return;
         e.preventDefault();
+        e.stopImmediatePropagation();
         const text = e.clipboardData?.getData("text/plain") ?? "";
         if (text && ws.readyState === WebSocket.OPEN) {
           ws.send(new TextEncoder().encode(text));
