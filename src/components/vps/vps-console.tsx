@@ -124,8 +124,8 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       // Dit is betrouwbaarder dan document.activeElement controleren, omdat
       // rechtermuisklik en contextmenu de focus kunnen verplaatsen vóór het paste-event.
       let termActive = false;
-      term.onFocus(() => { termActive = true; });
-      term.onBlur(() => { termActive = false; });
+      term.textarea?.addEventListener("focus", () => { termActive = true; });
+      term.textarea?.addEventListener("blur", () => { termActive = false; });
 
       // Ctrl+V → voorkom dat xterm \x16 (^V) stuurt; het browser-paste-event
       // handelt de daadwerkelijke inhoud af via handlePaste hieronder.
