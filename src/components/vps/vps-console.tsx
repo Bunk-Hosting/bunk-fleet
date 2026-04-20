@@ -120,18 +120,25 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         }
       });
 
-      // Ctrl+V → plak via clipboard API (voorkomt dat xterm \x16 stuurt)
-      // Ctrl+Shift+C → kopieer selectie
-      // Rechtsklik bij lege selectie → native contextmenu met "Plakken"
+      // Bijhouden of de terminal actief is (gefocust of recent aangeklikt).
+      // Dit is betrouwbaarder dan document.activeElement controleren, omdat
+      // rechtermuisklik en contextmenu de focus kunnen verplaatsen vóór het paste-event.
+      let termActive = false;
+      term.textarea?.addEventListener("focus", () => { termActive = true; });
+      term.textarea?.addEventListener("blur", () => { termActive = false; });
+
+      // Ctrl+V → voorkom dat xterm \x16 (^V) stuurt; het browser-paste-event
+      // handelt de daadwerkelijke inhoud af via handlePaste hieronder.
+      // navigator.clipboard.readText() wordt bewust NIET gebruikt: dat vereist
+      // de "clipboard-read"-permissie die browsers standaard weigeren.
+      //
+      // Ctrl+Shift+C → kopieer huidige selectie naar klembord.
       term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
         if (e.type !== "keydown") return true;
 
         if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "v") {
-          navigator.clipboard.readText().then((text) => {
-            if (text && ws.readyState === WebSocket.OPEN) {
-              ws.send(new TextEncoder().encode(text));
-            }
-          }).catch(() => {});
+          // return false voorkomt ^V in de terminal; de browser vuurt daarna
+          // automatisch een paste-event op de interne textarea van xterm.
           return false;
         }
 
@@ -144,20 +151,28 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
         return true;
       });
 
-      // Rechtsklik: selectie aanwezig → kopieer. Geen selectie → native menu
-      // zodat de gebruiker "Plakken" kan kiezen (triggert paste-event hieronder).
+      // Rechtsklik: selectie aanwezig → kopieer naar klembord (preventDefault).
+      // Geen selectie → toon native contextmenu met "Plakken".
+      // Zet termActive=true zodat het paste-event dat volgt wordt verwerkt,
+      // ook al heeft de browser de focus tijdelijk verschoven naar het menu.
       containerRef.current.addEventListener("contextmenu", (e: MouseEvent) => {
         const selection = term.getSelection();
         if (selection) {
           e.preventDefault();
           navigator.clipboard.writeText(selection).catch(() => {});
+        } else {
+          termActive = true;
         }
       });
 
-      // Paste-event: vangt rechtsklik→Plakken en Ctrl+Shift+V op.
-      // Ctrl+V wordt al afgehandeld door attachCustomKeyEventHandler hierboven.
+      // Paste-event: vangt alle plak-acties op:
+      //   - Ctrl+V        (browser vuurt paste na onze return-false hierboven)
+      //   - Ctrl+Shift+V  (Linux/Wayland standaard)
+      //   - Rechtsklik → Plakken (native contextmenu)
+      // We controleren termActive in plaats van document.activeElement omdat
+      // het contextmenu en focuswijzigingen activeElement onbetrouwbaar maken.
       const handlePaste = (e: ClipboardEvent) => {
-        if (!containerRef.current?.contains(document.activeElement)) return;
+        if (!termActive) return;
         e.preventDefault();
         const text = e.clipboardData?.getData("text/plain") ?? "";
         if (text && ws.readyState === WebSocket.OPEN) {
