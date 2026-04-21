@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Loader2, WifiOff } from "lucide-react";
 import "xterm/css/xterm.css";
+
+export interface VpsConsoleHandle {
+  sendText: (text: string) => void;
+}
 
 interface VpsConsoleProps {
   vpsId: number;
@@ -14,12 +18,22 @@ const WS_URL =
   (process.env.NEXT_PUBLIC_WS_URL || "wss://api.bunkhosting.nl") +
   "/ws/console/";
 
-export function VpsConsole({ vpsId }: VpsConsoleProps) {
+export const VpsConsole = forwardRef<VpsConsoleHandle, VpsConsoleProps>(
+function VpsConsole({ vpsId }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<import("xterm").Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<import("xterm-addon-fit").FitAddon | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
+
+  useImperativeHandle(ref, () => ({
+    sendText: (text: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(new TextEncoder().encode(text));
+        termRef.current?.focus();
+      }
+    },
+  }), []);
 
   useEffect(() => {
     let destroyed = false;
@@ -169,11 +183,18 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       //   - Ctrl+V        (browser vuurt paste na onze return-false hierboven)
       //   - Ctrl+Shift+V  (Linux/Wayland standaard)
       //   - Rechtsklik → Plakken (native contextmenu)
+      //
+      // stopImmediatePropagation() is cruciaal: zonder die call vuurt xterm's
+      // eigen textarea-handler ook, wat via term.onData een tweede WebSocket-send
+      // geeft (dubbele invoer in de terminal). Door propagation in capture-fase te
+      // stoppen ziet xterm de paste-event nooit.
+      //
       // We controleren termActive in plaats van document.activeElement omdat
       // het contextmenu en focuswijzigingen activeElement onbetrouwbaar maken.
       const handlePaste = (e: ClipboardEvent) => {
         if (!termActive) return;
         e.preventDefault();
+        e.stopImmediatePropagation();
         const text = e.clipboardData?.getData("text/plain") ?? "";
         if (text && ws.readyState === WebSocket.OPEN) {
           ws.send(new TextEncoder().encode(text));
@@ -267,7 +288,7 @@ export function VpsConsole({ vpsId }: VpsConsoleProps) {
       <div ref={containerRef} className="h-full w-full p-2" />
     </div>
   );
-}
+});
 
 function sendResize(cols: number, rows: number, ws: WebSocket) {
   ws.send(JSON.stringify({ type: "resize", cols, rows }));
