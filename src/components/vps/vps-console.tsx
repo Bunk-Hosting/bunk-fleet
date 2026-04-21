@@ -288,8 +288,6 @@ function VpsConsole({ vpsId }, ref) {
       <div ref={containerRef} className="h-full w-full p-2" />
     </div>
   );
-}
-
 });
 
 function sendResize(cols: number, rows: number, ws: WebSocket) {
