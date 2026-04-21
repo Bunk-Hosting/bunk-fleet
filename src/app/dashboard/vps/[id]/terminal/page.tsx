@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, WifiOff, Terminal } from "lucide-react";
+import { ArrowLeft, Clipboard, Loader2, WifiOff, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { vpsApi } from "@/lib/api";
 import type { Vps } from "@/lib/types";
@@ -29,6 +29,30 @@ export default function VpsTerminalPage() {
   const [vps, setVps] = useState<Vps | null>(null);
   const [connState, setConnState] = useState<ConnectionState>("connecting");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [pasteHelper, setPasteHelper] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  const handlePasteButton = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(new TextEncoder().encode(text));
+        xtermRef.current?.focus();
+      }
+    } catch {
+      setPasteHelper(true);
+    }
+  };
+
+  const sendPasteHelper = () => {
+    if (pasteText && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(new TextEncoder().encode(pasteText));
+      xtermRef.current?.focus();
+    }
+    setPasteText("");
+    setPasteHelper(false);
+  };
 
   // Fetch VPS info for the header label
   useEffect(() => {
@@ -188,7 +212,44 @@ export default function VpsTerminalPage() {
           <span>{vps ? (vps.label || `VPS #${vps.id}`) : `VPS #${id}`}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="relative ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handlePasteButton}
+            disabled={connState !== "open"}
+          >
+            <Clipboard className="h-4 w-4" />
+            Plakken
+          </Button>
+          {pasteHelper && (
+            <div className="absolute top-full right-0 mt-1 z-20 w-72 rounded-md border bg-card shadow-lg p-3">
+              <p className="text-xs text-muted-foreground mb-2">
+                Klembord geblokkeerd door browser. Plak hier met Ctrl+V:
+              </p>
+              <textarea
+                autoFocus
+                className="w-full h-20 resize-none rounded border bg-background px-2 py-1 font-mono text-sm"
+                placeholder="Plak hier…"
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { setPasteHelper(false); setPasteText(""); }
+                }}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="ghost" size="sm"
+                  onClick={() => { setPasteHelper(false); setPasteText(""); }}>
+                  Annuleren
+                </Button>
+                <Button size="sm" onClick={sendPasteHelper}>Stuur</Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {connState === "connecting" && (
             <>
               <Loader2 className="h-3 w-3 animate-spin" />
