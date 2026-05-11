@@ -157,7 +157,7 @@ export default function AdminVpsPage() {
                     <TableCell>{vps.ip_address ?? "-"}</TableCell>
                     <TableCell>{formatDate(vps.created_at)}</TableCell>
                     <TableCell>
-                      <Link href={`/dashboard/admin/vps/${vps.id}`}>
+                      <Link href={`/dashboard/beheer/vps/${vps.id}`}>
                         <Button variant="outline" size="sm">
                           Bekijken
                         </Button>

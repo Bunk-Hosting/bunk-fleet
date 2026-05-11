@@ -129,7 +129,7 @@ export default function AdminVpsDetailPage() {
         title: "VPS verwijderd",
         description: "De VPS is succesvol verwijderd.",
       });
-      router.push("/dashboard/admin/vps");
+      router.push("/dashboard/beheer/vps");
     } catch {
       toast({
         title: "Fout",
@@ -202,7 +202,7 @@ export default function AdminVpsDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/dashboard/admin/vps">
+      <Link href="/dashboard/beheer/vps">
         <Button variant="ghost" size="sm">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Terug naar VPS beheer

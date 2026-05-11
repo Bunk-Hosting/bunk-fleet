@@ -140,7 +140,7 @@ export default function AdminUserDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/dashboard/admin/users">
+      <Link href="/dashboard/beheer/users">
         <Button variant="ghost" size="sm">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Terug naar gebruikers
@@ -309,7 +309,7 @@ export default function AdminUserDetailPage() {
                     <TableCell>{getOsLabel(vps.os)}</TableCell>
                     <TableCell>{vps.ip_address ?? "-"}</TableCell>
                     <TableCell>
-                      <Link href={`/dashboard/admin/vps/${vps.id}`}>
+                      <Link href={`/dashboard/beheer/vps/${vps.id}`}>
                         <Button variant="outline" size="sm">
                           Bekijken
                         </Button>

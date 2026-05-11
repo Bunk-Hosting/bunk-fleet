@@ -54,18 +54,18 @@ const billingNavItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
-  { label: "Admin", href: "/dashboard/admin", icon: Shield },
-  { label: "Gebruikers", href: "/dashboard/admin/users", icon: Users },
-  { label: "VPS Beheer", href: "/dashboard/admin/vps", icon: ServerCog },
-  { label: "Netwerk", href: "/dashboard/admin/network", icon: Network },
-  { label: "Auditlogs", href: "/dashboard/admin/logs", icon: FileText },
-  { label: "Reconciliatie", href: "/dashboard/admin/reconcile", icon: RefreshCw },
-  { label: "Whitelist", href: "/dashboard/admin/allowed-emails", icon: ShieldCheck },
+  { label: "Admin", href: "/dashboard/beheer", icon: Shield },
+  { label: "Gebruikers", href: "/dashboard/beheer/users", icon: Users },
+  { label: "VPS Beheer", href: "/dashboard/beheer/vps", icon: ServerCog },
+  { label: "Netwerk", href: "/dashboard/beheer/network", icon: Network },
+  { label: "Auditlogs", href: "/dashboard/beheer/logs", icon: FileText },
+  { label: "Reconciliatie", href: "/dashboard/beheer/reconcile", icon: RefreshCw },
+  { label: "Whitelist", href: "/dashboard/beheer/allowed-emails", icon: ShieldCheck },
 ];
 
 const adminSettingsItem: NavItem = {
   label: "Instellingen",
-  href: "/dashboard/admin/settings",
+  href: "/dashboard/beheer/settings",
   icon: Settings,
 };
 

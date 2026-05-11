@@ -43,7 +43,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Protect admin routes
-    if (pathname.startsWith("/dashboard/admin") && payload?.role !== "admin") {
+    if (pathname.startsWith("/dashboard/beheer") && payload?.role !== "admin") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
