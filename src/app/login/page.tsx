@@ -25,7 +25,6 @@ function LoginForm() {
   const [loading, setLoading] = React.useState(false);
   const [secondsLeft, setSecondsLeft] = React.useState(0);
   const [resendCooldown, setResendCooldown] = React.useState(0);
-  const [turnstileRequired, setTurnstileRequired] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
@@ -87,8 +86,13 @@ function LoginForm() {
           return;
         }
         if (data?.turnstile_required) {
-          setTurnstileRequired(true);
           setTurnstileToken(null);
+          toast({
+            variant: "destructive",
+            title: "Nog niet geverifieerd",
+            description: "Bevestig dat je een mens bent via de CAPTCHA.",
+          });
+          return;
         }
       }
       toast({
@@ -209,28 +213,26 @@ function LoginForm() {
                   />
                 </div>
 
-                {turnstileRequired && (
-                  <div className="space-y-2">
-                    <Label>Bevestig dat je een mens bent</Label>
-                    {turnstileSiteKey ? (
-                      <Turnstile
-                        siteKey={turnstileSiteKey}
-                        onSuccess={(token) => setTurnstileToken(token)}
-                        onExpire={() => setTurnstileToken(null)}
-                        onError={() => setTurnstileToken(null)}
-                      />
-                    ) : (
-                      <p className="text-sm text-destructive">
-                        CAPTCHA configuratie ontbreekt. Zet NEXT_PUBLIC_TURNSTILE_SITE_KEY.
-                      </p>
-                    )}
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label>Bevestig dat je een mens bent</Label>
+                  {turnstileSiteKey ? (
+                    <Turnstile
+                      siteKey={turnstileSiteKey}
+                      onSuccess={(token) => setTurnstileToken(token)}
+                      onExpire={() => setTurnstileToken(null)}
+                      onError={() => setTurnstileToken(null)}
+                    />
+                  ) : (
+                    <p className="text-sm text-destructive">
+                      CAPTCHA configuratie ontbreekt. Zet NEXT_PUBLIC_TURNSTILE_SITE_KEY.
+                    </p>
+                  )}
+                </div>
 
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !email.trim() || !password || (turnstileRequired && !turnstileToken)}
+                  disabled={loading || !email.trim() || !password || (!!turnstileSiteKey && !turnstileToken)}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Inloggen
