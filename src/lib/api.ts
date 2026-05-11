@@ -170,58 +170,58 @@ export const vpsApi = {
 
 // ─── Admin ───────────────────────────────────────────────────────────
 export const adminApi = {
-  stats: () => api.get<AdminStats>("/admin/stats/"),
+  stats: () => api.get<AdminStats>("/beheer/stats/"),
 
   users: {
-    list: () => api.get<{ count: number; results: User[] }>("/admin/users/"),
+    list: () => api.get<{ count: number; results: User[] }>("/beheer/users/"),
 
-    get: (id: number) => api.get<{ user: User; vps: Vps[] }>(`/admin/users/${id}/`),
+    get: (id: number) => api.get<{ user: User; vps: Vps[] }>(`/beheer/users/${id}/`),
 
     update: (id: number, data: { role?: "user" | "admin"; is_active?: boolean }) =>
-      api.patch<User>(`/admin/users/${id}/`, data),
+      api.patch<User>(`/beheer/users/${id}/`, data),
   },
 
   vps: {
     list: (params?: { status?: VpsStatus; owner_id?: number; os?: OsChoice }) =>
-      api.get<{ count: number; results: Vps[] }>("/admin/vps/", { params }),
+      api.get<{ count: number; results: Vps[] }>("/beheer/vps/", { params }),
 
-    get: (id: number) => api.get<Vps>(`/admin/vps/${id}/`),
+    get: (id: number) => api.get<Vps>(`/beheer/vps/${id}/`),
 
     create: (data: { label?: string; package_id: number; os: OsChoice; owner_id: number }) =>
-      api.post<Vps>("/admin/vps/", data),
+      api.post<Vps>("/beheer/vps/", data),
 
     update: (id: number, data: { status: VpsStatus }) =>
-      api.patch<Vps>(`/admin/vps/${id}/`, data),
+      api.patch<Vps>(`/beheer/vps/${id}/`, data),
 
-    delete: (id: number) => api.delete(`/admin/vps/${id}/`),
+    delete: (id: number) => api.delete(`/beheer/vps/${id}/`),
 
-    start: (id: number) => api.post<{ detail: string }>(`/admin/vps/${id}/start/`),
+    start: (id: number) => api.post<{ detail: string }>(`/beheer/vps/${id}/start/`),
 
-    stop: (id: number) => api.post<{ detail: string }>(`/admin/vps/${id}/stop/`),
+    stop: (id: number) => api.post<{ detail: string }>(`/beheer/vps/${id}/stop/`),
   },
 
   network: {
     list: (params?: { status?: IPAddressStatus }) =>
-      api.get<AdminNetworkResponse>("/admin/network/", { params }),
+      api.get<AdminNetworkResponse>("/beheer/network/", { params }),
   },
 
   reconcile: {
-    status: () => api.get<ReconcileStatusResponse>("/admin/reconcile/"),
-    trigger: () => api.post<{ task_id: string }>("/admin/reconcile/"),
+    status: () => api.get<ReconcileStatusResponse>("/beheer/reconcile/"),
+    trigger: () => api.post<{ task_id: string }>("/beheer/reconcile/"),
   },
 
   // Allowed emails (whitelist)
   listAllowedEmails: () =>
     api.get<{ id: number; email: string; created_at: string; created_by: string | null }[]>(
-      "/admin/allowed-emails/"
+      "/beheer/allowed-emails/"
     ),
   addAllowedEmail: (email: string) =>
     api.post<{ id: number; email: string; created_at: string; created_by: string | null }>(
-      "/admin/allowed-emails/",
+      "/beheer/allowed-emails/",
       { email }
     ),
   removeAllowedEmail: (id: number) =>
-    api.delete(`/admin/allowed-emails/${id}/`),
+    api.delete(`/beheer/allowed-emails/${id}/`),
 
   logs: {
     list: (params?: {
@@ -233,11 +233,11 @@ export const adminApi = {
       date_to?: string;
       page?: number;
       page_size?: number;
-    }) => api.get<PaginatedResponse<AuditLog>>("/admin/logs/", { params }),
+    }) => api.get<PaginatedResponse<AuditLog>>("/beheer/logs/", { params }),
 
     exportUrl: (params?: Record<string, string>) => {
       const searchParams = new URLSearchParams(params);
-      return `${API_URL}/api/v1/admin/logs/export/?${searchParams.toString()}`;
+      return `${API_URL}/api/v1/beheer/logs/export/?${searchParams.toString()}`; // beheer ipv admin — Cloudflare WAF vermijding
     },
   },
 };
@@ -267,20 +267,20 @@ export const billingApi = {
 
 // ─── Admin Billing ────────────────────────────────────────────────────────────
 export const adminBillingApi = {
-  overview: () => api.get<AdminBillingOverview>("/admin/billing/overview/"),
+  overview: () => api.get<AdminBillingOverview>("/beheer/billing/overview/"),
 
   company: {
-    get: () => api.get<CompanySettings>("/admin/billing/company/"),
+    get: () => api.get<CompanySettings>("/beheer/billing/company/"),
     update: (data: Partial<CompanySettings>) =>
-      api.post<CompanySettings>("/admin/billing/company/", data),
+      api.post<CompanySettings>("/beheer/billing/company/", data),
   },
 
   invoices: {
     list: (params?: { status?: string; user_id?: number }) =>
-      api.get<{ count: number; results: Invoice[] }>("/admin/billing/invoices/", { params }),
-    get: (id: number) => api.get<Invoice>(`/admin/billing/invoices/${id}/`),
+      api.get<{ count: number; results: Invoice[] }>("/beheer/billing/invoices/", { params }),
+    get: (id: number) => api.get<Invoice>(`/beheer/billing/invoices/${id}/`),
     update: (id: number, data: { status: string }) =>
-      api.patch<Invoice>(`/admin/billing/invoices/${id}/`, data),
+      api.patch<Invoice>(`/beheer/billing/invoices/${id}/`, data),
   },
 };
 

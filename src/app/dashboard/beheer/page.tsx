@@ -111,7 +111,7 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Link href="/dashboard/admin/users">
+        <Link href="/dashboard/beheer/users">
           <Card className="cursor-pointer transition-colors hover:bg-muted/50">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Gebruikers beheren</CardTitle>
@@ -119,7 +119,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
           </Card>
         </Link>
-        <Link href="/dashboard/admin/vps">
+        <Link href="/dashboard/beheer/vps">
           <Card className="cursor-pointer transition-colors hover:bg-muted/50">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">VPS beheren</CardTitle>
@@ -127,7 +127,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
           </Card>
         </Link>
-        <Link href="/dashboard/admin/logs">
+        <Link href="/dashboard/beheer/logs">
           <Card className="cursor-pointer transition-colors hover:bg-muted/50">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Auditlogs bekijken</CardTitle>

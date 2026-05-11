@@ -152,7 +152,7 @@ export default function AdminUsersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Link href={`/dashboard/admin/users/${user.id}`}>
+                    <Link href={`/dashboard/beheer/users/${user.id}`}>
                       <Button variant="outline" size="sm">
                         Bekijken
                       </Button>
