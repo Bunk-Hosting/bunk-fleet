@@ -133,10 +133,15 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.loginOtp(email, code);
+      const res = await authApi.loginOtp(email, code);
       setCode("");
-      const next = searchParams.get("next") || "/dashboard";
-      router.push(next);
+      // Stuur nieuwe gebruikers (zonder TOTP) direct naar de MFA-setup
+      if (!res.data?.user?.totp_enabled) {
+        router.push("/dashboard/beveiliging?mfa_setup=1");
+      } else {
+        const next = searchParams.get("next") || "/dashboard";
+        router.push(next);
+      }
     } catch {
       toast({
         variant: "destructive",

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ShieldCheck, ShieldOff, Loader2, Copy, Check } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,9 +12,13 @@ import { useToast } from "@/components/ui/use-toast";
 
 type SetupStep = "idle" | "scanning" | "confirming" | "disabling";
 
-export default function BeveiligingPage() {
+function BeveiligingContent() {
   const { user, refresh } = useUser();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const isMfaPrompt = searchParams.get("mfa_setup") === "1";
 
   const [step, setStep] = React.useState<SetupStep>("idle");
   const [qrDataUrl, setQrDataUrl] = React.useState("");
@@ -21,6 +26,14 @@ export default function BeveiligingPage() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+
+  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
+  React.useEffect(() => {
+    if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
+      startSetup();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMfaPrompt, user]);
 
   async function startSetup() {
     setLoading(true);
@@ -51,6 +64,9 @@ export default function BeveiligingPage() {
       setQrDataUrl("");
       setSecret("");
       toast({ title: "TOTP ingeschakeld", description: "Je account is nu beveiligd met een authenticator-app." });
+      if (isMfaPrompt) {
+        router.push("/dashboard");
+      }
     } catch (err) {
       toast({
         variant: "destructive",
@@ -98,6 +114,20 @@ export default function BeveiligingPage() {
         <h1 className="text-2xl font-display font-bold">Beveiliging</h1>
         <p className="text-muted-foreground mt-1">Beheer twee-factor-authenticatie voor je account.</p>
       </div>
+
+      {/* MFA-prompt banner — alleen zichtbaar na eerste inlog zonder TOTP */}
+      {isMfaPrompt && !user.totp_enabled && (
+        <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+          <ShieldAlert className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-sm">Beveilig je account met een authenticator-app</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Scan de QR-code hieronder met Google Authenticator, Authy of een andere TOTP-app.
+              Hierna heb je naast je wachtwoord altijd een unieke code nodig om in te loggen.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* TOTP status kaart */}
       <div className="card-gradient-border rounded-xl p-6 bg-card space-y-4">
@@ -177,8 +207,16 @@ export default function BeveiligingPage() {
             <Button onClick={() => setStep("confirming")} className="w-full">
               Volgende — code bevestigen
             </Button>
-            <Button variant="ghost" className="w-full" onClick={() => { setStep("idle"); setCode(""); }}>
-              Annuleren
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setStep("idle");
+                setCode("");
+                if (isMfaPrompt) router.push("/dashboard");
+              }}
+            >
+              {isMfaPrompt ? "Overslaan — later instellen" : "Annuleren"}
             </Button>
           </div>
         )}
@@ -258,5 +296,13 @@ export default function BeveiligingPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function BeveiligingPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <BeveiligingContent />
+    </React.Suspense>
   );
 }
