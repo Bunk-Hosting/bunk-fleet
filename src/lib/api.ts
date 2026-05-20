@@ -120,6 +120,7 @@ export const authApi = {
     return api.post<{
       detail: string;
       otp_required?: boolean;
+      totp_required?: boolean;
       verification_required?: boolean;
       turnstile_required?: boolean;
     }>("/auth/login/", data);
@@ -127,6 +128,9 @@ export const authApi = {
 
   loginOtp: (email: string, code: string) =>
     api.post<{ user: User; message: string }>("/auth/login/otp/", { email, code }),
+
+  loginTotp: (email: string, code: string) =>
+    api.post<{ user: User; message: string }>("/auth/login/totp/", { email, code }),
 
   logout: () => api.post("/auth/logout/"),
 
@@ -143,6 +147,15 @@ export const authApi = {
 
   confirmPasswordReset: (token: string, password: string, password_confirm: string) =>
     api.post<{ detail: string }>("/auth/password-reset/confirm/", { token, password, password_confirm }),
+
+  totp: {
+    setup: () =>
+      api.get<{ secret: string; qr_data_url: string }>("/auth/totp/setup/"),
+    confirm: (code: string) =>
+      api.post<{ detail: string }>("/auth/totp/setup/", { code }),
+    disable: (code: string) =>
+      api.delete<{ detail: string }>("/auth/totp/disable/", { data: { code } }),
+  },
 };
 
 // ─── Packages ────────────────────────────────────────────────────────

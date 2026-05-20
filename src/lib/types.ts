@@ -6,6 +6,7 @@ export interface User {
   date_joined: string;
   is_active: boolean;
   vps_count?: number;
+  totp_enabled: boolean;
 }
 
 export type VpsStatus =
