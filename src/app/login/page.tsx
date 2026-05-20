@@ -11,7 +11,7 @@ import axios from "axios";
 import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
-type Step = "credentials" | "otp" | "verify_required";
+type Step = "credentials" | "otp" | "totp" | "verify_required";
 
 function LoginForm() {
   const router = useRouter();
@@ -33,7 +33,7 @@ function LoginForm() {
     ensureCsrfCookie();
   }, []);
 
-  // 15-minuten countdown start zodra OTP-stap actief wordt
+  // 15-minuten countdown start zodra e-mail OTP-stap actief wordt
   React.useEffect(() => {
     if (step !== "otp") return;
     setSecondsLeft(900);
@@ -67,7 +67,9 @@ function LoginForm() {
     setLoading(true);
     try {
       const res = await authApi.login(email, password, turnstileToken || undefined);
-      if (res.data.otp_required) {
+      if (res.data.totp_required) {
+        setStep("totp");
+      } else if (res.data.otp_required) {
         setStep("otp");
       } else if (res.data.verification_required) {
         setStep("verify_required");
@@ -132,7 +134,7 @@ function LoginForm() {
     setLoading(true);
     try {
       await authApi.loginOtp(email, code);
-      setCode(""); // Leegmaken zodat knop disabled blijft tijdens navigatie
+      setCode("");
       const next = searchParams.get("next") || "/dashboard";
       router.push(next);
     } catch {
@@ -140,6 +142,26 @@ function LoginForm() {
         variant: "destructive",
         title: "Inloggen mislukt",
         description: "Ongeldige of verlopen code.",
+      });
+      setCode("");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTotp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await authApi.loginTotp(email, code);
+      setCode("");
+      const next = searchParams.get("next") || "/dashboard";
+      router.push(next);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Inloggen mislukt",
+        description: "Ongeldige authenticator-code.",
       });
       setCode("");
     } finally {
@@ -173,11 +195,13 @@ function LoginForm() {
             <h1 className="text-3xl font-display font-bold mb-2">
               {step === "credentials" && "Welkom terug"}
               {step === "otp" && "Controleer je e-mail"}
+              {step === "totp" && "Authenticator-code"}
               {step === "verify_required" && "Bevestig je e-mailadres"}
             </h1>
             <p className="text-muted-foreground">
               {step === "credentials" && "Log in op je Bunk Hosting account"}
               {step === "otp" && `We hebben een code gestuurd naar ${email}`}
+              {step === "totp" && "Voer de 6-cijferige code in uit je authenticator-app"}
               {step === "verify_required" && `Er is een bevestigingslink verstuurd naar ${email}`}
             </p>
           </div>
@@ -307,6 +331,51 @@ function LoginForm() {
                       : "Nieuwe code aanvragen"}
                   </button>
                 </p>
+              </form>
+            )}
+
+            {step === "totp" && (
+              <form onSubmit={handleTotp} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="totp-code">Authenticator-code</Label>
+                  <Input
+                    id="totp-code"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="123456"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    required
+                    disabled={loading}
+                    autoFocus
+                    autoComplete="one-time-code"
+                    className="bg-background/60 border-border/60 focus:border-primary/60 text-center tracking-widest text-lg"
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    Open je authenticator-app en voer de huidige 6-cijferige code in.
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full py-5"
+                  disabled={loading || code.length !== 6}
+                >
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Verifiëren
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => { setStep("credentials"); setCode(""); }}
+                  disabled={loading}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Terug
+                </Button>
               </form>
             )}
 

@@ -46,6 +46,7 @@ const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Mijn VPS'en", href: "/dashboard/vps", icon: Server },
   { label: "Nieuwe VPS", href: "/dashboard/vps/new", icon: PlusCircle },
+  { label: "Beveiliging", href: "/dashboard/beveiliging", icon: ShieldCheck },
 ];
 
 const billingNavItems: NavItem[] = [
@@ -60,7 +61,7 @@ const adminNavItems: NavItem[] = [
   { label: "Netwerk", href: "/dashboard/beheer/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/beheer/logs", icon: FileText },
   { label: "Reconciliatie", href: "/dashboard/beheer/reconcile", icon: RefreshCw },
-  { label: "Whitelist", href: "/dashboard/beheer/allowed-emails", icon: ShieldCheck },
+  { label: "Whitelist", href: "/dashboard/beheer/allowed-emails", icon: Shield },
 ];
 
 const adminSettingsItem: NavItem = {
