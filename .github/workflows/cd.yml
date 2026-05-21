@@ -33,11 +33,18 @@ jobs:
     runs-on: self-hosted
     needs: sast
     steps:
-      - name: Pull latest code
+      - name: Pull latest code (fail-fast bij silent error)
         run: |
+          set -euo pipefail
           cd ~/vps-frontend
-          # Zelf-helend: ruim stale remote-refs op die "fatal: bad object" veroorzaken.
-          # Komt voor wanneer branches op origin worden verwijderd (PR-merge auto-delete).
+          # Eigendomsproblemen op .git oplossen — voorkomt "Permission denied"
+          # op refs door een eerdere sudo-aanroep.
+          if [ -d .git ]; then
+            sudo -n chown -R "$(id -u)":"$(id -g)" .git 2>/dev/null || \
+              echo "Geen sudo-rechten voor chown; sla over"
+          fi
+          # Zelf-helend: ruim stale remote-refs op die "fatal: bad object"
+          # veroorzaken na branch auto-delete bij PR-merge.
           git remote prune origin 2>/dev/null || true
           if ! git fetch --prune origin main; then
             echo "Fetch faalde - corrupte refs opruimen en opnieuw proberen"
@@ -46,9 +53,19 @@ jobs:
             git fetch --prune origin main
           fi
           git reset --hard origin/main
+          # Verifieer dat we daadwerkelijk op origin/main zitten — een silent
+          # reset-failure (door rechten) zou anders met OUDE code doorgaan.
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git rev-parse origin/main)"
+          if [ "$LOCAL" != "$REMOTE" ]; then
+            echo "FOUT: HEAD ($LOCAL) komt niet overeen met origin/main ($REMOTE)" >&2
+            exit 1
+          fi
+          echo "Werkboom is up-to-date met origin/main: $LOCAL"
 
       - name: Build Docker image
         run: |
+          set -euo pipefail
           cd ~/vps-frontend
           docker compose -f docker-compose.prod.yml build
 
@@ -59,18 +76,51 @@ jobs:
 
       - name: Wait for healthy frontend
         run: |
+          set -euo pipefail
           for i in $(seq 1 12); do
             if curl -fsSL -o /dev/null -w '%{http_code}' http://localhost:3001/ 2>/dev/null | grep -qE '200|307'; then
               echo "Frontend is healthy"
-              exit 0
+              break
             fi
             echo "Waiting for frontend... ($i/12)"
             sleep 5
+            if [ "$i" = "12" ]; then
+              echo "Health check failed!"
+              cd ~/vps-frontend
+              docker compose -f docker-compose.prod.yml logs --tail=20
+              exit 1
+            fi
           done
-          echo "Health check failed!"
-          cd ~/vps-frontend
-          docker compose -f docker-compose.prod.yml logs --tail=20
-          exit 1
+
+      - name: Smoke test — kritieke routes
+        run: |
+          # Vangt het geval dat / werkt maar /login/dashboard 404 geeft door
+          # een stale build (zoals 21-05 incident waar de site april-build draaide).
+          set -euo pipefail
+          FAILED=0
+          for path in / /login /register /forgot-password /robots.txt /ai.txt; do
+            code=$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:3001$path" 2>/dev/null || echo "000")
+            # /robots.txt en /ai.txt mogen 200 zijn; pagina-routes 200 of 307 (auth redirect)
+            case "$path" in
+              /robots.txt|/ai.txt)
+                expected="200" ;;
+              *)
+                expected="200|307|308" ;;
+            esac
+            if echo "$code" | grep -qE "^($expected)$"; then
+              echo "  OK   $path → $code"
+            else
+              echo "  FAIL $path → $code (verwacht $expected)" >&2
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "Smoke-test mislukt — kritieke routes zijn niet correct"
+            cd ~/vps-frontend
+            docker compose -f docker-compose.prod.yml logs --tail=40
+            exit 1
+          fi
+          echo "Smoke-test: alle kritieke routes OK"
 
   # ── DAST: dynamic scan after the app is running ──
   # Runs on self-hosted because it needs to reach localhost:3001.
