@@ -27,15 +27,7 @@ function BeveiligingContent() {
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
-  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
-  React.useEffect(() => {
-    if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
-      startSetup();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMfaPrompt, user]);
-
-  async function startSetup() {
+  const startSetup = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await authApi.totp.setup();
@@ -51,7 +43,14 @@ function BeveiligingContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [toast]);
+
+  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
+  React.useEffect(() => {
+    if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
+      startSetup();
+    }
+  }, [isMfaPrompt, user, step, startSetup]);
 
   async function confirmSetup(e: React.FormEvent) {
     e.preventDefault();
@@ -101,7 +100,7 @@ function BeveiligingContent() {
   }
 
   function copySecret() {
-    navigator.clipboard.writeText(secret);
+    navigator.clipboard.writeText(secret).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -142,8 +141,8 @@ function BeveiligingContent() {
               <p className="font-semibold">Authenticator-app (TOTP)</p>
               <p className="text-sm text-muted-foreground">
                 {user.totp_enabled
-                  ? "Actief — je account is beveiligd met een authenticator-app."
-                  : "Niet actief — schakel dit in voor extra beveiliging."}
+                  ? "Actief, je account is beveiligd met een authenticator-app."
+                  : "Niet actief. Schakel dit in voor extra beveiliging."}
               </p>
             </div>
           </div>
@@ -205,7 +204,7 @@ function BeveiligingContent() {
             </div>
 
             <Button onClick={() => setStep("confirming")} className="w-full">
-              Volgende — code bevestigen
+              Volgende: code bevestigen
             </Button>
             <Button
               variant="ghost"
@@ -216,7 +215,7 @@ function BeveiligingContent() {
                 if (isMfaPrompt) router.push("/dashboard");
               }}
             >
-              {isMfaPrompt ? "Overslaan — later instellen" : "Annuleren"}
+              {isMfaPrompt ? "Overslaan, later instellen" : "Annuleren"}
             </Button>
           </div>
         )}
@@ -291,7 +290,7 @@ function BeveiligingContent() {
         <p className="font-medium text-foreground">Wat is TOTP?</p>
         <p>
           TOTP (Time-based One-Time Password) genereert elke 30 seconden een unieke code in je authenticator-app.
-          Naast je wachtwoord heb je deze code nodig om in te loggen — zelfs als je wachtwoord uitgelekt is,
+          Naast je wachtwoord heb je deze code nodig om in te loggen. Zelfs als je wachtwoord uitgelekt is,
           kan niemand zonder je telefoon inloggen.
         </p>
       </div>

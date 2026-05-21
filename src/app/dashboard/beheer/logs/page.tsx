@@ -31,6 +31,7 @@ const PAGE_SIZE = 25;
 function statusCodeColor(code: number | null): string {
   if (code === null) return "";
   if (code >= 200 && code < 300) return "text-green-600 font-medium";
+  if (code >= 300 && code < 400) return "text-blue-500 font-medium";
   if (code >= 400 && code < 500) return "text-orange-600 font-medium";
   if (code >= 500) return "text-red-600 font-medium";
   return "";

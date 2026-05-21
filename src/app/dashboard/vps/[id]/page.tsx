@@ -99,7 +99,7 @@ export default function VpsDetailPage() {
 
   const copyPassword = async () => {
     if (!credentials?.sudo_password) return;
-    await navigator.clipboard.writeText(credentials.sudo_password);
+    await navigator.clipboard.writeText(credentials.sudo_password).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

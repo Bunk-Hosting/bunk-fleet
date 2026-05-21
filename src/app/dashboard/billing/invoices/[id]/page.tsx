@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { billingApi } from "@/lib/api";
 import type { Invoice } from "@/lib/types";
 import { useToast } from "@/components/ui/use-toast";
+import { formatEuro, formatDateLong as formatDate } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   open: { label: "Openstaand", variant: "destructive" },
@@ -18,18 +19,6 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   void: { label: "Vervallen", variant: "outline" },
 };
 
-function formatEuro(value: string | number): string {
-  return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("nl-NL", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();

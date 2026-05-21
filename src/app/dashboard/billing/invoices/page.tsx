@@ -16,6 +16,7 @@ import {
 import { billingApi } from "@/lib/api";
 import type { Invoice } from "@/lib/types";
 import { useToast } from "@/components/ui/use-toast";
+import { formatEuro, formatDate } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Alle statussen" },
@@ -31,17 +32,6 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   void: { label: "Vervallen", variant: "outline" },
 };
 
-function formatEuro(value: string | number): string {
-  return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("nl-NL", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function InvoiceListPage() {
   const { toast } = useToast();
