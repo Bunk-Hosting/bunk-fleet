@@ -36,7 +36,15 @@ jobs:
       - name: Pull latest code
         run: |
           cd ~/vps-frontend
-          git fetch origin main
+          # Zelf-helend: ruim stale remote-refs op die "fatal: bad object" veroorzaken.
+          # Komt voor wanneer branches op origin worden verwijderd (PR-merge auto-delete).
+          git remote prune origin 2>/dev/null || true
+          if ! git fetch --prune origin main; then
+            echo "Fetch faalde - corrupte refs opruimen en opnieuw proberen"
+            rm -rf .git/refs/remotes/origin
+            rm -f .git/packed-refs
+            git fetch --prune origin main
+          fi
           git reset --hard origin/main
 
       - name: Build Docker image
