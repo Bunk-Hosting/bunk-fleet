@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { RefreshCw, CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
 import {
   Card,
@@ -37,19 +37,27 @@ export default function ReconcilePage() {
     fetchStatus();
   }, [fetchStatus]);
 
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   async function handleTrigger() {
     setRunning(true);
     try {
       await adminApi.reconcile.trigger();
       toast({ title: "Gestart", description: "Reconciliatie wordt uitgevoerd op de achtergrond." });
-      // Poll until last_result updates (max ~30s)
       let attempts = 0;
-      const poll = setInterval(async () => {
+      pollRef.current = setInterval(async () => {
         attempts++;
         const res = await adminApi.reconcile.status();
         setData(res.data);
         if (res.data.last_result?.finished_at || attempts >= 15) {
-          clearInterval(poll);
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
           setRunning(false);
         }
       }, 2000);

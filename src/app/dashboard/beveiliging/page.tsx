@@ -27,15 +27,7 @@ function BeveiligingContent() {
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
-  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
-  React.useEffect(() => {
-    if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
-      startSetup();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMfaPrompt, user]);
-
-  async function startSetup() {
+  const startSetup = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await authApi.totp.setup();
@@ -51,7 +43,14 @@ function BeveiligingContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [toast]);
+
+  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
+  React.useEffect(() => {
+    if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
+      startSetup();
+    }
+  }, [isMfaPrompt, user, step, startSetup]);
 
   async function confirmSetup(e: React.FormEvent) {
     e.preventDefault();
@@ -101,7 +100,7 @@ function BeveiligingContent() {
   }
 
   function copySecret() {
-    navigator.clipboard.writeText(secret);
+    navigator.clipboard.writeText(secret).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

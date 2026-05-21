@@ -190,8 +190,7 @@ export default function VpsTerminalPage() {
       fitRef.current = null;
       wsRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, sendResize]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen md:-m-8 md:p-0">
