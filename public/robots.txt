@@ -1,3 +1,6 @@
+# Bunk Hosting robots.txt
+# Zie ook /ai.txt voor AI-specifieke richtlijnen
+
 User-agent: *
 Disallow: /dashboard/
 Disallow: /api/v1/debug/
@@ -6,3 +9,29 @@ Disallow: /.env
 Disallow: /backup/
 Disallow: /adminer.php
 Disallow: /phpinfo.php
+Disallow: /wp-admin/
+Disallow: /wp-login.php
+
+# AI-crawlers en LLM-agents: zie /ai.txt voor verplichte richtlijnen
+User-agent: GPTBot
+Disallow: /
+User-agent: ChatGPT-User
+Disallow: /
+User-agent: ClaudeBot
+Disallow: /
+User-agent: Claude-Web
+Disallow: /
+User-agent: Google-Extended
+Disallow: /
+User-agent: PerplexityBot
+Disallow: /
+User-agent: anthropic-ai
+Disallow: /
+User-agent: cohere-ai
+Disallow: /
+User-agent: CCBot
+Disallow: /
+User-agent: PentestGPT
+Disallow: /
+User-agent: AutoPentester
+Disallow: /
