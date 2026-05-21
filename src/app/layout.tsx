@@ -15,7 +15,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Bunk Hosting - VPS Beheer",
+  title: "Bunk Hosting | VPS Beheer",
   description: "Beheer je virtuele servers via het Bunk Hosting dashboard.",
   icons: { icon: "/favicon.svg" },
 };

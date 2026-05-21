@@ -88,7 +88,7 @@ function isActive(itemHref: string, pathname: string): boolean {
   );
 }
 
-function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
+function NavLink({ item, pathname, badge }: { item: NavItem; pathname: string; badge?: boolean }) {
   const active = isActive(item.href, pathname);
 
   return (
@@ -101,8 +101,11 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
-      <item.icon className="h-4 w-4" />
-      {item.label}
+      <item.icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{item.label}</span>
+      {badge && (
+        <span className="h-2 w-2 rounded-full bg-orange-500 shrink-0" />
+      )}
     </Link>
   );
 }
@@ -145,7 +148,12 @@ function SidebarContent({ user }: SidebarProps) {
           Menu
         </p>
         {mainNavItems.map((item) => (
-          <NavLink key={item.href} item={item} pathname={pathname} />
+          <NavLink
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            badge={item.href === "/dashboard/beveiliging" && !user.totp_enabled}
+          />
         ))}
 
         <Separator className="my-4" />

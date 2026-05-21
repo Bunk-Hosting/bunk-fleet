@@ -142,8 +142,8 @@ function BeveiligingContent() {
               <p className="font-semibold">Authenticator-app (TOTP)</p>
               <p className="text-sm text-muted-foreground">
                 {user.totp_enabled
-                  ? "Actief — je account is beveiligd met een authenticator-app."
-                  : "Niet actief — schakel dit in voor extra beveiliging."}
+                  ? "Actief, je account is beveiligd met een authenticator-app."
+                  : "Niet actief. Schakel dit in voor extra beveiliging."}
               </p>
             </div>
           </div>
@@ -205,7 +205,7 @@ function BeveiligingContent() {
             </div>
 
             <Button onClick={() => setStep("confirming")} className="w-full">
-              Volgende — code bevestigen
+              Volgende: code bevestigen
             </Button>
             <Button
               variant="ghost"
@@ -216,7 +216,7 @@ function BeveiligingContent() {
                 if (isMfaPrompt) router.push("/dashboard");
               }}
             >
-              {isMfaPrompt ? "Overslaan — later instellen" : "Annuleren"}
+              {isMfaPrompt ? "Overslaan, later instellen" : "Annuleren"}
             </Button>
           </div>
         )}
@@ -291,7 +291,7 @@ function BeveiligingContent() {
         <p className="font-medium text-foreground">Wat is TOTP?</p>
         <p>
           TOTP (Time-based One-Time Password) genereert elke 30 seconden een unieke code in je authenticator-app.
-          Naast je wachtwoord heb je deze code nodig om in te loggen — zelfs als je wachtwoord uitgelekt is,
+          Naast je wachtwoord heb je deze code nodig om in te loggen. Zelfs als je wachtwoord uitgelekt is,
           kan niemand zonder je telefoon inloggen.
         </p>
       </div>

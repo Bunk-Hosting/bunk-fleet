@@ -83,7 +83,7 @@ export default function BillingOverviewPage() {
           <div className="text-sm">
             <span className="font-semibold text-destructive">
               {overview.open_invoice_count} openstaande{" "}
-              {overview.open_invoice_count === 1 ? "factuur" : "facturen"} —{" "}
+              {overview.open_invoice_count === 1 ? "factuur" : "facturen"},{" "}
               {formatEuro(overview.open_amount)} te betalen.
             </span>{" "}
             <Link href="/dashboard/billing/invoices" className="underline underline-offset-2">
