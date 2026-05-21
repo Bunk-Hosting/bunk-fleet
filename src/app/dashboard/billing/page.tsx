@@ -10,19 +10,7 @@ import { Loader2 } from "lucide-react";
 import { billingApi } from "@/lib/api";
 import type { BillingOverview, Invoice } from "@/lib/types";
 import { useToast } from "@/components/ui/use-toast";
-
-function formatEuro(value: string | number): string {
-  return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("nl-NL", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
+import { formatEuro, formatDateLong as formatDate } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   open: { label: "Openstaand", variant: "destructive" },

@@ -29,6 +29,19 @@ export function formatPrice(price: number | string): string {
   return `€${Number(price).toFixed(2).replace(".", ",")}`;
 }
 
+export function formatEuro(value: number | string): string {
+  return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
+}
+
+export function formatDateLong(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleDateString("nl-NL", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export function getOsLabel(os: string): string {
   const labels: Record<string, string> = {
     "ubuntu-22.04": "Ubuntu 22.04 LTS",

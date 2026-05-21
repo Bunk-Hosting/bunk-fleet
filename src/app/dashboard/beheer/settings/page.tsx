@@ -17,6 +17,8 @@ import { adminBillingApi, parseApiError } from "@/lib/api";
 import type { CompanySettings } from "@/lib/types";
 import { useToast } from "@/components/ui/use-toast";
 
+const MAX_YEARLY_DISCOUNT = 0.10;
+
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<CompanySettings | null>(null);
@@ -86,7 +88,7 @@ export default function AdminSettingsPage() {
       toast({ title: "Ongeldig BTW-tarief", description: "Voer een percentage in tussen 0 en 100.", variant: "destructive" });
       return;
     }
-    if (isNaN(discountNum) || discountNum < 0 || discountNum > 0.10) {
+    if (isNaN(discountNum) || discountNum < 0 || discountNum > MAX_YEARLY_DISCOUNT) {
       toast({ title: "Ongeldige korting", description: "Jaarlijkse korting mag maximaal 10% zijn.", variant: "destructive" });
       return;
     }
@@ -95,8 +97,8 @@ export default function AdminSettingsPage() {
     try {
       const res = await adminBillingApi.company.update({
         ...form,
-        vat_rate: vatRateNum.toFixed(4) as unknown as string,
-        yearly_discount_rate: discountNum.toFixed(4) as unknown as string,
+        vat_rate: vatRateNum.toFixed(4),
+        yearly_discount_rate: discountNum.toFixed(4),
       });
       setSettings(res.data);
       toast({
