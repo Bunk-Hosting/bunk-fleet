@@ -13,6 +13,14 @@ import { useToast } from "@/components/ui/use-toast";
 
 type Step = "credentials" | "otp" | "totp" | "verify_required";
 
+function safeNext(raw: string | null): string {
+  if (!raw) return "/dashboard";
+  // Sta alleen relatieve paden toe die beginnen met één slash.
+  // Dit blokkeert open redirects naar externe URLs (//, https://, etc.).
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  return raw;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -74,7 +82,7 @@ function LoginForm() {
       } else if (res.data.verification_required) {
         setStep("verify_required");
       } else {
-        const next = searchParams.get("next") || "/dashboard";
+        const next = safeNext(searchParams.get("next"));
         router.push(next);
       }
     } catch (err: unknown) {
@@ -139,7 +147,7 @@ function LoginForm() {
       if (!res.data?.user?.totp_enabled) {
         router.push("/dashboard/beveiliging?mfa_setup=1");
       } else {
-        const next = searchParams.get("next") || "/dashboard";
+        const next = safeNext(searchParams.get("next"));
         router.push(next);
       }
     } catch {
@@ -160,7 +168,7 @@ function LoginForm() {
     try {
       await authApi.loginTotp(email, code);
       setCode("");
-      const next = searchParams.get("next") || "/dashboard";
+      const next = safeNext(searchParams.get("next"));
       router.push(next);
     } catch {
       toast({
