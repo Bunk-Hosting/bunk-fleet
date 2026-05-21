@@ -420,15 +420,26 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <React.Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      }
-    >
-      <LoginForm />
-    </React.Suspense>
+    <>
+      {/* Honeypot: nep debug-attribuut zichtbaar in page source voor red teamers */}
+      <div
+        hidden
+        aria-hidden="true"
+        data-debug-env="staging"
+        data-debug-user="devtest@bunkhosting.nl"
+        data-debug-pass="Bunk@Staging2024"
+        data-debug-hint="zie ook /api/v1/debug/ — remove before prod!"
+      />
+      <React.Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        }
+      >
+        <LoginForm />
+      </React.Suspense>
+    </>
   );
 }
 

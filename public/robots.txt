@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /dashboard/
+Disallow: /api/v1/debug/
+Disallow: /api/v1/internal/
+Disallow: /.env
+Disallow: /backup/
+Disallow: /adminer.php
+Disallow: /phpinfo.php
