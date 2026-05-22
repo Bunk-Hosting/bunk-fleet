@@ -3,6 +3,7 @@
 import * as React from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { reportClientError } from "@/lib/observability";
 
 interface DashboardErrorProps {
   error: Error & { digest?: string };
@@ -26,6 +27,10 @@ export default function DashboardError({ error, reset }: DashboardErrorProps) {
   React.useEffect(() => {
     // eslint-disable-next-line no-console
     console.error("[dashboard error boundary]", error);
+    reportClientError(error.message, {
+      stack: error.stack,
+      digest: error.digest,
+    });
   }, [error]);
 
   return (
