@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Loader2, MailCheck } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,9 @@ function RegisterForm() {
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
+
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   React.useEffect(() => {
     ensureCsrfCookie();
@@ -33,9 +37,20 @@ function RegisterForm() {
     }
     setLoading(true);
     try {
-      await authApi.register(name, email, password, passwordConfirm);
+      await authApi.register(
+        name,
+        email,
+        password,
+        passwordConfirm,
+        turnstileToken || undefined,
+      );
       setDone(true);
     } catch (err: unknown) {
+      // Backend kan vragen om Turnstile te (her)valideren; reset de widget.
+      const data = (err as { response?: { data?: { turnstile_required?: boolean } } })?.response?.data;
+      if (data?.turnstile_required) {
+        setTurnstileToken(null);
+      }
       toast({
         variant: "destructive",
         title: "Registratie mislukt",
@@ -145,10 +160,32 @@ function RegisterForm() {
                   />
                 </div>
 
+                <div className="flex justify-center">
+                  {turnstileSiteKey ? (
+                    <Turnstile
+                      siteKey={turnstileSiteKey}
+                      onSuccess={(token) => setTurnstileToken(token)}
+                      onExpire={() => setTurnstileToken(null)}
+                      onError={() => setTurnstileToken(null)}
+                    />
+                  ) : (
+                    <p className="text-sm text-destructive">
+                      CAPTCHA configuratie ontbreekt. Zet NEXT_PUBLIC_TURNSTILE_SITE_KEY.
+                    </p>
+                  )}
+                </div>
+
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !name.trim() || !email.trim() || !password || !passwordConfirm}
+                  disabled={
+                    loading ||
+                    !name.trim() ||
+                    !email.trim() ||
+                    !password ||
+                    !passwordConfirm ||
+                    (!!turnstileSiteKey && !turnstileToken)
+                  }
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Account aanmaken

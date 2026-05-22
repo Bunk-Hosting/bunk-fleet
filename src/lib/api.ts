@@ -111,8 +111,20 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────
 export const authApi = {
-  register: (name: string, email: string, password: string, password_confirm: string) =>
-    api.post<{ detail: string }>("/auth/register/", { name, email, password, password_confirm }),
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    password_confirm: string,
+    turnstile_token?: string,
+  ) =>
+    api.post<{ detail: string }>("/auth/register/", {
+      name,
+      email,
+      password,
+      password_confirm,
+      ...(turnstile_token ? { turnstile_token } : {}),
+    }),
 
   login: (email: string, password: string, turnstileToken?: string) => {
     const data: Record<string, string> = { email, password };
@@ -222,19 +234,6 @@ export const adminApi = {
     status: () => api.get<ReconcileStatusResponse>("/beheer/reconcile/"),
     trigger: () => api.post<{ task_id: string }>("/beheer/reconcile/"),
   },
-
-  // Allowed emails (whitelist)
-  listAllowedEmails: () =>
-    api.get<{ id: number; email: string; created_at: string; created_by: string | null }[]>(
-      "/beheer/allowed-emails/"
-    ),
-  addAllowedEmail: (email: string) =>
-    api.post<{ id: number; email: string; created_at: string; created_by: string | null }>(
-      "/beheer/allowed-emails/",
-      { email }
-    ),
-  removeAllowedEmail: (id: number) =>
-    api.delete(`/beheer/allowed-emails/${id}/`),
 
   logs: {
     list: (params?: {
