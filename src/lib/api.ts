@@ -223,19 +223,6 @@ export const adminApi = {
     trigger: () => api.post<{ task_id: string }>("/beheer/reconcile/"),
   },
 
-  // Allowed emails (whitelist)
-  listAllowedEmails: () =>
-    api.get<{ id: number; email: string; created_at: string; created_by: string | null }[]>(
-      "/beheer/allowed-emails/"
-    ),
-  addAllowedEmail: (email: string) =>
-    api.post<{ id: number; email: string; created_at: string; created_by: string | null }>(
-      "/beheer/allowed-emails/",
-      { email }
-    ),
-  removeAllowedEmail: (id: number) =>
-    api.delete(`/beheer/allowed-emails/${id}/`),
-
   logs: {
     list: (params?: {
       user_id?: number;

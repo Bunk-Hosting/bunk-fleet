@@ -61,7 +61,6 @@ const adminNavItems: NavItem[] = [
   { label: "Netwerk", href: "/dashboard/beheer/network", icon: Network },
   { label: "Auditlogs", href: "/dashboard/beheer/logs", icon: FileText },
   { label: "Reconciliatie", href: "/dashboard/beheer/reconcile", icon: RefreshCw },
-  { label: "Whitelist", href: "/dashboard/beheer/allowed-emails", icon: Shield },
 ];
 
 const adminSettingsItem: NavItem = {
