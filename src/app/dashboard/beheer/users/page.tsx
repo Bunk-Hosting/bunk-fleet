@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2, Search, Download, ShieldAlert } from "lucide-react";
 import {
@@ -80,7 +80,7 @@ export default function AdminUsersPage() {
 
   // useMemo voorkomt dat we de hele user-lijst opnieuw door filter() halen bij
   // elke keystroke/render. Bij honderden users is dit anders O(n) per render.
-  const filteredUsers = React.useMemo(() => {
+  const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return users;
     return users.filter((user) =>

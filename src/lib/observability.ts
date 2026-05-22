@@ -49,9 +49,13 @@ function report(payload: {
 
   // Cleanup ouder dan 60 s zodat we geen geheugen lekken.
   if (recentlySent.size > 200) {
-    for (const [k, t] of recentlySent.entries()) {
-      if (now - t > 60_000) recentlySent.delete(k);
-    }
+    // Array.from + filter ipv for...of over .entries(): tsconfig "target":"es5"
+    // staat MapIterator-iteratie niet toe (TS2802) zonder --downlevelIteration.
+    const stale: string[] = [];
+    recentlySent.forEach((t, k) => {
+      if (now - t > 60_000) stale.push(k);
+    });
+    stale.forEach((k) => recentlySent.delete(k));
   }
 
   try {
