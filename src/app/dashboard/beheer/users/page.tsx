@@ -78,13 +78,16 @@ export default function AdminUsersPage() {
     fetchUsers();
   }, [toast]);
 
-  const filteredUsers = users.filter((user) => {
-    const term = search.toLowerCase();
-    return (
+  // useMemo voorkomt dat we de hele user-lijst opnieuw door filter() halen bij
+  // elke keystroke/render. Bij honderden users is dit anders O(n) per render.
+  const filteredUsers = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return users;
+    return users.filter((user) =>
       user.name.toLowerCase().includes(term) ||
       user.email.toLowerCase().includes(term)
     );
-  });
+  }, [users, search]);
 
   if (loading) {
     return (
