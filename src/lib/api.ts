@@ -111,8 +111,20 @@ api.interceptors.response.use(
 
 // ─── Auth ────────────────────────────────────────────────────────────
 export const authApi = {
-  register: (name: string, email: string, password: string, password_confirm: string) =>
-    api.post<{ detail: string }>("/auth/register/", { name, email, password, password_confirm }),
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    password_confirm: string,
+    turnstile_token?: string,
+  ) =>
+    api.post<{ detail: string }>("/auth/register/", {
+      name,
+      email,
+      password,
+      password_confirm,
+      ...(turnstile_token ? { turnstile_token } : {}),
+    }),
 
   login: (email: string, password: string, turnstileToken?: string) => {
     const data: Record<string, string> = { email, password };
