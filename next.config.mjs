@@ -17,8 +17,10 @@ const securityHeaders = [
   // Content-Security-Policy
   // - script-src: Next.js heeft 'unsafe-inline' nodig voor hydration-scripts;
   //   Cloudflare Turnstile vereist challenges.cloudflare.com
-  // - style-src: 'unsafe-inline' nodig voor Tailwind utility classes
+  // - style-src: 'unsafe-inline' nodig voor Tailwind utility classes;
+  //   fonts.googleapis.com voor Material Symbols stylesheet
   // - img-src: data: voor TOTP QR-codes; blob: voor xterm canvas
+  // - font-src: fonts.gstatic.com voor Material Symbols woff2-bestanden
   // - connect-src: API + WebSocket endpoints
   // - frame-src: Cloudflare Turnstile widget (iframe)
   // - worker-src: blob: voor xterm.js Web Worker
@@ -27,9 +29,9 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com`,
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       `connect-src 'self' ${API_URL} ${WS_URL} https://challenges.cloudflare.com`,
       "frame-src 'self' https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
