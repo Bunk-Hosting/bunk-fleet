@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Loader2, WifiOff } from "lucide-react";
-import "xterm/css/xterm.css";
+import "@xterm/xterm/css/xterm.css";
 
 export interface VpsConsoleHandle {
   sendText: (text: string) => void;
@@ -21,9 +21,9 @@ const WS_URL =
 export const VpsConsole = forwardRef<VpsConsoleHandle, VpsConsoleProps>(
 function VpsConsole({ vpsId }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<import("xterm").Terminal | null>(null);
+  const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const fitRef = useRef<import("xterm-addon-fit").FitAddon | null>(null);
+  const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
 
   useImperativeHandle(ref, () => ({
@@ -42,8 +42,8 @@ function VpsConsole({ vpsId }, ref) {
       if (!containerRef.current) return;
 
       // Dynamisch laden zodat xterm niet server-side wordt gerenderd
-      const { Terminal } = await import("xterm");
-      const { FitAddon } = await import("xterm-addon-fit");
+      const { Terminal } = await import("@xterm/xterm");
+      const { FitAddon } = await import("@xterm/addon-fit");
 
       if (destroyed) return;
 

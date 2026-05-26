@@ -10,12 +10,27 @@ interface JwtPayload {
   exp: number;
 }
 
+// Runtime-typeguard zodat we niet blind `as unknown as JwtPayload` casten.
+// jose verifieert de handtekening, maar niet de claim-shape: een gecorrumpeerd
+// of geforget token met onverwachte velden zou anders silently accepted worden.
+function isJwtPayload(value: unknown): value is JwtPayload {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.user_id === "number" &&
+    typeof v.email === "string" &&
+    typeof v.name === "string" &&
+    (v.role === "user" || v.role === "admin") &&
+    typeof v.exp === "number"
+  );
+}
+
 async function verifyJwt(token: string): Promise<JwtPayload | null> {
   try {
     const secret = process.env.JWT_SECRET;
     if (!secret) return null;
     const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
-    return payload as unknown as JwtPayload;
+    return isJwtPayload(payload) ? payload : null;
   } catch {
     return null;
   }
