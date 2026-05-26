@@ -8,17 +8,18 @@ jobs:
   # ── SAST: static code analysis before deployment ──
   sast:
     name: SAST – Static code analysis
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install Semgrep
-        run: pip install semgrep
+        uses: actions/checkout@v4
 
       - name: Run SAST with Semgrep
         run: |
-          semgrep scan --config=auto --error --json --output=semgrep-results.json src/
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            semgrep/semgrep \
+            semgrep scan --config=auto --error --json --output=semgrep-results.json src/
         continue-on-error: false
 
       - name: Display SAST results
