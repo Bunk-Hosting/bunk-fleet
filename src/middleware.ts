@@ -3,7 +3,10 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
 interface JwtPayload {
-  user_id: number;
+  // SimpleJWT (backend) serialiseert user_id als STRING ("58"), niet als
+  // number. Daarom string|number accepteren — anders faalt de typeguard op
+  // élk geldig token en stuurt de middleware iedereen terug naar /login.
+  user_id: string | number;
   email: string;
   name: string;
   role: "user" | "admin";
@@ -17,7 +20,7 @@ function isJwtPayload(value: unknown): value is JwtPayload {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    typeof v.user_id === "number" &&
+    (typeof v.user_id === "string" || typeof v.user_id === "number") &&
     typeof v.email === "string" &&
     typeof v.name === "string" &&
     (v.role === "user" || v.role === "admin") &&
