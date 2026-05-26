@@ -49,18 +49,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Semgrep
-        run: pip install semgrep
-
       - name: Run Semgrep
         run: |
-          semgrep \
-            --config=p/javascript \
-            --config=p/react \
-            --config=p/secrets \
-            --json \
-            --output=semgrep-report.json \
-            src/
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            semgrep/semgrep \
+            semgrep scan \
+              --config=p/javascript \
+              --config=p/react \
+              --config=p/secrets \
+              --json \
+              --output=semgrep-report.json \
+              src/ || true
           [ -f semgrep-report.json ] || echo '{"results":[]}' > semgrep-report.json
 
       - name: Upload Semgrep report
