@@ -2,7 +2,7 @@ defmodule ControlPlane.Accounts do
   @moduledoc """
   User identity and authentication for the control-plane API.
 
-  Handles registration (bcrypt password hashing), email + password login with
+  Handles registration (pbkdf2 password hashing), email + password login with
   constant-time comparison, and bearer session tokens. Session tokens are stored
   hashed at rest — see `ControlPlane.Accounts.UserToken` — and the raw token is
   returned to the caller exactly once at generation time.
@@ -33,7 +33,7 @@ defmodule ControlPlane.Accounts do
   Returns the user matching `email`/`password`, or `nil`.
 
   Runs in (near) constant time whether or not the email exists: when no user is
-  found, a dummy bcrypt verification is still performed via
+  found, a dummy pbkdf2 verification is still performed via
   `User.valid_password?/2`.
   """
   def get_user_by_email_and_password(email, password)

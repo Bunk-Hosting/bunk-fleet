@@ -3,7 +3,7 @@ defmodule ControlPlane.Accounts.User do
   A human identity (operator/user/admin) that authenticates to the control-plane
   API with an email + password and acts as `conn.assigns.current_user`.
 
-  Only the bcrypt `hashed_password` is persisted; the plaintext `password` is a
+  Only the pbkdf2 `hashed_password` is persisted; the plaintext `password` is a
   virtual field present only while a registration changeset is being built, and is
   cleared as soon as it has been hashed. Both are `redact: true` so they never leak
   into logs or inspect output.
@@ -64,7 +64,7 @@ defmodule ControlPlane.Accounts.User do
 
     if password && changeset.valid? do
       changeset
-      |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
+      |> put_change(:hashed_password, Pbkdf2.hash_pwd_salt(password))
       |> delete_change(:password)
     else
       changeset
@@ -74,16 +74,16 @@ defmodule ControlPlane.Accounts.User do
   @doc """
   Verifies a plaintext `password` against a user's stored `hashed_password`.
 
-  When given `nil` (no such user) it still runs a dummy `Bcrypt.no_user_verify/0`
+  When given `nil` (no such user) it still runs a dummy `Pbkdf2.no_user_verify/0`
   so the response time does not reveal whether the email exists.
   """
   def valid_password?(%__MODULE__{hashed_password: hashed_password}, password)
       when is_binary(hashed_password) and byte_size(password) > 0 do
-    Bcrypt.verify_pass(password, hashed_password)
+    Pbkdf2.verify_pass(password, hashed_password)
   end
 
   def valid_password?(_user, _password) do
-    Bcrypt.no_user_verify()
+    Pbkdf2.no_user_verify()
     false
   end
 end
