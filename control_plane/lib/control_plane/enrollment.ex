@@ -56,7 +56,7 @@ defmodule ControlPlane.Enrollment do
 
   Any malformed/used/expired/unknown token yields `{:error, :invalid_token}`.
   """
-  def enroll(token_plaintext, %{hypervisor: hypervisor} = attrs)
+  def enroll(token_plaintext, %{hypervisor: hypervisor})
       when is_binary(token_plaintext) do
     agent_token = generate_token()
 

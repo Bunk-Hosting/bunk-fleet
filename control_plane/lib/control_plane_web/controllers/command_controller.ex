@@ -3,8 +3,12 @@ defmodule ControlPlaneWeb.CommandController do
   Worker-node command API. Authentication is performed by
   `ControlPlaneWeb.Plugs.NodeAuth`, which assigns `conn.assigns.current_node`.
 
-    * `GET /v1/commands` returns the calling node's pending commands as a JSON array
-      `[{"id", "kind", "payload"}]`, marking each as delivered. `[]` when none.
+    * `GET /v1/commands` returns the calling node's deliverable commands as a JSON
+      array `[{"id", "kind", "payload"}]`, marking each as delivered. This includes
+      both never-delivered (`:pending`) commands and stale `:delivered` ones whose
+      agent likely crashed before reporting a result, so they are redelivered.
+      Redelivery assumes the agent handles commands idempotently (Go side). `[]`
+      when none.
     * `POST /v1/commands/:id/result` accepts the agent's outcome for one of the
       node's commands and finalises the associated VPS, returning `204`.
   """
@@ -18,7 +22,7 @@ defmodule ControlPlaneWeb.CommandController do
     node = conn.assigns.current_node
 
     commands =
-      for command <- Provisioning.pending_commands_for_node(node) do
+      for command <- Provisioning.deliverable_commands_for_node(node) do
         {:ok, _delivered} = Provisioning.mark_delivered(command)
 
         %{

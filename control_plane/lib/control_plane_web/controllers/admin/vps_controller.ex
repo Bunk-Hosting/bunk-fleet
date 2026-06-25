@@ -43,6 +43,25 @@ defmodule ControlPlaneWeb.Admin.VpsController do
     end
   end
 
+  def delete(conn, %{"id" => id}) do
+    case Provisioning.delete_vps(id) do
+      {:ok, %{vps: vps}} ->
+        conn
+        |> put_status(:accepted)
+        |> json(%{vps: vps_json(vps)})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "not_found"})
+
+      {:error, :no_node} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "no_node"})
+    end
+  end
+
   defp build_attrs(params, region_id) do
     %{
       region_id: region_id,

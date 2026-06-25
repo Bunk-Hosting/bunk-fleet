@@ -71,6 +71,18 @@ type Provider interface {
 	// StatusVM returns the current observed status of the guest identified by id.
 	StatusVM(ctx context.Context, id string) (VMStatus, error)
 
+	// FindByName looks up a guest by its (unique) guest name and returns its
+	// status. The boolean reports whether a matching guest was found: it is
+	// true with a populated VMStatus when a match exists, and false with a zero
+	// VMStatus when no guest carries that name. A non-nil error indicates the
+	// lookup itself failed (e.g. the backend was unreachable) and the other
+	// return values must be ignored.
+	//
+	// It exists so callers can make provisioning idempotent: before creating a
+	// VM they can check whether one with the desired name already exists and, if
+	// so, adopt it instead of creating a duplicate.
+	FindByName(ctx context.Context, name string) (VMStatus, bool, error)
+
 	// Capacity returns a best-effort snapshot of node resources.
 	Capacity(ctx context.Context) (Capacity, error)
 

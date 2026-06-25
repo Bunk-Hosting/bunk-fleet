@@ -5,17 +5,26 @@ defmodule ControlPlane.Provisioning do
     1. `create_vps/1` records the VPS, asks the `ControlPlane.Fleet.Scheduler` to
        place it onto a node (holding capacity), and enqueues a `:provision`
        `ControlPlane.Fleet.Command` for that node's agent.
-    2. The node's agent polls `pending_commands_for_node/1` (via the command API),
-       which are marked delivered with `mark_delivered/1`.
+    2. The node's agent polls `deliverable_commands_for_node/1` (via the command
+       API), each marked delivered with `mark_delivered/1`. A command lost to an
+       agent crash (delivered but never resolved) is redelivered after a TTL.
     3. The agent reports the outcome through `apply_result/2`, which finalises both
        the command and the VPS, committing or releasing the held reservation.
   """
   import Ecto.Query, warn: false
+  require Logger
 
   alias Ecto.Multi
   alias ControlPlane.Repo
   alias ControlPlane.Fleet.{Command, Node, Reservation, Vps}
   alias ControlPlane.Fleet.Scheduler
+
+  # How long a `:delivered` command may sit without a reported result before it
+  # is considered lost (agent crashed mid-flight) and becomes eligible for
+  # redelivery. Redelivery is safe only because the Go agent treats commands
+  # idempotently (a re-issued provision/delete for an already-handled VM is a
+  # no-op that re-reports the same result).
+  @redelivery_ttl_seconds 90
 
   @doc """
   Creates a VPS and dispatches a provision command to the node it is placed on.
@@ -79,6 +88,51 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Begins teardown of a VPS by dispatching a `:delete` command to its node.
+
+  In one transaction this moves the VPS to `:deleting` and enqueues a `:delete`
+  `Command` carrying the provider VM id for the node's agent to destroy. The
+  reservation is only released later, once the agent reports the delete `done`
+  (see `apply_result/2`), so capacity is not freed before the VM is actually gone.
+
+  Returns `{:ok, %{vps: vps, command: command}}`, or `{:error, :not_found}` if no
+  VPS with `vps_id` exists, or `{:error, :no_node}` if the VPS was never placed
+  on a node / provisioned (no `node_id` or `provider_vm_id`) and so has nothing
+  for an agent to delete.
+  """
+  def delete_vps(vps_id) do
+    case Repo.get(Vps, vps_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Vps{node_id: nil} ->
+        {:error, :no_node}
+
+      %Vps{provider_vm_id: nil} ->
+        {:error, :no_node}
+
+      %Vps{} = vps ->
+        multi =
+          Multi.new()
+          |> Multi.update(:vps, Vps.changeset(vps, %{status: :deleting}))
+          |> Multi.insert(:command, fn %{vps: vps} ->
+            Command.changeset(%Command{}, %{
+              node_id: vps.node_id,
+              vps_id: vps.id,
+              kind: :delete,
+              status: :pending,
+              payload: %{"vm_id" => vps.provider_vm_id}
+            })
+          end)
+
+        case Repo.transaction(multi) do
+          {:ok, %{vps: vps, command: command}} -> {:ok, %{vps: vps, command: command}}
+          {:error, _step, reason, _changes} -> {:error, reason}
+        end
+    end
+  end
+
+  @doc """
   Lists the `:pending` commands awaiting delivery for `node`, oldest first.
   """
   def pending_commands_for_node(%Node{id: node_id}) do
@@ -90,11 +144,43 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
-  Marks a command as `:delivered` (it has been handed to the node's agent).
+  Lists the commands that should be (re)delivered to `node` now, oldest first.
+
+  A command is deliverable when it is either:
+
+    * still `:pending` (never handed out), or
+    * `:delivered` but stale — its `delivered_at` is older than the redelivery
+      TTL (#{@redelivery_ttl_seconds}s), meaning the agent likely crashed before
+      reporting a result.
+
+  Terminal commands (`:done` / `:failed`) are never returned. Redelivery relies
+  on the agent being idempotent (handled on the Go side): re-issuing a
+  provision/delete for an already-processed VM must be a safe no-op that
+  re-reports the original outcome.
+  """
+  def deliverable_commands_for_node(%Node{id: node_id}) do
+    cutoff = DateTime.add(now(), -@redelivery_ttl_seconds, :second)
+
+    Repo.all(
+      from c in Command,
+        where:
+          c.node_id == ^node_id and
+            (c.status == :pending or
+               (c.status == :delivered and not is_nil(c.delivered_at) and
+                  c.delivered_at < ^cutoff)),
+        order_by: [asc: c.inserted_at]
+    )
+  end
+
+  @doc """
+  Marks a command as `:delivered`, stamping `delivered_at` with the current time.
+
+  Re-delivering an already-`:delivered` command simply refreshes `delivered_at`,
+  resetting its redelivery window.
   """
   def mark_delivered(%Command{} = command) do
     command
-    |> Command.changeset(%{status: :delivered})
+    |> Command.changeset(%{status: :delivered, delivered_at: now()})
     |> Repo.update()
   end
 
@@ -110,7 +196,11 @@ defmodule ControlPlane.Provisioning do
     * for a provision command, the VPS is moved to `:active` (recording `vm_id`/`ip`)
       and its held reservation `:committed` on success; on failure the VPS is moved
       to `:failed` and its held reservation `:released`, returning the freed capacity
-      to the node.
+      to the node, and
+    * for a delete command, on success the VPS is moved to `:deleted` and its
+      committed reservation `:released`, returning capacity to the node; on failure
+      the VPS and reservation are left untouched (the VM may still exist) and the
+      error is recorded on the command and logged for retry.
 
   Returns `{:ok, command}` with the updated command.
   """
@@ -182,14 +272,65 @@ defmodule ControlPlane.Provisioning do
     end)
   end
 
-  # Non-provision commands (or those without an associated VPS) only update the
-  # command itself.
+  # Delete succeeded: the VM is gone, so mark the VPS :deleted, release its
+  # committed reservation and add the reclaimed capacity back to the node.
+  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :done, _result)
+       when not is_nil(vps_id) do
+    multi
+    |> Multi.run(:vps, fn repo, _changes ->
+      vps = repo.get!(Vps, vps_id)
+
+      vps
+      |> Vps.changeset(%{status: :deleted})
+      |> repo.update()
+    end)
+    |> Multi.run(:reservation, fn repo, _changes ->
+      reservation = committed_reservation!(vps_id)
+
+      reservation
+      |> Reservation.changeset(%{status: :released})
+      |> repo.update()
+    end)
+    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
+      node = Repo.get!(Node, reservation.node_id)
+
+      Ecto.Changeset.change(node,
+        available_vcpu: node.available_vcpu + reservation.vcpu,
+        available_ram_mb: node.available_ram_mb + reservation.ram_mb,
+        available_disk_gb: node.available_disk_gb + reservation.disk_gb
+      )
+    end)
+  end
+
+  # Delete failed: do NOT touch the VPS or its reservation — the VM may still
+  # exist, so freeing capacity would risk a double-booking. We only record the
+  # error on the command (done by the caller) and log for an operator to retry.
+  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :failed, result)
+       when not is_nil(vps_id) do
+    Logger.error(
+      "delete command failed for vps #{vps_id}: #{inspect(result["error"])}; " <>
+        "VPS left intact for retry"
+    )
+
+    multi
+  end
+
+  # Non-provision/non-delete commands (or those without an associated VPS) only
+  # update the command itself.
   defp finalize_vps(multi, _command, _outcome, _result), do: multi
 
   defp held_reservation!(vps_id) do
     Repo.one!(
       from r in Reservation,
         where: r.vps_id == ^vps_id and r.status == :held,
+        limit: 1
+    )
+  end
+
+  defp committed_reservation!(vps_id) do
+    Repo.one!(
+      from r in Reservation,
+        where: r.vps_id == ^vps_id and r.status == :committed,
         limit: 1
     )
   end
@@ -225,4 +366,6 @@ defmodule ControlPlane.Provisioning do
     |> Vps.changeset(%{status: :failed})
     |> Repo.update()
   end
+
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

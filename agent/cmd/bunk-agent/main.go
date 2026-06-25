@@ -171,6 +171,20 @@ func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provi
 			return
 		}
 		logger.Info("provisioning vm", "id", cmd.ID, "name", spec.Name)
+
+		// Idempotency: the control plane may re-deliver a provision command
+		// (e.g. after an agent crash before the result was reported). If a guest
+		// with this name already exists, adopt it instead of cloning a duplicate.
+		if existing, found, err := prov.FindByName(ctx, spec.Name); err != nil {
+			logger.Error("provision: existing-vm lookup failed", "id", cmd.ID, "name", spec.Name, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			return
+		} else if found {
+			logger.Info("vm already exists (idempotent)", "id", cmd.ID, "name", spec.Name, "vm_id", existing.ID)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: existing.ID, IP: existing.IP})
+			return
+		}
+
 		st, err := prov.CreateVM(ctx, spec)
 		if err != nil {
 			logger.Error("provision failed", "id", cmd.ID, "err", err)

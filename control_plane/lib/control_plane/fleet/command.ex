@@ -24,6 +24,10 @@ defmodule ControlPlane.Fleet.Command do
 
     field :result, :map
 
+    # Stamped on each (re)delivery; nil until first delivered. Drives redelivery
+    # of commands whose agent crashed before reporting a result.
+    field :delivered_at, :utc_datetime
+
     belongs_to :node, Node
     belongs_to :vps, Vps
 
@@ -33,7 +37,7 @@ defmodule ControlPlane.Fleet.Command do
   @doc false
   def changeset(command, attrs) do
     command
-    |> cast(attrs, [:node_id, :vps_id, :kind, :payload, :status, :result])
+    |> cast(attrs, [:node_id, :vps_id, :kind, :payload, :status, :result, :delivered_at])
     |> validate_required([:node_id, :kind])
     |> assoc_constraint(:node)
     |> assoc_constraint(:vps)

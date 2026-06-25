@@ -62,6 +62,106 @@ func TestEvalTaskStatus(t *testing.T) {
 	}
 }
 
+// TestFindGuestByName is a table-driven check of the name-matching logic used
+// by FindByName, exercised against the same guestEntry shape that PVE returns
+// from GET /nodes/{node}/qemu, without requiring a live Proxmox node.
+func TestFindGuestByName(t *testing.T) {
+	guests := []guestEntry{
+		{VMID: 101, Name: "web-01", Status: "running"},
+		{VMID: 102, Name: "db-01", Status: "stopped"},
+		{VMID: 103, Name: "", Status: "running"}, // unnamed guest
+	}
+
+	tests := []struct {
+		name       string
+		guests     []guestEntry
+		query      string
+		wantVMID   int
+		wantStatus string
+		wantFound  bool
+	}{
+		{
+			name:       "match running guest",
+			guests:     guests,
+			query:      "web-01",
+			wantVMID:   101,
+			wantStatus: "running",
+			wantFound:  true,
+		},
+		{
+			name:       "match stopped guest",
+			guests:     guests,
+			query:      "db-01",
+			wantVMID:   102,
+			wantStatus: "stopped",
+			wantFound:  true,
+		},
+		{
+			name:      "no match",
+			guests:    guests,
+			query:     "cache-01",
+			wantFound: false,
+		},
+		{
+			name:      "name match is exact, not substring",
+			guests:    guests,
+			query:     "web",
+			wantFound: false,
+		},
+		{
+			name:      "name match is case-sensitive",
+			guests:    guests,
+			query:     "WEB-01",
+			wantFound: false,
+		},
+		{
+			name:      "empty query does not match unnamed guest",
+			guests:    guests,
+			query:     "",
+			wantFound: true, // empty query equals the unnamed guest's empty name
+			wantVMID:  103,
+		},
+		{
+			name:      "empty list",
+			guests:    nil,
+			query:     "web-01",
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotVMID, gotStatus, gotFound := findGuestByName(tc.guests, tc.query)
+			if gotFound != tc.wantFound {
+				t.Fatalf("findGuestByName(_, %q) found = %v, want %v", tc.query, gotFound, tc.wantFound)
+			}
+			if !tc.wantFound {
+				return
+			}
+			if gotVMID != tc.wantVMID {
+				t.Errorf("findGuestByName(_, %q) vmid = %d, want %d", tc.query, gotVMID, tc.wantVMID)
+			}
+			if gotStatus != tc.wantStatus {
+				t.Errorf("findGuestByName(_, %q) status = %q, want %q", tc.query, gotStatus, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// TestFindGuestByNameFirstMatchWins confirms that when multiple guests share a
+// name (which PVE does not normally allow, but the agent must not panic on), the
+// first list entry is returned deterministically.
+func TestFindGuestByNameFirstMatchWins(t *testing.T) {
+	guests := []guestEntry{
+		{VMID: 201, Name: "dup", Status: "running"},
+		{VMID: 202, Name: "dup", Status: "stopped"},
+	}
+	vmid, status, found := findGuestByName(guests, "dup")
+	if !found || vmid != 201 || status != "running" {
+		t.Fatalf("findGuestByName duplicate = (%d, %q, %v), want (201, \"running\", true)", vmid, status, found)
+	}
+}
+
 func TestAuthHeader(t *testing.T) {
 	tests := []struct {
 		name    string

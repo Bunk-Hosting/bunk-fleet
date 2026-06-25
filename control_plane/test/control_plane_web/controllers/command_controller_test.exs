@@ -4,7 +4,7 @@ defmodule ControlPlaneWeb.CommandControllerTest do
   alias ControlPlane.Repo
   alias ControlPlane.Enrollment
   alias ControlPlane.Provisioning
-  alias ControlPlane.Fleet.{Command, Node, Region, Reservation, Vps}
+  alias ControlPlane.Fleet.{Command, Region, Reservation, Vps}
 
   defp create_region(_) do
     region =

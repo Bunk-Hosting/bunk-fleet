@@ -2,7 +2,9 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
   use ControlPlaneWeb.ConnCase
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Enrollment
+  alias ControlPlane.Provisioning
+  alias ControlPlane.Fleet.{Region, Vps}
 
   @admin_token "test-admin-token"
 
@@ -17,6 +19,55 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
 
   defp auth(conn, token) do
     put_req_header(conn, "authorization", "Bearer " <> token)
+  end
+
+  # Enrolls a node in `region` and seeds it with capacity so VPSes can be placed.
+  defp enroll_node_with_capacity(region) do
+    {:ok, {plaintext, _token}} =
+      Enrollment.create_enroll_token(%{
+        region_id: region.id,
+        tier: :community,
+        ttl_seconds: 3600
+      })
+
+    {:ok, %{node: node}} =
+      Enrollment.enroll(plaintext, %{hypervisor: "proxmox", agent_version: "1.2.3"})
+
+    node
+    |> Ecto.Changeset.change(
+      total_vcpu: 32,
+      total_ram_mb: 65_536,
+      total_disk_gb: 1000,
+      available_vcpu: 32,
+      available_ram_mb: 65_536,
+      available_disk_gb: 1000
+    )
+    |> Repo.update!()
+  end
+
+  # Creates a VPS and drives it to :active so it has a provider_vm_id (the
+  # precondition for deletion).
+  defp active_vps(region) do
+    {:ok, %{vps: vps, command: command}} =
+      Provisioning.create_vps(%{
+        region_id: region.id,
+        name: "vps-test",
+        vcpu: 2,
+        ram_mb: 2048,
+        disk_gb: 20,
+        owner_email: "ops@bunkhosting.nl",
+        template_id: 9000
+      })
+
+    {:ok, _command} =
+      Provisioning.apply_result(command, %{
+        "status" => "done",
+        "vm_id" => "10101",
+        "ip" => "10.10.0.10",
+        "error" => nil
+      })
+
+    Repo.get!(Vps, vps.id)
   end
 
   describe "admin token authentication" do
@@ -106,6 +157,25 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
         })
 
       assert %{"error" => "no_capacity"} = json_response(conn, 409)
+    end
+
+    test "deletes a vps, returning 202 and moving it to :deleting", %{conn: conn} do
+      %{region: region} = create_region(%{})
+      _node = enroll_node_with_capacity(region)
+      vps = active_vps(region)
+
+      conn = delete(conn, ~p"/admin/v1/vpses/#{vps.id}")
+
+      assert %{"vps" => body} = json_response(conn, 202)
+      assert body["id"] == vps.id
+      assert body["status"] == "deleting"
+
+      assert Repo.get!(Vps, vps.id).status == :deleting
+    end
+
+    test "deleting an unknown vps returns 404", %{conn: conn} do
+      conn = delete(conn, ~p"/admin/v1/vpses/#{Ecto.UUID.generate()}")
+      assert %{"error" => "not_found"} = json_response(conn, 404)
     end
   end
 end

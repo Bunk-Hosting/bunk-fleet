@@ -481,6 +481,40 @@ func (c *Client) StatusVM(ctx context.Context, id string) (provider.VMStatus, er
 	return st, nil
 }
 
+// findGuestByName scans a decoded guest list for an entry whose name matches
+// name exactly and returns its VMID, status and whether a match was found. It is
+// a pure helper, split out of FindByName so the name-matching logic can be
+// unit-tested without a live PVE.
+func findGuestByName(guests []guestEntry, name string) (vmid int, status string, found bool) {
+	for _, g := range guests {
+		if g.Name == name {
+			return g.VMID, g.Status, true
+		}
+	}
+	return 0, "", false
+}
+
+// FindByName implements provider.Provider. It lists the node's QEMU guests and
+// returns the status of the one whose name matches name. The boolean is false
+// (with a zero VMStatus) when no guest carries that name; a non-nil error means
+// the list query itself failed.
+func (c *Client) FindByName(ctx context.Context, name string) (provider.VMStatus, bool, error) {
+	var gl guestList
+	listPath := "/nodes/" + url.PathEscape(c.cfg.Node) + "/qemu"
+	if err := c.doJSON(ctx, http.MethodGet, listPath, nil, &gl); err != nil {
+		return provider.VMStatus{}, false, fmt.Errorf("proxmox: list guests for name %q: %w", name, err)
+	}
+
+	vmid, status, found := findGuestByName(gl.Data, name)
+	if !found {
+		return provider.VMStatus{}, false, nil
+	}
+	if status == "" {
+		status = "unknown"
+	}
+	return provider.VMStatus{ID: strconv.Itoa(vmid), State: status}, true, nil
+}
+
 // firstIPv4 returns the first non-loopback IPv4 address from a guest-agent
 // interface listing, or "" if none is found.
 func firstIPv4(ifaces vmAgentIfaces) string {
