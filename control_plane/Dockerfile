@@ -35,7 +35,9 @@ RUN mix compile
 RUN mix release
 
 # --- runtime stage -------------------------------------------------------
-FROM alpine:3.20 AS runtime
+# Must match the build image's Alpine/OpenSSL major (elixir:1.17-alpine → 3.22),
+# otherwise the prebuilt crypto NIF fails to load (missing OpenSSL symbols).
+FROM alpine:3.22 AS runtime
 
 # Runtime libs required by the BEAM release.
 RUN apk add --no-cache libstdc++ openssl ncurses-libs libgcc \
