@@ -40,8 +40,17 @@ defmodule ControlPlaneWeb.CommandController do
 
     case Repo.get_by(Command, id: id, node_id: node.id) do
       %Command{} = command ->
-        {:ok, _command} = Provisioning.apply_result(command, result_attrs(params))
-        send_resp(conn, :no_content, "")
+        # apply_result is idempotent; a duplicate/already-applied result still
+        # returns {:ok, _} so the agent gets a clean 204.
+        case Provisioning.apply_result(command, result_attrs(params)) do
+          {:ok, _command} ->
+            send_resp(conn, :no_content, "")
+
+          {:error, reason} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: to_string(reason)})
+        end
 
       nil ->
         conn

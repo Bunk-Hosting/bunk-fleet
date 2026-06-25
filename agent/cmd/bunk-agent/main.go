@@ -180,8 +180,31 @@ func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provi
 			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 			return
 		} else if found {
+			// A guest with this name already exists, but FindByName only reports
+			// its list-level state and never an IP. A previous attempt may have
+			// crashed mid-flight (clone→resize→config→start), leaving the guest
+			// stopped or half-configured. Re-check its real state and IP via
+			// StatusVM before adopting it, so we never mark a broken VPS active.
 			logger.Info("vm already exists (idempotent)", "id", cmd.ID, "name", spec.Name, "vm_id", existing.ID)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: existing.ID, IP: existing.IP})
+			status, err := prov.StatusVM(ctx, existing.ID)
+			if err != nil {
+				logger.Error("provision: status of existing vm failed", "id", cmd.ID, "vm_id", existing.ID, "err", err)
+				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: existing.ID, Error: err.Error()})
+				return
+			}
+			if status.State == "running" {
+				logger.Info("adopted existing vm", "id", cmd.ID, "vm_id", status.ID, "ip", status.IP)
+				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: status.ID, IP: status.IP})
+				return
+			}
+			// Stopped or half-configured: fail so the control plane drives a clean
+			// retry (which can delete and re-provision) rather than adopting it.
+			logger.Warn("existing vm not running; not adopting", "id", cmd.ID, "vm_id", status.ID, "state", status.State)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+				Status: "failed",
+				VMID:   status.ID,
+				Error:  "existing vm in state " + status.State + " (not running)",
+			})
 			return
 		}
 

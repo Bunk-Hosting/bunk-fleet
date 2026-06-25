@@ -105,6 +105,11 @@ defmodule ControlPlane.Provisioning do
       nil ->
         {:error, :not_found}
 
+      # Already being deleted / deleted: don't enqueue a second delete command
+      # (which could double-release the reservation at finalize time).
+      %Vps{status: status} when status in [:deleting, :deleted] ->
+        {:error, :already_deleting}
+
       %Vps{node_id: nil} ->
         {:error, :no_node}
 
@@ -202,18 +207,36 @@ defmodule ControlPlane.Provisioning do
       the VPS and reservation are left untouched (the VM may still exist) and the
       error is recorded on the command and logged for retry.
 
-  Returns `{:ok, command}` with the updated command.
+  This is IDEMPOTENT: results may be re-delivered or retried (see
+  `deliverable_commands_for_node/1`). The command row is locked `FOR UPDATE` and
+  re-read; if it is already terminal (`:done`/`:failed`) the call is a no-op, so a
+  duplicate result can never release a reservation or restore node capacity twice.
+  The lock also serializes concurrent applications of the same command.
+
+  Returns `{:ok, command}` with the (already- or newly-)applied command.
   """
   def apply_result(%Command{} = command, %{"status" => status} = result) do
     outcome = if status == "done", do: :done, else: :failed
 
     multi =
       Multi.new()
-      |> Multi.update(:command, Command.changeset(command, %{status: outcome, result: result}))
+      # Lock + re-read the command. Abort (idempotent no-op) if it's already
+      # terminal; this serializes concurrent/duplicate result deliveries.
+      |> Multi.run(:lock, fn repo, _changes ->
+        locked = repo.one!(from c in Command, where: c.id == ^command.id, lock: "FOR UPDATE")
+        if locked.status in [:done, :failed],
+          do: {:error, :already_applied},
+          else: {:ok, locked}
+      end)
+      |> Multi.update(:command, fn %{lock: locked} ->
+        Command.changeset(locked, %{status: outcome, result: result})
+      end)
       |> finalize_vps(command, outcome, result)
 
     case Repo.transaction(multi) do
       {:ok, %{command: command}} -> {:ok, command}
+      # The result was already applied by a prior (or concurrent) delivery.
+      {:error, :lock, :already_applied, _changes} -> {:ok, command}
       {:error, _step, reason, _changes} -> {:error, reason}
     end
   end
