@@ -1,6 +1,7 @@
 defmodule ControlPlane.BillingTest do
   use ControlPlane.DataCase, async: true
 
+  alias ControlPlane.Accounts
   alias ControlPlane.Billing
   alias ControlPlane.Billing.UsageRecord
   alias ControlPlane.Fleet.{Node, Region, Vps}
@@ -47,6 +48,7 @@ defmodule ControlPlane.BillingTest do
       ram_mb: ram_mb,
       disk_gb: disk_gb,
       owner_email: "customer@example.com",
+      owner_id: Keyword.get(opts, :owner_id),
       last_metered_at: last_metered_at
     })
     # status defaults to :queued via the schema; force the requested status and
@@ -359,6 +361,61 @@ defmodule ControlPlane.BillingTest do
       assert usage.vcpu_seconds == 3600 * 2
       assert usage.ram_mb_seconds == 3600 * 2048
       assert usage.disk_gb_seconds == 3600 * 20
+    end
+  end
+
+  describe "customer_usage/2" do
+    defp user_fixture(email) do
+      {:ok, user} = Accounts.register_user(%{email: email, password: "super-secret-pw-123"})
+      user
+    end
+
+    # Meters one 3600s slice for an active VPS owned by `user`.
+    defp meter_one_hour(region, node, user) do
+      last = DateTime.add(@now, -3600, :second)
+      vps = insert_vps(region, node, status: :active, last_metered_at: last, owner_id: user.id)
+      assert Billing.meter_active_vpses(@now) >= 1
+      vps
+    end
+
+    setup do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      %{region: region, node: node, user: user_fixture("a@example.com"), other: user_fixture("b@example.com")}
+    end
+
+    test "charges the owner the exact cost of their own VPS", ctx do
+      vps = meter_one_hour(ctx.region, ctx.node, ctx.user)
+      window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
+
+      usage = Billing.customer_usage(ctx.user.id, window)
+
+      assert usage.total_seconds == 3600
+      # 3600 * (2*0.010*1024 + 2048*0.004 + 20*0.0002*1024) / (3600*1024) = 0.032000
+      assert Decimal.equal?(usage.total_cost, Decimal.new("0.032000"))
+      assert [%{vps_id: id, seconds: 3600, cost: cost}] = usage.vpses
+      assert id == vps.id
+      assert Decimal.equal?(cost, Decimal.new("0.032000"))
+    end
+
+    test "never includes another owner's usage", ctx do
+      _mine = meter_one_hour(ctx.region, ctx.node, ctx.user)
+      _theirs = meter_one_hour(ctx.region, ctx.node, ctx.other)
+
+      mine = Billing.customer_usage(ctx.user.id, {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)})
+      assert length(mine.vpses) == 1
+      assert mine.total_seconds == 3600
+    end
+
+    test "excludes records outside the half-open window", ctx do
+      _vps = meter_one_hour(ctx.region, ctx.node, ctx.user)
+      # Window strictly before the metered slice at @now.
+      past = {DateTime.add(@now, -10, :second), DateTime.add(@now, -5, :second)}
+
+      usage = Billing.customer_usage(ctx.user.id, past)
+      assert usage.total_seconds == 0
+      assert usage.vpses == []
+      assert Decimal.equal?(usage.total_cost, Decimal.new(0))
     end
   end
 end

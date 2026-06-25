@@ -306,6 +306,64 @@ defmodule ControlPlane.Billing do
     |> Enum.sort(&payout_order/2)
   end
 
+  @doc """
+  Customer-facing cost breakdown: what the owner of these VPSes is charged for
+  usage in the half-open window `{from, to}` (`metered_at >= from and < to`).
+
+  Where the operator-payout functions key off the *node operator's* `owner_email`,
+  this keys off the *customer* who owns each VPS (`vpses.owner_id`), so a user sees
+  only their own consumption. Returns:
+
+      %{
+        total_seconds: integer,
+        total_cost: %Decimal{},                       # exact: summed over all records
+        vpses: [%{vps_id: id, name: name, seconds: integer, cost: %Decimal{}}, ...]
+      }
+
+  `total_cost` is computed from the exact numerators of *all* records at once (one
+  division), so it does not drift from the sum of the per-VPS amounts by rounding;
+  the per-VPS `cost` figures are each individually rounded for display. VPSes are
+  ordered by descending cost, ties broken by name.
+  """
+  def customer_usage(owner_id, {from, to}) do
+    rates = resource_hour_rates()
+
+    records =
+      Repo.all(
+        from u in UsageRecord,
+          join: v in Vps,
+          on: v.id == u.vps_id,
+          where: v.owner_id == ^owner_id and u.metered_at >= ^from and u.metered_at < ^to,
+          select: {u.vps_id, v.name, u.seconds, u.vcpu, u.ram_mb, u.disk_gb}
+      )
+
+    vpses =
+      records
+      |> Enum.group_by(fn {vps_id, name, _s, _v, _r, _d} -> {vps_id, name} end)
+      |> Enum.map(fn {{vps_id, name}, group} ->
+        numerator = group |> Enum.map(fn {_id, _n, s, v, r, d} -> {s, v, r, d} end) |> sum_numerators(rates)
+        seconds = Enum.reduce(group, 0, fn {_id, _n, s, _v, _r, _d}, acc -> acc + s end)
+        %{vps_id: vps_id, name: name, seconds: seconds, cost: finalize_amount(numerator)}
+      end)
+      |> Enum.sort(&vps_cost_order/2)
+
+    total_numerator =
+      records |> Enum.map(fn {_id, _n, s, v, r, d} -> {s, v, r, d} end) |> sum_numerators(rates)
+
+    total_seconds = Enum.reduce(records, 0, fn {_id, _n, s, _v, _r, _d}, acc -> acc + s end)
+
+    %{total_seconds: total_seconds, total_cost: finalize_amount(total_numerator), vpses: vpses}
+  end
+
+  # Stable ordering for the customer breakdown: priciest VPS first, ties by name.
+  defp vps_cost_order(%{cost: c1, name: n1}, %{cost: c2, name: n2}) do
+    case Decimal.compare(c1, c2) do
+      :gt -> true
+      :lt -> false
+      :eq -> n1 <= n2
+    end
+  end
+
   # Stable ordering for the summary: largest amount first, ties broken by email.
   defp payout_order(%{amount: a1, owner_email: e1}, %{amount: a2, owner_email: e2}) do
     case Decimal.compare(a1, a2) do

@@ -66,6 +66,9 @@ defmodule ControlPlaneWeb.Router do
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
+
+    # The caller's own metered usage and cost.
+    get "/billing/usage", BillingController, :usage
   end
 
   # bunk-agent onboarding / heartbeat / command API.
