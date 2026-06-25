@@ -1,7 +1,8 @@
 defmodule ControlPlaneWeb.VpsControllerTest do
   use ControlPlaneWeb.ConnCase, async: true
 
-  alias ControlPlane.{Accounts, Provisioning}
+  alias ControlPlane.{Accounts, Provisioning, Repo}
+  alias ControlPlane.Fleet
   alias ControlPlane.Fleet.{Node, Region}
 
   @password "super-secret-pw-123"
@@ -93,7 +94,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert vps["name"] == "web"
       # Owner fields are never echoed, and ownership came from the session.
       refute Map.has_key?(vps, "owner_email")
-      assert [persisted] = ControlPlane.Fleet.list_vpses_for_owner(user.id)
+      assert [persisted] = Fleet.list_vpses_for_owner(user.id)
       assert persisted.id == vps["id"]
     end
 
@@ -101,8 +102,8 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       params = %{"region_id" => region.id, "name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50, "owner_id" => other.id}
 
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
-      assert ControlPlane.Fleet.list_vpses_for_owner(other.id) == []
-      assert [_one] = ControlPlane.Fleet.list_vpses_for_owner(user.id)
+      assert Fleet.list_vpses_for_owner(other.id) == []
+      assert [_one] = Fleet.list_vpses_for_owner(user.id)
     end
 
     test "resolves a region_code", %{conn: conn, region: region, user: user} do
@@ -135,7 +136,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
       assert conn |> auth(user) |> delete(~p"/api/v1/vpses/#{theirs.id}") |> json_response(404)
       # Still owned by `other`, untouched.
-      assert [still] = ControlPlane.Fleet.list_vpses_for_owner(other.id)
+      assert [still] = Fleet.list_vpses_for_owner(other.id)
       assert still.id == theirs.id
     end
 
