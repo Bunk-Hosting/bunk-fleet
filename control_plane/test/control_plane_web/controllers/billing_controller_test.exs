@@ -85,7 +85,7 @@ defmodule ControlPlaneWeb.BillingControllerTest do
   end
 
   test "400 for a malformed datetime", ctx do
-    assert %{"error" => "invalid_window"} =
+    assert %{"error" => "invalid_datetime"} =
              ctx.conn |> auth(ctx.user) |> get(~p"/api/v1/billing/usage?from=nonsense&to=#{@to}") |> json_response(400)
   end
 

@@ -339,8 +339,10 @@ defmodule ControlPlane.Billing do
 
     vpses =
       records
-      |> Enum.group_by(fn {vps_id, name, _s, _v, _r, _d} -> {vps_id, name} end)
-      |> Enum.map(fn {{vps_id, name}, group} ->
+      # Group by vps_id alone so it's structurally "one line per VPS"; the name is
+      # the same for every row of a given vps_id (one live `vpses` row per join).
+      |> Enum.group_by(fn {vps_id, _name, _s, _v, _r, _d} -> vps_id end)
+      |> Enum.map(fn {vps_id, [{_id, name, _s, _v, _r, _d} | _] = group} ->
         numerator = group |> Enum.map(fn {_id, _n, s, v, r, d} -> {s, v, r, d} end) |> sum_numerators(rates)
         seconds = Enum.reduce(group, 0, fn {_id, _n, s, _v, _r, _d}, acc -> acc + s end)
         %{vps_id: vps_id, name: name, seconds: seconds, cost: finalize_amount(numerator)}

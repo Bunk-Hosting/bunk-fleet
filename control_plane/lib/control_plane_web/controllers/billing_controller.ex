@@ -10,7 +10,10 @@ defmodule ControlPlaneWeb.BillingController do
 
   Money values are serialized as strings to preserve `Decimal` precision; the
   unit is whatever `:control_plane, :billing_rates` configures (see
-  `ControlPlane.Billing`). Authenticated by `ControlPlaneWeb.Plugs.ApiAuth`.
+  `ControlPlane.Billing`). `total_cost` is the authoritative figure (computed
+  exactly over all records); the per-VPS `cost` line items are each individually
+  rounded for display and may sum to a sub-cent less/more than `total_cost`.
+  Authenticated by `ControlPlaneWeb.Plugs.ApiAuth`.
   """
   use ControlPlaneWeb, :controller
 
@@ -33,10 +36,10 @@ defmodule ControlPlaneWeb.BillingController do
       })
     else
       {:error, :invalid_datetime} ->
-        bad_request(conn, "from and to must be ISO8601 datetimes")
+        bad_request(conn, "invalid_datetime", "from and to must be ISO8601 datetimes")
 
       {:error, :invalid_window} ->
-        bad_request(conn, "from must be earlier than to")
+        bad_request(conn, "invalid_window", "from must be earlier than to")
     end
   end
 
@@ -66,9 +69,9 @@ defmodule ControlPlaneWeb.BillingController do
     if DateTime.compare(from, to) == :lt, do: :ok, else: {:error, :invalid_window}
   end
 
-  defp bad_request(conn, detail) do
+  defp bad_request(conn, code, detail) do
     conn
     |> put_status(:bad_request)
-    |> json(%{error: "invalid_window", detail: detail})
+    |> json(%{error: code, detail: detail})
   end
 end
