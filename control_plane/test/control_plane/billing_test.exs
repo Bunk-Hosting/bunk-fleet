@@ -165,12 +165,42 @@ defmodule ControlPlane.BillingTest do
       assert Billing.meter_active_vpses(@now) == 1
 
       # Rates (config/test.exs): vcpu 0.010, ram_gb 0.004, disk_gb 0.0002.
-      # 1 hour * (2*0.010 + 2*0.004 + 20*0.0002)
-      #        = 0.020 + 0.008 + 0.004 = 0.032
+      # Exact numerator = 3600 * (2*0.010*1024 + 2048*0.004 + 20*0.0002*1024)
+      #                 = 3600 * (20.48 + 8.192 + 4.096) = 3600 * 32.768 = 117964.8
+      # amount = 117964.8 / (3600*1024) = 117964.8 / 3686400 = 0.032
       window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
       amount = Billing.compute_payout("operator@example.com", window)
 
       assert Decimal.equal?(amount, Decimal.new("0.032"))
+      # Rounded to the fixed money scale (6 dp).
+      assert Decimal.to_string(amount) == "0.032000"
+    end
+
+    test "compute_payout/2 and payout_summary/1 reconcile bit-for-bit" do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      last = DateTime.add(@now, -3600, :second)
+
+      # Awkward sizes/durations so any per-record rounding drift would surface.
+      insert_vps(region, node,
+        status: :active,
+        last_metered_at: DateTime.add(@now, -777, :second),
+        vcpu: 3,
+        ram_mb: 1500,
+        disk_gb: 13
+      )
+
+      insert_vps(region, node, status: :active, last_metered_at: last, vcpu: 1, ram_mb: 333, disk_gb: 7)
+
+      assert Billing.meter_active_vpses(@now) == 2
+
+      window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
+      total = Billing.compute_payout("operator@example.com", window)
+
+      [%{amount: summary_amount}] = Billing.payout_summary(window)
+
+      # Same exact-numerator/divide-once helper, so identical to the byte.
+      assert Decimal.to_string(summary_amount) == Decimal.to_string(total)
     end
 
     test "is zero for an operator with no usage in the window" do
@@ -189,6 +219,83 @@ defmodule ControlPlane.BillingTest do
       # Window entirely before the metered_at (@now): no records counted.
       window = {DateTime.add(@now, -7200, :second), DateTime.add(@now, -10, :second)}
       assert Decimal.equal?(Billing.compute_payout("operator@example.com", window), Decimal.new(0))
+    end
+
+    test "window is half-open: [from, to) includes from-boundary, excludes to-boundary" do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      last = DateTime.add(@now, -3600, :second)
+      insert_vps(region, node, status: :active, last_metered_at: last)
+
+      # One record stamped exactly at @now.
+      assert Billing.meter_active_vpses(@now) == 1
+
+      # `to == @now` must EXCLUDE the boundary record (metered_at < to).
+      excl = {DateTime.add(@now, -10, :second), @now}
+      assert Decimal.equal?(Billing.compute_payout("operator@example.com", excl), Decimal.new(0))
+
+      # `from == @now` must INCLUDE the boundary record (metered_at >= from).
+      incl = {@now, DateTime.add(@now, 10, :second)}
+      assert Decimal.equal?(Billing.compute_payout("operator@example.com", incl), Decimal.new("0.032"))
+    end
+  end
+
+  describe "double-bill prevention" do
+    test "a second immediate meter at the same `now` is a no-op (no double-bill)" do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      last = DateTime.add(@now, -3600, :second)
+      vps = insert_vps(region, node, status: :active, last_metered_at: last)
+
+      assert Billing.meter_active_vpses(@now) == 1
+
+      # Re-running at the same `now`: the VPS's watermark already equals @now, so
+      # it is skipped (meters 0) rather than producing a duplicate slice. This is
+      # the graceful path; the unique (vps_id, metered_at) index is the backstop
+      # if a true concurrent race ever got past it.
+      assert Billing.meter_active_vpses(@now) == 0
+
+      assert [record] = usage_records_for(vps.id)
+      assert record.seconds == 3600
+    end
+
+    test "advancing `now` accrues only the newly-elapsed seconds (no double-bill)" do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      last = DateTime.add(@now, -3600, :second)
+      vps = insert_vps(region, node, status: :active, last_metered_at: last)
+
+      assert Billing.meter_active_vpses(@now) == 1
+
+      later = DateTime.add(@now, 1800, :second)
+      assert Billing.meter_active_vpses(later) == 1
+
+      seconds = usage_records_for(vps.id) |> Enum.map(& &1.seconds) |> Enum.sort()
+      # 3600 from the first tick, then exactly 1800 more — not 3600+5400.
+      assert seconds == [1800, 3600]
+    end
+
+    test "duplicate (vps_id, metered_at) insert is rejected by the unique index" do
+      region = insert_region()
+      node = insert_node(region, "operator@example.com")
+      vps = insert_vps(region, node, status: :active, last_metered_at: DateTime.add(@now, -60, :second))
+
+      attrs = %{
+        vps_id: vps.id,
+        node_id: node.id,
+        owner_email: "operator@example.com",
+        seconds: 60,
+        vcpu: 2,
+        ram_mb: 2048,
+        disk_gb: 20,
+        metered_at: @now
+      }
+
+      assert {:ok, _} = Repo.insert(UsageRecord.changeset(%UsageRecord{}, attrs))
+
+      assert {:error, changeset} = Repo.insert(UsageRecord.changeset(%UsageRecord{}, attrs))
+      refute changeset.valid?
+      assert {_msg, _opts} = changeset.errors[:vps_id]
     end
   end
 

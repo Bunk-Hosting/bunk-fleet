@@ -3,7 +3,9 @@ defmodule ControlPlaneWeb.Admin.BillingController do
   Operator/admin API for metered usage and operator payouts.
 
   `usage` (GET `/admin/v1/billing/usage?from=&to=`) returns the per-operator
-  payout summary for the window. `from`/`to` are ISO8601 datetimes (e.g.
+  payout summary for the half-open window `[from, to)` (records with
+  `metered_at >= from and metered_at < to`, so adjacent windows tile without
+  double-counting the boundary). `from`/`to` are ISO8601 datetimes (e.g.
   `2026-06-01T00:00:00Z`); both are required. `amount` is a money value in the
   unit configured via `:control_plane, :billing_rates` (see
   `ControlPlane.Billing` for the model and units), serialized as a string to

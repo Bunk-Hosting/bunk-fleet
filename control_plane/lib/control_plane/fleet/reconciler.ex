@@ -77,6 +77,11 @@ defmodule ControlPlane.Fleet.Reconciler do
   end
 
   defp meter_usage do
+    # Single-instance assumption: metering runs from this one reconciler process.
+    # `Billing.meter_active_vpses/0` locks each VPS row FOR UPDATE so overlapping
+    # ticks can't double-bill; running multiple control-plane instances would
+    # additionally need leader election / an advisory lock around the tick. The
+    # UNIQUE (vps_id, metered_at) index on usage_records is the data-layer backstop.
     count = Billing.meter_active_vpses()
 
     if count > 0 do

@@ -49,5 +49,12 @@ defmodule ControlPlane.Billing.UsageRecord do
     |> validate_number(:seconds, greater_than_or_equal_to: 0)
     |> assoc_constraint(:vps)
     |> assoc_constraint(:node)
+    # Backstop against double-billing the same VPS for the same time slice: each
+    # meter tick stamps a fixed `metered_at`, so a duplicate insert for the same
+    # (vps, tick) collides on this unique index. Matches the DB index added in
+    # `UniqueUsageRecordSlice`.
+    |> unique_constraint([:vps_id, :metered_at],
+      name: :usage_records_vps_id_metered_at_index
+    )
   end
 end
