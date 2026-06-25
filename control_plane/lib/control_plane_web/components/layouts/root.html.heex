@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Bunk Fleet · Operator Dashboard</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #0b0f14;
+        color: #e6edf3;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      a { color: #58a6ff; }
+      .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+      h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; letter-spacing: .3px; }
+      h2 { font-size: 15px; margin: 28px 0 10px; font-weight: 600; color: #c9d1d9; }
+      .muted { color: #8b949e; }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin: 16px 0 4px;
+      }
+      .card {
+        background: #11161d;
+        border: 1px solid #232a33;
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .card .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+      .card .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+      table { width: 100%; border-collapse: collapse; }
+      .table-wrap {
+        background: #11161d;
+        border: 1px solid #232a33;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #1c232c; vertical-align: middle; }
+      th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+      tr:last-child td { border-bottom: none; }
+      td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+      .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+      .dot.green { background: #2ea043; }
+      .dot.amber { background: #d29922; }
+      .dot.grey { background: #6e7681; }
+      .status { white-space: nowrap; text-transform: capitalize; }
+      .bar {
+        position: relative;
+        height: 8px;
+        width: 120px;
+        background: #1c232c;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 2px;
+      }
+      .bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: #3081f7; }
+      .bar.high > span { background: #d29922; }
+      .bar.crit > span { background: #da3633; }
+      .cap-label { font-size: 11px; color: #8b949e; }
+      .empty { padding: 16px 12px; color: #8b949e; }
+      .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid #2d3540; color: #c9d1d9; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.14/priv/static/phoenix.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.2.3/priv/static/phoenix_live_view.min.js"></script>
+    <script>
+      window.addEventListener("DOMContentLoaded", function () {
+        let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+        let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
+          params: { _csrf_token: csrfToken }
+        });
+        liveSocket.connect();
+        window.liveSocket = liveSocket;
+      });
+    </script>
+  </head>
+  <body>
+    {@inner_content}
+  </body>
+</html>

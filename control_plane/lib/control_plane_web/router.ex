@@ -1,8 +1,30 @@
 defmodule ControlPlaneWeb.Router do
   use ControlPlaneWeb, :router
 
+  # This app was generated with --no-html, so `use Phoenix.Router` does not bring
+  # in the `live/3` macro; import it explicitly for the operator dashboard.
+  import Phoenix.LiveView.Router
+
+  # Browser pipeline for the (single) LiveView operator dashboard.
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, html: {ControlPlaneWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
+  end
+
+  # Operator/admin LiveView dashboard.
+  scope "/", ControlPlaneWeb do
+    pipe_through :browser
+
+    live "/", DashboardLive, :index
+    live "/dashboard", DashboardLive, :index
   end
 
   # Worker-node API: everything in `:api` plus agent-token bearer authentication.
