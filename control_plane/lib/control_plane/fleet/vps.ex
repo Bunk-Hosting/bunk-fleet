@@ -24,6 +24,11 @@ defmodule ControlPlane.Fleet.Vps do
 
     field :owner_email, :string
 
+    # Provider-side identity, populated once the node's agent reports a successful
+    # provision result.
+    field :provider_vm_id, :string
+    field :ip_address, :string
+
     belongs_to :region, Region
     belongs_to :node, Node
 
@@ -41,7 +46,9 @@ defmodule ControlPlane.Fleet.Vps do
       :vcpu,
       :ram_mb,
       :disk_gb,
-      :owner_email
+      :owner_email,
+      :provider_vm_id,
+      :ip_address
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> assoc_constraint(:region)

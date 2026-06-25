@@ -1,6 +1,66 @@
 package proxmox
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+// TestEvalTaskStatus is a table-driven check of the UPID task-status decision
+// logic used by waitTask. It feeds raw task-status JSON bodies (as PVE returns
+// from GET /nodes/{node}/tasks/{upid}/status) through the decoder and asserts
+// the distilled outcome, without requiring a live Proxmox node.
+func TestEvalTaskStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantState taskState
+		wantExit  string
+	}{
+		{
+			name:      "still running",
+			body:      `{"data":{"status":"running"}}`,
+			wantState: taskRunning,
+		},
+		{
+			name:      "stopped without exitstatus yet",
+			body:      `{"data":{"status":"stopped"}}`,
+			wantState: taskFailed,
+			wantExit:  "",
+		},
+		{
+			name:      "stopped OK",
+			body:      `{"data":{"status":"stopped","exitstatus":"OK"}}`,
+			wantState: taskOK,
+		},
+		{
+			name:      "stopped OK lowercase tolerated",
+			body:      `{"data":{"status":"stopped","exitstatus":"ok"}}`,
+			wantState: taskOK,
+		},
+		{
+			name:      "stopped with error exit status",
+			body:      `{"data":{"status":"stopped","exitstatus":"clone failed: storage full"}}`,
+			wantState: taskFailed,
+			wantExit:  "clone failed: storage full",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var ts taskStatus
+			if err := json.Unmarshal([]byte(tc.body), &ts); err != nil {
+				t.Fatalf("unmarshal task status %q: %v", tc.body, err)
+			}
+			gotState, gotExit := evalTaskStatus(ts)
+			if gotState != tc.wantState {
+				t.Errorf("evalTaskStatus state = %d, want %d", gotState, tc.wantState)
+			}
+			if gotExit != tc.wantExit {
+				t.Errorf("evalTaskStatus exit = %q, want %q", gotExit, tc.wantExit)
+			}
+		})
+	}
+}
 
 func TestAuthHeader(t *testing.T) {
 	tests := []struct {

@@ -27,6 +27,7 @@ defmodule ControlPlaneWeb.Router do
 
     post "/heartbeat", HeartbeatController, :create
     get "/commands", CommandController, :index
+    post "/commands/:id/result", CommandController, :result
   end
 
   # Enable LiveDashboard in development

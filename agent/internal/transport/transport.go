@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -75,6 +76,19 @@ type Command struct {
 	Kind CommandKind `json:"kind"`
 	// Payload is the verb-specific body, decoded by the agent.
 	Payload json.RawMessage `json:"payload"`
+}
+
+// CommandResult is the agent's report of how a dispatched command resolved. It
+// is POSTed back to the control plane keyed by the originating command ID.
+type CommandResult struct {
+	// Status is the terminal outcome, typically "done" or "failed".
+	Status string `json:"status"`
+	// VMID is the provider-native guest identifier, when one was produced.
+	VMID string `json:"vm_id"`
+	// IP is the primary IPv4 address of the guest, when known.
+	IP string `json:"ip"`
+	// Error carries a human-readable failure reason when Status is "failed".
+	Error string `json:"error"`
 }
 
 // Client is the HTTP control-plane client. It is safe for concurrent use.
@@ -176,6 +190,20 @@ func (c *Client) SendHeartbeat(ctx context.Context, hb Heartbeat) error {
 	return c.post(ctx, "/v1/heartbeat", hb, nil)
 }
 
+// ReportResult posts the terminal outcome of a dispatched command back to the
+// control plane, keyed by the originating command ID. It reuses the
+// Bearer-authenticated post helper.
+func (c *Client) ReportResult(ctx context.Context, commandID string, res CommandResult) error {
+	if c.token == "" {
+		return errors.New("transport: not enrolled (no agent token)")
+	}
+	if commandID == "" {
+		return errors.New("transport: ReportResult requires a command ID")
+	}
+	path := "/v1/commands/" + url.PathEscape(commandID) + "/result"
+	return c.post(ctx, path, res, nil)
+}
+
 // Commands long-polls the control plane and delivers dispatched commands on the
 // returned channel. The channel is closed when ctx is cancelled or a fatal
 // error occurs. Transient poll errors are retried with a backoff; this is the
@@ -236,8 +264,8 @@ func (c *Client) Commands(ctx context.Context) (<-chan Command, error) {
 // pollCommands performs a single long-poll request and returns any pending
 // commands (possibly empty).
 func (c *Client) pollCommands(ctx context.Context) ([]Command, error) {
-	url := c.baseURL + "/v1/commands?node_id=" + c.nodeID
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	pollURL := c.baseURL + "/v1/commands?node_id=" + url.QueryEscape(c.nodeID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pollURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("transport: build commands poll: %w", err)
 	}

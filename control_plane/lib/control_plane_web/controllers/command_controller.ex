@@ -1,14 +1,57 @@
 defmodule ControlPlaneWeb.CommandController do
   @moduledoc """
-  Handles `GET /v1/commands?node_id=...`: an authenticated node polls for pending
-  commands. Authentication is performed by `ControlPlaneWeb.Plugs.NodeAuth`.
+  Worker-node command API. Authentication is performed by
+  `ControlPlaneWeb.Plugs.NodeAuth`, which assigns `conn.assigns.current_node`.
 
-  For now this always returns an empty list; long-polling and real command dispatch
-  arrive in a later iteration.
+    * `GET /v1/commands` returns the calling node's pending commands as a JSON array
+      `[{"id", "kind", "payload"}]`, marking each as delivered. `[]` when none.
+    * `POST /v1/commands/:id/result` accepts the agent's outcome for one of the
+      node's commands and finalises the associated VPS, returning `204`.
   """
   use ControlPlaneWeb, :controller
 
+  alias ControlPlane.Repo
+  alias ControlPlane.Provisioning
+  alias ControlPlane.Fleet.Command
+
   def index(conn, _params) do
-    json(conn, [])
+    node = conn.assigns.current_node
+
+    commands =
+      for command <- Provisioning.pending_commands_for_node(node) do
+        {:ok, _delivered} = Provisioning.mark_delivered(command)
+
+        %{
+          "id" => command.id,
+          "kind" => Atom.to_string(command.kind),
+          "payload" => command.payload
+        }
+      end
+
+    json(conn, commands)
+  end
+
+  def result(conn, %{"id" => id} = params) do
+    node = conn.assigns.current_node
+
+    case Repo.get_by(Command, id: id, node_id: node.id) do
+      %Command{} = command ->
+        {:ok, _command} = Provisioning.apply_result(command, result_attrs(params))
+        send_resp(conn, :no_content, "")
+
+      nil ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "not_found"})
+    end
+  end
+
+  defp result_attrs(params) do
+    %{
+      "status" => params["status"],
+      "vm_id" => params["vm_id"],
+      "ip" => params["ip"],
+      "error" => params["error"]
+    }
   end
 end

@@ -1,0 +1,176 @@
+defmodule ControlPlaneWeb.CommandControllerTest do
+  use ControlPlaneWeb.ConnCase
+
+  alias ControlPlane.Repo
+  alias ControlPlane.Enrollment
+  alias ControlPlane.Provisioning
+  alias ControlPlane.Fleet.{Command, Node, Region, Reservation, Vps}
+
+  defp create_region(_) do
+    region =
+      %Region{}
+      |> Region.changeset(%{code: "nl-1", name: "Netherlands 1"})
+      |> Repo.insert!()
+
+    %{region: region}
+  end
+
+  # Enrolls a node and seeds it with capacity (enrollment leaves total/available nil).
+  defp enroll_node(region) do
+    {:ok, {plaintext, _token}} =
+      Enrollment.create_enroll_token(%{
+        region_id: region.id,
+        tier: :community,
+        ttl_seconds: 3600
+      })
+
+    {:ok, %{node: node, agent_token: agent_token}} =
+      Enrollment.enroll(plaintext, %{hypervisor: "proxmox", agent_version: "1.2.3"})
+
+    node =
+      node
+      |> Ecto.Changeset.change(
+        total_vcpu: 32,
+        total_ram_mb: 65_536,
+        total_disk_gb: 1000,
+        available_vcpu: 32,
+        available_ram_mb: 65_536,
+        available_disk_gb: 1000
+      )
+      |> Repo.update!()
+
+    %{node: node, agent_token: agent_token}
+  end
+
+  defp create_vps(region) do
+    {:ok, %{vps: vps, command: command}} =
+      Provisioning.create_vps(%{
+        region_id: region.id,
+        name: "web-1",
+        vcpu: 4,
+        ram_mb: 8192,
+        disk_gb: 100,
+        owner_email: "owner@example.com",
+        template_id: 9000,
+        ssh_keys: ["ssh-ed25519 AAAA..."],
+        cloud_init: %{"ciuser" => "bunk-console"},
+        ip_config: "ip=10.10.0.10/19,gw=10.10.0.1"
+      })
+
+    %{vps: vps, command: command}
+  end
+
+  setup [:create_region]
+
+  describe "GET /v1/commands" do
+    test "returns the node's pending commands and marks them delivered", %{
+      conn: conn,
+      region: region
+    } do
+      %{node: node, agent_token: agent_token} = enroll_node(region)
+      %{command: command} = create_vps(region)
+
+      # Sanity: the command was placed onto the enrolled node.
+      assert command.node_id == node.id
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> get(~p"/v1/commands")
+
+      assert [returned] = json_response(conn, 200)
+      assert returned["id"] == command.id
+      assert returned["kind"] == "provision"
+
+      assert returned["payload"] == %{
+               "name" => "web-1",
+               "vcpu" => 4,
+               "ram_mb" => 8192,
+               "disk_gb" => 100,
+               "template_id" => 9000,
+               "cloud_init" => %{"ciuser" => "bunk-console"},
+               "ssh_keys" => ["ssh-ed25519 AAAA..."],
+               "ip_config" => "ip=10.10.0.10/19,gw=10.10.0.1"
+             }
+
+      assert Repo.get!(Command, command.id).status == :delivered
+    end
+
+    test "returns [] when there are no pending commands", %{conn: conn, region: region} do
+      %{agent_token: agent_token} = enroll_node(region)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> get(~p"/v1/commands")
+
+      assert json_response(conn, 200) == []
+    end
+
+    test "missing bearer returns 401", %{conn: conn} do
+      conn = get(conn, ~p"/v1/commands")
+      assert %{"error" => _} = json_response(conn, 401)
+    end
+  end
+
+  describe "POST /v1/commands/:id/result" do
+    test "done activates the VPS and returns 204", %{conn: conn, region: region} do
+      %{agent_token: agent_token} = enroll_node(region)
+      %{vps: vps, command: command} = create_vps(region)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> post(~p"/v1/commands/#{command.id}/result", %{
+          "status" => "done",
+          "vm_id" => "10101",
+          "ip" => "10.10.0.10"
+        })
+
+      assert response(conn, 204)
+
+      assert Repo.get!(Command, command.id).status == :done
+      assert Repo.get!(Vps, vps.id).status == :active
+      assert Repo.get_by!(Reservation, vps_id: vps.id).status == :committed
+    end
+
+    test "failed marks the VPS failed and releases the reservation", %{
+      conn: conn,
+      region: region
+    } do
+      %{agent_token: agent_token} = enroll_node(region)
+      %{vps: vps, command: command} = create_vps(region)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> post(~p"/v1/commands/#{command.id}/result", %{
+          "status" => "failed",
+          "error" => "boom"
+        })
+
+      assert response(conn, 204)
+
+      assert Repo.get!(Command, command.id).status == :failed
+      assert Repo.get!(Vps, vps.id).status == :failed
+      assert Repo.get_by!(Reservation, vps_id: vps.id).status == :released
+    end
+
+    test "a command belonging to another node returns 404", %{conn: conn, region: region} do
+      # The command is placed onto the first enrolled node...
+      %{node: _first} = enroll_node(region)
+      %{command: command} = create_vps(region)
+      # ...but a different node tries to resolve it.
+      %{agent_token: other_token} = enroll_node(region)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> other_token)
+        |> post(~p"/v1/commands/#{command.id}/result", %{"status" => "done"})
+
+      assert %{"error" => _} = json_response(conn, 404)
+      # Untouched.
+      assert Repo.get!(Command, command.id).status == :pending
+    end
+  end
+end

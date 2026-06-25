@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -67,6 +68,20 @@ func run(logger *slog.Logger) error {
 		logger.Warn("no enroll token provided; heartbeats will fail until credentials are set")
 	}
 
+	// Command consumer: long-poll the control plane for provision/delete
+	// commands and execute them concurrently with the heartbeat loop. Requires
+	// credentials, so it is only started once enrolled.
+	if cp.NodeID() != "" {
+		cmds, err := cp.Commands(ctx)
+		if err != nil {
+			return err
+		}
+		go consumeCommands(ctx, logger, prov, cp, cmds)
+		logger.Info("command consumer started")
+	} else {
+		logger.Warn("not enrolled; command consumer not started")
+	}
+
 	// Heartbeat loop.
 	ticker := time.NewTicker(cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -120,4 +135,84 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		"avail_ram_mb", capacity.AvailRAMMB,
 		"avail_disk_gb", capacity.AvailDiskGB,
 	)
+}
+
+// consumeCommands drains the command channel until it is closed (on context
+// cancellation or a fatal poll error) and dispatches each command. A panic or
+// failure handling one command must not stop the loop.
+func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command) {
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("command consumer stopping", "reason", ctx.Err())
+			return
+		case cmd, ok := <-cmds:
+			if !ok {
+				logger.Info("command stream closed")
+				return
+			}
+			handleCommand(ctx, logger, prov, cp, cmd)
+		}
+	}
+}
+
+// handleCommand executes a single dispatched command and reports its outcome to
+// the control plane. All errors are turned into a "failed" result; they are
+// never propagated so a single bad command cannot take the agent down.
+func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmd transport.Command) {
+	logger.Info("command received", "id", cmd.ID, "kind", string(cmd.Kind))
+
+	switch cmd.Kind {
+	case transport.CmdProvision:
+		var spec provider.VMSpec
+		if err := json.Unmarshal(cmd.Payload, &spec); err != nil {
+			logger.Error("provision: bad payload", "id", cmd.ID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			return
+		}
+		logger.Info("provisioning vm", "id", cmd.ID, "name", spec.Name)
+		st, err := prov.CreateVM(ctx, spec)
+		if err != nil {
+			logger.Error("provision failed", "id", cmd.ID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			return
+		}
+		logger.Info("provision done", "id", cmd.ID, "vm_id", st.ID, "ip", st.IP)
+		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: st.ID, IP: st.IP})
+
+	case transport.CmdDelete:
+		var del struct {
+			VMID string `json:"vm_id"`
+		}
+		if err := json.Unmarshal(cmd.Payload, &del); err != nil {
+			logger.Error("delete: bad payload", "id", cmd.ID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			return
+		}
+		logger.Info("deleting vm", "id", cmd.ID, "vm_id", del.VMID)
+		if err := prov.DeleteVM(ctx, del.VMID); err != nil {
+			logger.Error("delete failed", "id", cmd.ID, "vm_id", del.VMID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: del.VMID, Error: err.Error()})
+			return
+		}
+		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
+		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
+
+	default:
+		logger.Warn("unknown command kind; ignoring", "id", cmd.ID, "kind", string(cmd.Kind))
+		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})
+	}
+}
+
+// reportResult posts a command outcome with a bounded timeout, logging (but not
+// propagating) any reporting failure.
+func reportResult(ctx context.Context, logger *slog.Logger, cp *transport.Client, commandID string, res transport.CommandResult) {
+	// Use a fresh bounded context so result reporting still runs even if the
+	// command's own context is near its deadline; cancellation still propagates
+	// from the parent.
+	rptCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := cp.ReportResult(rptCtx, commandID, res); err != nil {
+		logger.Error("report result failed", "id", commandID, "status", res.Status, "err", err)
+	}
 }

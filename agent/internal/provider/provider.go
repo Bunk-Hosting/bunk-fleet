@@ -14,36 +14,36 @@ import "context"
 // provider maps these fields onto its native API.
 type VMSpec struct {
 	// Name is the human-readable / DNS-safe name of the guest.
-	Name string
+	Name string `json:"name"`
 	// VCPU is the number of virtual CPU cores to allocate.
-	VCPU int
+	VCPU int `json:"vcpu"`
 	// RAMMB is the amount of memory to allocate, in megabytes.
-	RAMMB int
+	RAMMB int `json:"ram_mb"`
 	// DiskGB is the size of the primary disk, in gigabytes.
-	DiskGB int
+	DiskGB int `json:"disk_gb"`
 	// TemplateID identifies the source template/image to clone from. Its
 	// meaning is provider-specific (e.g. a Proxmox VMID template).
-	TemplateID int
+	TemplateID int `json:"template_id"`
 	// CloudInit holds extra cloud-init key/value pairs (e.g. user, password
 	// hash, custom metadata) merged into the generated config.
-	CloudInit map[string]string
+	CloudInit map[string]string `json:"cloud_init"`
 	// SSHKeys is the list of authorized public SSH keys injected via cloud-init.
-	SSHKeys []string
+	SSHKeys []string `json:"ssh_keys"`
 	// IPConfig is a provider-native network configuration string
 	// (e.g. Proxmox "ip=192.0.2.10/24,gw=192.0.2.1" or "ip=dhcp").
-	IPConfig string
+	IPConfig string `json:"ip_config"`
 }
 
 // VMStatus is the observed state of a virtual machine.
 type VMStatus struct {
 	// ID is the provider-native identifier of the guest (e.g. a Proxmox VMID
 	// as a string).
-	ID string
+	ID string `json:"id"`
 	// State is a normalized lifecycle string such as "running", "stopped",
 	// "provisioning" or "unknown".
-	State string
+	State string `json:"state"`
 	// IP is the primary IPv4 address of the guest, if known/assigned.
-	IP string
+	IP string `json:"ip"`
 }
 
 // Capacity is a best-effort snapshot of the resources of the underlying node,

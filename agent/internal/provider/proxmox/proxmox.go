@@ -227,6 +227,78 @@ type taskResponse struct {
 	Data string `json:"data"`
 }
 
+// taskStatus mirrors GET /nodes/{node}/tasks/{upid}/status. While a task runs,
+// Status is "running"; once finished it is "stopped" and ExitStatus carries the
+// outcome ("OK" on success, otherwise an error string).
+type taskStatus struct {
+	Data struct {
+		Status     string `json:"status"`
+		ExitStatus string `json:"exitstatus"`
+	} `json:"data"`
+}
+
+// taskPollInterval is how often waitTask re-checks an in-flight UPID.
+const taskPollInterval = 2 * time.Second
+
+// taskState is the distilled outcome of a single task-status poll, split out so
+// the decision logic can be unit-tested without a live PVE.
+type taskState int
+
+const (
+	taskRunning taskState = iota // still in progress; keep polling
+	taskOK                       // finished successfully (stopped + exitstatus OK)
+	taskFailed                   // finished with a non-OK exit status
+)
+
+// evalTaskStatus interprets a decoded task-status body. When the task has
+// failed it also returns the raw exit-status string for diagnostics.
+func evalTaskStatus(ts taskStatus) (taskState, string) {
+	if ts.Data.Status != "stopped" {
+		return taskRunning, ""
+	}
+	if strings.EqualFold(strings.TrimSpace(ts.Data.ExitStatus), "OK") {
+		return taskOK, ""
+	}
+	return taskFailed, ts.Data.ExitStatus
+}
+
+// waitTask polls a PVE worker task (identified by its UPID) until it reaches a
+// terminal state or ctx is cancelled. It returns nil on a successful ("OK")
+// exit status and an error otherwise.
+func (c *Client) waitTask(ctx context.Context, upid string) error {
+	upid = strings.TrimSpace(upid)
+	if upid == "" {
+		return errors.New("proxmox: waitTask called with empty UPID")
+	}
+	node := url.PathEscape(c.cfg.Node)
+	statusPath := fmt.Sprintf("/nodes/%s/tasks/%s/status", node, url.PathEscape(upid))
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("proxmox: wait for task %s: %w", upid, err)
+		}
+
+		var ts taskStatus
+		if err := c.doJSON(ctx, http.MethodGet, statusPath, nil, &ts); err != nil {
+			return fmt.Errorf("proxmox: poll task %s: %w", upid, err)
+		}
+
+		switch state, exit := evalTaskStatus(ts); state {
+		case taskOK:
+			return nil
+		case taskFailed:
+			return fmt.Errorf("proxmox: task %s failed: exitstatus %q", upid, exit)
+		default:
+			// still running; wait before the next poll, honouring cancellation.
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("proxmox: wait for task %s: %w", upid, ctx.Err())
+			case <-time.After(taskPollInterval):
+			}
+		}
+	}
+}
+
 // nextVMID asks the cluster for the next free VMID.
 func (c *Client) nextVMID(ctx context.Context) (int, error) {
 	var resp struct {
@@ -244,10 +316,11 @@ func (c *Client) nextVMID(ctx context.Context) (int, error) {
 
 // CreateVM implements provider.Provider.
 //
-// The flow is: allocate a VMID, clone the template, push CPU/RAM and
-// cloud-init configuration, then start the guest. Cloning and config are wired
-// up; resize and disk-grow flows are left as clearly-marked TODOs so the
-// happy path is explicit and reviewable.
+// The flow is: allocate a VMID, clone the template (waiting for the clone task
+// to finish), grow the primary disk, push CPU/RAM and cloud-init configuration,
+// then start the guest (waiting for the start task to finish). Each async PVE
+// operation returns a UPID that is polled to completion via waitTask so failures
+// surface as errors rather than being silently lost.
 func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.VMStatus, error) {
 	if spec.TemplateID == 0 {
 		return provider.VMStatus{}, errors.New("proxmox: CreateVM requires a non-zero TemplateID")
@@ -260,21 +333,33 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 
 	node := url.PathEscape(c.cfg.Node)
 
-	// 1. Clone the template into the new VMID.
+	// 1. Clone the template into the new VMID, then wait for the clone task.
 	cloneForm := url.Values{}
 	cloneForm.Set("newid", strconv.Itoa(newID))
 	cloneForm.Set("name", spec.Name)
 	cloneForm.Set("full", "1")
-	var task taskResponse
+	var cloneTask taskResponse
 	clonePath := fmt.Sprintf("/nodes/%s/qemu/%d/clone", node, spec.TemplateID)
-	if err := c.doJSON(ctx, http.MethodPost, clonePath, cloneForm, &task); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, clonePath, cloneForm, &cloneTask); err != nil {
 		return provider.VMStatus{}, fmt.Errorf("proxmox: clone template %d: %w", spec.TemplateID, err)
 	}
-	// TODO: poll the returned UPID (task.Data) via
-	// /nodes/{node}/tasks/{upid}/status until the clone completes before
-	// configuring; for now we proceed optimistically.
+	if err := c.waitTask(ctx, cloneTask.Data); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: clone template %d into %d: %w", spec.TemplateID, newID, err)
+	}
 
-	// 2. Configure CPU/RAM, cloud-init and networking.
+	// 2. Grow the primary disk to the requested size. PVE's resize is
+	// synchronous (it returns null rather than a UPID), so no task wait.
+	if spec.DiskGB > 0 {
+		resizeForm := url.Values{}
+		resizeForm.Set("disk", "scsi0")
+		resizeForm.Set("size", strconv.Itoa(spec.DiskGB)+"G")
+		resizePath := fmt.Sprintf("/nodes/%s/qemu/%d/resize", node, newID)
+		if err := c.doJSON(ctx, http.MethodPut, resizePath, resizeForm, nil); err != nil {
+			return provider.VMStatus{}, fmt.Errorf("proxmox: resize disk on vm %d: %w", newID, err)
+		}
+	}
+
+	// 3. Configure CPU/RAM, cloud-init and networking. Config is synchronous.
 	cfgForm := url.Values{}
 	if spec.VCPU > 0 {
 		cfgForm.Set("cores", strconv.Itoa(spec.VCPU))
@@ -300,12 +385,13 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 		return provider.VMStatus{}, fmt.Errorf("proxmox: configure vm %d: %w", newID, err)
 	}
 
-	// TODO: grow the primary disk to spec.DiskGB via
-	// POST /nodes/{node}/qemu/{id}/resize (disk=scsi0,size=+NG).
-
-	// 3. Start the guest.
+	// 4. Start the guest and wait for the start task to complete.
+	var startTask taskResponse
 	startPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/start", node, newID)
-	if err := c.doJSON(ctx, http.MethodPost, startPath, url.Values{}, nil); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, startPath, url.Values{}, &startTask); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: start vm %d: %w", newID, err)
+	}
+	if err := c.waitTask(ctx, startTask.Data); err != nil {
 		return provider.VMStatus{}, fmt.Errorf("proxmox: start vm %d: %w", newID, err)
 	}
 
@@ -329,13 +415,19 @@ func (c *Client) DeleteVM(ctx context.Context, id string) error {
 	_ = c.doJSON(ctx, http.MethodPost, stopPath, url.Values{}, nil)
 
 	delPath := fmt.Sprintf("/nodes/%s/qemu/%d", node, vmid)
-	if err := c.doJSON(ctx, http.MethodDelete, delPath, nil, nil); err != nil {
+	var delTask taskResponse
+	if err := c.doJSON(ctx, http.MethodDelete, delPath, nil, &delTask); err != nil {
 		// Proxmox returns a non-2xx for an unknown VMID; surface other errors
 		// but treat a clear "does not exist" as success.
 		if strings.Contains(err.Error(), "does not exist") {
 			return nil
 		}
 		return err
+	}
+	// Destroy is asynchronous: wait on the returned UPID so callers only see
+	// success once the guest is actually gone.
+	if err := c.waitTask(ctx, delTask.Data); err != nil {
+		return fmt.Errorf("proxmox: destroy vm %d: %w", vmid, err)
 	}
 	return nil
 }
