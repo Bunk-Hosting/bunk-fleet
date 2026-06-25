@@ -31,11 +31,13 @@ config :control_plane, admin_token: "test-admin-token"
 
 # Fixed, known billing rates (money per resource-hour) so payout math is
 # deterministic in tests. Units are abstract — see `ControlPlane.Billing`.
+# Rates are given as strings (config is evaluated before deps like Decimal are
+# loaded); `ControlPlane.Billing` coerces them to Decimal at runtime.
 config :control_plane,
   billing_rates: %{
-    vcpu: Decimal.new("0.010"),
-    ram_gb: Decimal.new("0.004"),
-    disk_gb: Decimal.new("0.0002")
+    vcpu: "0.010",
+    ram_gb: "0.004",
+    disk_gb: "0.0002"
   }
 
 # Don't run the background node-health reconciler during tests: it would race
