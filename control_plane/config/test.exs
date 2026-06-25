@@ -29,6 +29,15 @@ config :phoenix, :plug_init_mode, :runtime
 # Fixed admin token for the operator/admin API in tests.
 config :control_plane, admin_token: "test-admin-token"
 
+# Fixed, known billing rates (money per resource-hour) so payout math is
+# deterministic in tests. Units are abstract — see `ControlPlane.Billing`.
+config :control_plane,
+  billing_rates: %{
+    vcpu: Decimal.new("0.010"),
+    ram_gb: Decimal.new("0.004"),
+    disk_gb: Decimal.new("0.0002")
+  }
+
 # Don't run the background node-health reconciler during tests: it would race
 # against the Ecto SQL sandbox and the explicit reconciliation tests. Tests
 # exercise the logic directly (and a short-interval Reconciler when needed).

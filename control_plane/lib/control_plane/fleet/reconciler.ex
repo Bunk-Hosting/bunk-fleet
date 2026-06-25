@@ -8,6 +8,10 @@ defmodule ControlPlane.Fleet.Reconciler do
   interval this GenServer calls `ControlPlane.Fleet.mark_stale_nodes_offline/0`,
   which marks every `:online` node with a stale/absent heartbeat as `:offline`.
 
+  Each tick also drives billing: after reconciling node health it meters every
+  active VPS into `usage_records` (see `ControlPlane.Billing.meter_active_vpses/0`),
+  which is how operators accrue payout for the resource-hours their nodes serve.
+
   ## Crash policy
 
   We deliberately wrap each tick in a `try/rescue`: a transient failure (e.g. a
@@ -16,11 +20,16 @@ defmodule ControlPlane.Fleet.Reconciler do
   errors instead of relying on the supervisor to restart us — which, with a
   `:one_for_one` restart limit, could otherwise tear the process down for good
   after repeated failures.
+
+  The node-reconcile and metering sub-steps are wrapped *independently* so that a
+  failure in one does not skip the other (e.g. a metering blip must not stop dead
+  nodes from being flipped offline).
   """
   use GenServer
 
   require Logger
 
+  alias ControlPlane.Billing
   alias ControlPlane.Fleet
 
   @default_interval_ms 30_000
@@ -46,12 +55,14 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   @impl true
   def handle_info(:reconcile, %{interval_ms: interval_ms} = state) do
-    reconcile()
+    # Each sub-step is isolated so a failure in one still lets the other run.
+    reconcile_nodes()
+    meter_usage()
     schedule_tick(interval_ms)
     {:noreply, state}
   end
 
-  defp reconcile do
+  defp reconcile_nodes do
     {count, _} = Fleet.mark_stale_nodes_offline()
 
     if count > 0 do
@@ -60,7 +71,21 @@ defmodule ControlPlane.Fleet.Reconciler do
   rescue
     exception ->
       Logger.error(
-        "fleet reconciler tick failed: #{Exception.message(exception)}",
+        "fleet reconciler node tick failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  defp meter_usage do
+    count = Billing.meter_active_vpses()
+
+    if count > 0 do
+      Logger.info("fleet reconciler metered active vpses", metered: count)
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler metering tick failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end

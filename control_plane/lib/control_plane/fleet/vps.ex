@@ -29,6 +29,10 @@ defmodule ControlPlane.Fleet.Vps do
     field :provider_vm_id, :string
     field :ip_address, :string
 
+    # Accrual-metering watermark: the timestamp through which this VPS has
+    # already been metered into `usage_records` (see `ControlPlane.Billing`).
+    field :last_metered_at, :utc_datetime
+
     belongs_to :region, Region
     belongs_to :node, Node
 
@@ -48,7 +52,8 @@ defmodule ControlPlane.Fleet.Vps do
       :disk_gb,
       :owner_email,
       :provider_vm_id,
-      :ip_address
+      :ip_address,
+      :last_metered_at
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> assoc_constraint(:region)
