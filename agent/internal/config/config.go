@@ -84,7 +84,10 @@ func Load() (Config, error) {
 		pveNode   = fs.String("proxmox-node", envOr("BUNK_PROXMOX_NODE", ""), "Proxmox VE node name")
 		pveTokID  = fs.String("proxmox-token-id", envOr("BUNK_PROXMOX_TOKEN_ID", ""), "Proxmox API token id (USER@REALM!TOKENID)")
 		pveSecret = fs.String("proxmox-token-secret", envOr("BUNK_PROXMOX_TOKEN_SECRET", ""), "Proxmox API token secret")
-		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", false), "verify Proxmox TLS certificate")
+		// Verify TLS by default: the Proxmox API token is root-equivalent and must
+		// not be sent over an unverified connection. Operators with self-signed
+		// certs must explicitly opt out via BUNK_PROXMOX_VERIFY_SSL=false.
+		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true), "verify Proxmox TLS certificate")
 
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second), "capacity heartbeat interval")
 	)

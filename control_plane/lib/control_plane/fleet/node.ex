@@ -64,17 +64,23 @@ defmodule ControlPlane.Fleet.Node do
   end
 
   @doc """
-  Changeset applied when a node reports a heartbeat: refreshes the live available
-  capacity, the heartbeat timestamp, and (optionally) the status.
+  Changeset applied when a node reports a heartbeat.
+
+  A heartbeat updates only the node's advertised *total* capacity (the operator
+  may add/remove hardware) and the heartbeat timestamp. It deliberately does NOT
+  touch `available_*` — that is managed exclusively by the
+  `ControlPlane.Fleet.Scheduler` (decremented on placement, released on delete),
+  so an untrusted heartbeat can never undo a reservation and overcommit a node.
+  It also does NOT set `:status`: node status is transitioned by authorized
+  server-side logic, never driven by the least-trusted (agent) input.
   """
   def heartbeat_changeset(node, attrs) do
     node
     |> cast(attrs, [
-      :available_vcpu,
-      :available_ram_mb,
-      :available_disk_gb,
-      :last_heartbeat_at,
-      :status
+      :total_vcpu,
+      :total_ram_mb,
+      :total_disk_gb,
+      :last_heartbeat_at
     ])
     |> validate_required([:last_heartbeat_at])
   end

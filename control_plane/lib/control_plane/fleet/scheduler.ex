@@ -87,6 +87,9 @@ defmodule ControlPlane.Fleet.Scheduler do
         n.available_ram_mb >= ^ram_mb and
         n.available_disk_gb >= ^disk_gb
     )
+    # Deterministic lock-acquisition order so concurrent schedulers never grab
+    # the same candidate rows in opposite orders (deadlock avoidance).
+    |> order_by([n], asc: n.id)
     |> lock("FOR UPDATE")
     |> repo.all()
   end

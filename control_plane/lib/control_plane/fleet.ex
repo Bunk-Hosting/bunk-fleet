@@ -21,11 +21,22 @@ defmodule ControlPlane.Fleet do
 
   @doc """
   Registers (enrolls) a new node in the fleet.
+
+  On enrollment the node's live `available_*` capacity is initialised to its
+  advertised `total_*` (unless explicitly provided), since a fresh node hosts no
+  VPSes yet. From then on `available_*` is owned solely by the scheduler.
   """
   def register_node(attrs) do
     %Node{}
-    |> Node.changeset(attrs)
+    |> Node.changeset(default_available(normalize_keys(attrs)))
     |> Repo.insert()
+  end
+
+  defp default_available(attrs) do
+    attrs
+    |> Map.put_new(:available_vcpu, attrs[:total_vcpu])
+    |> Map.put_new(:available_ram_mb, attrs[:total_ram_mb])
+    |> Map.put_new(:available_disk_gb, attrs[:total_disk_gb])
   end
 
   @doc """

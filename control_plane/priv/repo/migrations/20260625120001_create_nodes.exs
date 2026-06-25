@@ -30,5 +30,21 @@ defmodule ControlPlane.Repo.Migrations.CreateNodes do
 
     create index(:nodes, [:region_id])
     create index(:nodes, [:region_id, :status])
+
+    # DB-level backstop against overcommit: available capacity can never go
+    # negative, nor exceed the advertised total. If the scheduler ever tries to
+    # decrement below zero, the transaction fails loudly instead of silently
+    # persisting an overcommitted node.
+    create constraint(:nodes, :available_nonneg,
+             check:
+               "available_vcpu >= 0 AND available_ram_mb >= 0 AND available_disk_gb >= 0"
+           )
+
+    create constraint(:nodes, :available_within_total,
+             check:
+               "(total_vcpu IS NULL OR available_vcpu IS NULL OR available_vcpu <= total_vcpu) AND " <>
+                 "(total_ram_mb IS NULL OR available_ram_mb IS NULL OR available_ram_mb <= total_ram_mb) AND " <>
+                 "(total_disk_gb IS NULL OR available_disk_gb IS NULL OR available_disk_gb <= total_disk_gb)"
+           )
   end
 end
