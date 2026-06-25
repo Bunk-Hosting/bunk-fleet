@@ -15,11 +15,16 @@ defmodule ControlPlaneWeb.Admin.RegionController do
   end
 
   def create(conn, params) do
-    attrs = %{
-      code: params["code"],
-      name: params["name"],
-      enabled: params["enabled"]
-    }
+    # Only forward `enabled` when explicitly supplied; otherwise let the schema/DB
+    # default (true) apply rather than casting a nil over it (NOT NULL column).
+    attrs =
+      %{code: params["code"], name: params["name"]}
+      |> then(fn a ->
+        case params["enabled"] do
+          nil -> a
+          v -> Map.put(a, :enabled, v)
+        end
+      end)
 
     case Fleet.create_region(attrs) do
       {:ok, region} ->
