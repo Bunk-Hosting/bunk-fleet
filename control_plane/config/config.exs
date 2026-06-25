@@ -11,6 +11,18 @@ config :control_plane,
   ecto_repos: [ControlPlane.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+# Operator/admin API configuration.
+#
+# `admin_token` is the shared-secret bearer token required by the `/admin/v1` API
+# (see `ControlPlaneWeb.Plugs.AdminAuth`); when unset the admin API denies all
+# requests. `public_url` is the externally reachable control-plane URL embedded in
+# node-enrollment install commands. `default_template_id` is the provider VM
+# template used when provisioning a VPS without an explicit template.
+config :control_plane,
+  admin_token: System.get_env("ADMIN_TOKEN"),
+  public_url: System.get_env("PUBLIC_URL", "https://control.bunkhosting.nl"),
+  default_template_id: 9000
+
 # Configures the endpoint
 config :control_plane, ControlPlaneWeb.Endpoint,
   url: [host: "localhost"],

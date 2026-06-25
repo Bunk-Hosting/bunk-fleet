@@ -11,6 +11,12 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.NodeAuth
   end
 
+  # Operator/admin API: JSON plus shared-secret admin-token bearer authentication.
+  pipeline :admin_api do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.AdminAuth
+  end
+
   scope "/api", ControlPlaneWeb do
     pipe_through :api
   end
@@ -28,6 +34,17 @@ defmodule ControlPlaneWeb.Router do
     post "/heartbeat", HeartbeatController, :create
     get "/commands", CommandController, :index
     post "/commands/:id/result", CommandController, :result
+  end
+
+  # Operator/admin API.
+  scope "/admin/v1", ControlPlaneWeb.Admin do
+    pipe_through :admin_api
+
+    resources "/regions", RegionController, only: [:index, :create]
+    post "/enroll-tokens", EnrollTokenController, :create
+    get "/nodes", NodeController, :index
+    get "/vpses", VpsController, :index
+    post "/vpses", VpsController, :create
   end
 
   # Enable LiveDashboard in development

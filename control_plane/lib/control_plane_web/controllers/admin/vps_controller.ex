@@ -1,0 +1,97 @@
+defmodule ControlPlaneWeb.Admin.VpsController do
+  @moduledoc """
+  Operator/admin API for listing and provisioning VPSes.
+
+  `create` drives `ControlPlane.Provisioning.create_vps/1`, accepting either a
+  `region_id` or a `region_code`, and defaulting `template_id` from
+  `Application.get_env(:control_plane, :default_template_id, 9000)`.
+
+  Protected by `ControlPlaneWeb.Plugs.AdminAuth` (shared-secret admin token).
+  """
+  use ControlPlaneWeb, :controller
+
+  alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.{Region, Vps}
+  alias ControlPlane.Provisioning
+
+  def index(conn, _params) do
+    vpses = Enum.map(Fleet.list_vpses(), &vps_json/1)
+    json(conn, %{vpses: vpses})
+  end
+
+  def create(conn, params) do
+    with {:ok, region_id} <- resolve_region_id(params),
+         {:ok, %{vps: vps}} <- Provisioning.create_vps(build_attrs(params, region_id)) do
+      conn
+      |> put_status(:created)
+      |> json(%{vps: vps_json(vps)})
+    else
+      {:error, :region_not_found} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "region_not_found"})
+
+      {:error, :no_capacity} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{error: "no_capacity"})
+
+      {:error, _reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_vps"})
+    end
+  end
+
+  defp build_attrs(params, region_id) do
+    %{
+      region_id: region_id,
+      name: params["name"],
+      vcpu: params["vcpu"],
+      ram_mb: params["ram_mb"],
+      disk_gb: params["disk_gb"],
+      owner_email: params["owner_email"],
+      template_id: params["template_id"] || default_template_id(),
+      ssh_keys: params["ssh_keys"] || [],
+      cloud_init: params["cloud_init"] || %{},
+      ip_config: params["ip_config"]
+    }
+  end
+
+  # Accepts either `region_id` (binary_id) or `region_code` (e.g. "nl-1").
+  defp resolve_region_id(%{"region_id" => region_id}) when is_binary(region_id) do
+    {:ok, region_id}
+  end
+
+  defp resolve_region_id(%{"region_code" => region_code}) when is_binary(region_code) do
+    case Fleet.region_by_code(region_code) do
+      %Region{id: id} -> {:ok, id}
+      nil -> {:error, :region_not_found}
+    end
+  end
+
+  defp resolve_region_id(_params), do: {:error, :region_not_found}
+
+  defp default_template_id do
+    Application.get_env(:control_plane, :default_template_id, 9000)
+  end
+
+  defp vps_json(%Vps{} = vps) do
+    %{
+      id: vps.id,
+      name: vps.name,
+      status: vps.status,
+      region: region_code(vps),
+      node_id: vps.node_id,
+      provider_vm_id: vps.provider_vm_id,
+      ip_address: vps.ip_address,
+      vcpu: vps.vcpu,
+      ram_mb: vps.ram_mb,
+      disk_gb: vps.disk_gb,
+      owner_email: vps.owner_email
+    }
+  end
+
+  defp region_code(%Vps{region: %{code: code}}), do: code
+  defp region_code(%Vps{}), do: nil
+end

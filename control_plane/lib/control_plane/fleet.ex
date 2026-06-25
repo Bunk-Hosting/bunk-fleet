@@ -6,7 +6,7 @@ defmodule ControlPlane.Fleet do
   import Ecto.Query, warn: false
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Fleet.{Node, Region, Vps}
 
   # A node is considered "online" for scheduling purposes only if it has reported
   # a heartbeat within this window.
@@ -17,6 +17,43 @@ defmodule ControlPlane.Fleet do
   """
   def list_regions do
     Repo.all(Region)
+  end
+
+  @doc """
+  Fetches a single region by id, raising `Ecto.NoResultsError` if none exists.
+  """
+  def get_region!(id), do: Repo.get!(Region, id)
+
+  @doc """
+  Fetches a single region by its unique `code` (e.g. "nl-1").
+
+  Returns the `%Region{}` or `nil` if no region has that code.
+  """
+  def region_by_code(code) when is_binary(code) do
+    Repo.get_by(Region, code: code)
+  end
+
+  @doc """
+  Creates a region from the given attributes.
+  """
+  def create_region(attrs) do
+    %Region{}
+    |> Region.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Returns all nodes, with their region preloaded, newest first.
+  """
+  def list_nodes do
+    Repo.all(from n in Node, order_by: [desc: n.inserted_at], preload: [:region])
+  end
+
+  @doc """
+  Returns all VPSes, with their region preloaded, newest first.
+  """
+  def list_vpses do
+    Repo.all(from v in Vps, order_by: [desc: v.inserted_at], preload: [:region])
   end
 
   @doc """
