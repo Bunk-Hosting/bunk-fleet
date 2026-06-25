@@ -115,11 +115,11 @@ func TestFindGuestByName(t *testing.T) {
 			wantFound: false,
 		},
 		{
-			name:      "empty query does not match unnamed guest",
+			name:      "empty query never matches (idempotency safety)",
 			guests:    guests,
 			query:     "",
-			wantFound: true, // empty query equals the unnamed guest's empty name
-			wantVMID:  103,
+			wantFound: false, // an unset name must not match an unnamed guest
+			wantVMID:  0,
 		},
 		{
 			name:      "empty list",
