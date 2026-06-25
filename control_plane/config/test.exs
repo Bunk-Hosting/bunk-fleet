@@ -28,3 +28,8 @@ config :phoenix, :plug_init_mode, :runtime
 
 # Fixed admin token for the operator/admin API in tests.
 config :control_plane, admin_token: "test-admin-token"
+
+# Don't run the background node-health reconciler during tests: it would race
+# against the Ecto SQL sandbox and the explicit reconciliation tests. Tests
+# exercise the logic directly (and a short-interval Reconciler when needed).
+config :control_plane, start_reconciler: false

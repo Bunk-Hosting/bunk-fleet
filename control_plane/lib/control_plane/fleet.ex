@@ -160,6 +160,42 @@ defmodule ControlPlane.Fleet do
   @doc false
   def heartbeat_ttl_seconds, do: @heartbeat_ttl_seconds
 
+  @doc """
+  Flips stale `:online` nodes to `:offline`, returning `{count, _}`.
+
+  A node whose agent has stopped reporting keeps `status: :online` in the database
+  indefinitely — the `@heartbeat_ttl_seconds` TTL only hides it from the scheduler
+  (see `online_nodes_in_region_query/1`), so the operator dashboard and status
+  checks would still show a dead node as online. This reconciliation step makes
+  that staleness explicit: it sets `status = :offline` for every node that is
+  currently `:online` and whose `last_heartbeat_at` is either null or older than
+  the heartbeat TTL.
+
+  Only `:online` nodes are affected. `:draining`, `:pending` and already-`:offline`
+  nodes are deliberately left untouched (e.g. an operator-initiated drain must not
+  be undone by reconciliation), and `available_*` capacity — owned solely by the
+  scheduler — is never modified. The update runs as a single `Repo.update_all`.
+
+  See `mark_stale_nodes_offline/1` to pass an explicit cutoff (useful in tests).
+  """
+  def mark_stale_nodes_offline do
+    mark_stale_nodes_offline(DateTime.add(now(), -@heartbeat_ttl_seconds, :second))
+  end
+
+  @doc """
+  Like `mark_stale_nodes_offline/0`, but flips `:online` nodes whose
+  `last_heartbeat_at` is null or strictly older than the given `cutoff` datetime.
+  """
+  def mark_stale_nodes_offline(%DateTime{} = cutoff) do
+    query =
+      from n in Node,
+        where:
+          n.status == :online and
+            (is_nil(n.last_heartbeat_at) or n.last_heartbeat_at < ^cutoff)
+
+    Repo.update_all(query, set: [status: :offline, updated_at: now()])
+  end
+
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
   # Allow both string- and atom-keyed attribute maps for heartbeats.

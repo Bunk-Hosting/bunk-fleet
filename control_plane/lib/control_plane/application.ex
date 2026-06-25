@@ -7,21 +7,34 @@ defmodule ControlPlane.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      ControlPlaneWeb.Telemetry,
-      ControlPlane.Repo,
-      {DNSCluster, query: Application.get_env(:control_plane, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: ControlPlane.PubSub},
-      # Start a worker by calling: ControlPlane.Worker.start_link(arg)
-      # {ControlPlane.Worker, arg},
-      # Start to serve requests, typically the last entry
-      ControlPlaneWeb.Endpoint
-    ]
+    children =
+      [
+        ControlPlaneWeb.Telemetry,
+        ControlPlane.Repo,
+        {DNSCluster, query: Application.get_env(:control_plane, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: ControlPlane.PubSub}
+      ] ++
+        reconciler_child() ++
+        [
+          # Start to serve requests, typically the last entry
+          ControlPlaneWeb.Endpoint
+        ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: ControlPlane.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # The node-health reconciler is skipped in the test env (see config/test.exs)
+  # so it can't interfere with the database sandbox; dev/prod start it normally.
+  defp reconciler_child do
+    if Application.get_env(:control_plane, :start_reconciler, true) do
+      interval_ms = Application.get_env(:control_plane, :reconcile_interval_ms, 30_000)
+      [{ControlPlane.Fleet.Reconciler, interval_ms: interval_ms}]
+    else
+      []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration
