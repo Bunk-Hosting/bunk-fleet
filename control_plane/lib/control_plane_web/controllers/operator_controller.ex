@@ -24,11 +24,12 @@ defmodule ControlPlaneWeb.OperatorController do
   def create_enroll_token(conn, params) do
     with {:ok, %Region{} = region} <- resolve_region(params),
          {:ok, tier} <- parse_tier(params),
+         {:ok, ttl_seconds} <- parse_ttl(params),
          {:ok, {plaintext, token}} <-
            Enrollment.create_enroll_token_for_operator(conn.assigns.current_user, %{
              region_id: region.id,
              tier: tier,
-             ttl_seconds: parse_ttl(params)
+             ttl_seconds: ttl_seconds
            }) do
       conn
       |> put_status(:created)
@@ -42,6 +43,7 @@ defmodule ControlPlaneWeb.OperatorController do
     else
       {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
       {:error, :invalid_tier} -> error(conn, :unprocessable_entity, "invalid_tier")
+      {:error, :invalid_ttl} -> error(conn, :unprocessable_entity, "invalid_ttl")
       {:error, _changeset} -> error(conn, :unprocessable_entity, "invalid_enroll_token")
     end
   end
@@ -130,16 +132,18 @@ defmodule ControlPlaneWeb.OperatorController do
   defp parse_tier(%{"tier" => _}), do: {:error, :invalid_tier}
   defp parse_tier(_params), do: {:ok, :community}
 
-  defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0, do: ttl
+  defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0, do: {:ok, ttl}
+  defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl), do: {:error, :invalid_ttl}
 
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_binary(ttl) do
     case Integer.parse(ttl) do
-      {n, _} when n > 0 -> n
-      _ -> @default_ttl_seconds
+      {n, ""} when n > 0 -> {:ok, n}
+      _ -> {:error, :invalid_ttl}
     end
   end
 
-  defp parse_ttl(_params), do: @default_ttl_seconds
+  defp parse_ttl(%{"ttl_seconds" => _}), do: {:error, :invalid_ttl}
+  defp parse_ttl(_params), do: {:ok, @default_ttl_seconds}
 
   defp default_to, do: DateTime.utc_now() |> DateTime.truncate(:second)
   defp default_from(to), do: DateTime.add(to, -@default_window_days * 24 * 3600, :second)

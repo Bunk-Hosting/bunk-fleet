@@ -55,8 +55,16 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
 
   # Accepts either `region_id` (binary_id) or `region_code` (e.g. "nl-1").
   defp resolve_region(%{"region_id" => region_id}) when is_binary(region_id) do
-    case Fleet.get_region!(region_id) do
-      %Region{} = region -> {:ok, region}
+    # Validate the UUID format first so a malformed id is a clean 422, not a 500
+    # from Ecto.Query.CastError inside get_region!/1.
+    case Ecto.UUID.cast(region_id) do
+      {:ok, id} ->
+        case Fleet.get_region!(id) do
+          %Region{} = region -> {:ok, region}
+        end
+
+      :error ->
+        {:error, :region_not_found}
     end
   rescue
     Ecto.NoResultsError -> {:error, :region_not_found}

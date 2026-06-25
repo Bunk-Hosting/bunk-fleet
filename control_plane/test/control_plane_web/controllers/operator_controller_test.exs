@@ -85,6 +85,14 @@ defmodule ControlPlaneWeb.OperatorControllerTest do
                |> post(~p"/api/v1/operator/enroll-tokens", %{"region_code" => "nope"})
                |> json_response(422)
     end
+
+    test "422 for a malformed ttl_seconds", ctx do
+      assert %{"error" => "invalid_ttl"} =
+               ctx.conn
+               |> auth(ctx.operator)
+               |> post(~p"/api/v1/operator/enroll-tokens", %{"region_code" => ctx.region.code, "ttl_seconds" => "abc"})
+               |> json_response(422)
+    end
   end
 
   # --- nodes -----------------------------------------------------------------
