@@ -39,8 +39,29 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.AdminAuth
   end
 
+  # End-user/operator API: JSON plus per-user session-token bearer authentication.
+  pipeline :user_api do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.ApiAuth
+  end
+
   scope "/api", ControlPlaneWeb do
     pipe_through :api
+  end
+
+  # User accounts: open registration/login, then authenticated session routes.
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :api
+
+    post "/auth/register", AuthController, :register
+    post "/auth/login", AuthController, :login
+  end
+
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :user_api
+
+    get "/auth/me", AuthController, :me
+    delete "/auth/logout", AuthController, :logout
   end
 
   # bunk-agent onboarding / heartbeat / command API.

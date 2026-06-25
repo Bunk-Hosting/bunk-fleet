@@ -20,6 +20,9 @@ config :control_plane, ControlPlaneWeb.Endpoint,
   secret_key_base: "YNPKvSxBXcNDgGiVltfVVndf2w4yOI46jilMXVbQCWG31Qct9/Gk7Qv9+DvpcGCK",
   server: false
 
+# Only in tests, remove the complexity from the password hashing algorithm
+config :bcrypt_elixir, :log_rounds, 1
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 
