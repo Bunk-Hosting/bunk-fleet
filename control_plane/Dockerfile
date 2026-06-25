@@ -29,9 +29,9 @@ COPY lib lib
 COPY asset[s] assets
 RUN mix assets.deploy || true
 
-# Build the release.
+# Build the release (no rel/ overlays needed — migrations run via
+# `bin/control_plane eval "ControlPlane.Release.migrate()"`).
 RUN mix compile
-COPY rel rel
 RUN mix release
 
 # --- runtime stage -------------------------------------------------------

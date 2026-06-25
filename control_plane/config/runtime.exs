@@ -65,6 +65,29 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # Operator/admin shared-secret token and the externally-reachable URL embedded in
+  # node-enrollment install commands. Read HERE (runtime), not config.exs, so a
+  # release picks them up from the environment at boot instead of freezing a
+  # build-time value.
+  config :control_plane,
+    admin_token: System.get_env("ADMIN_TOKEN"),
+    public_url: System.get_env("PUBLIC_URL") || "https://#{host}"
+
+  # Billing rates (money per resource-hour) as decimal strings — `ControlPlane.Billing`
+  # coerces them to Decimal so money math stays exact. Non-zero defaults so a fresh
+  # prod deploy meters something rather than billing everyone €0.
+  config :control_plane,
+    billing_rates: %{
+      vcpu: System.get_env("RATE_VCPU") || "0.010",
+      ram_gb: System.get_env("RATE_RAM_GB") || "0.004",
+      disk_gb: System.get_env("RATE_DISK_GB") || "0.0002"
+    }
+
+  # Per-owner active-VPS quota for self-service create (default 10 in code).
+  if max = System.get_env("MAX_VPSES_PER_OWNER") do
+    config :control_plane, max_vpses_per_owner: String.to_integer(max)
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
