@@ -282,14 +282,14 @@ func (c *Client) pollCommands(ctx context.Context) ([]Command, error) {
 		return nil, fmt.Errorf("transport: commands poll: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
-	var payload struct {
-		Commands []Command `json:"commands"`
-	}
+	// The control plane returns a bare JSON array of commands:
+	//   [{"id":"...","kind":"provision","payload":{...}}]
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	var cmds []Command
+	if err := json.Unmarshal(raw, &cmds); err != nil {
 		return nil, fmt.Errorf("transport: decode commands: %w", err)
 	}
-	return payload.Commands, nil
+	return cmds, nil
 }
