@@ -383,6 +383,7 @@ defmodule ControlPlane.Provisioning do
       ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
       disk_gb: attrs[:disk_gb] || attrs["disk_gb"],
       owner_email: attrs[:owner_email] || attrs["owner_email"],
+      owner_id: attrs[:owner_id] || attrs["owner_id"],
       status: :queued
     })
   end

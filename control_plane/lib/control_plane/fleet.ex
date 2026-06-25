@@ -57,6 +57,32 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Returns the VPSes owned by `owner_id`, region preloaded, newest first.
+  """
+  def list_vpses_for_owner(owner_id) do
+    Repo.all(
+      from v in Vps,
+        where: v.owner_id == ^owner_id,
+        order_by: [desc: v.inserted_at],
+        preload: [:region]
+    )
+  end
+
+  @doc """
+  Fetches a single VPS by `id`, but only if it is owned by `owner_id`.
+
+  Returns `nil` when the VPS does not exist *or* belongs to another owner — the
+  caller cannot distinguish the two, so this doubles as the authorization check.
+  """
+  def get_vps_for_owner(owner_id, id) do
+    Repo.one(
+      from v in Vps,
+        where: v.id == ^id and v.owner_id == ^owner_id,
+        preload: [:region]
+    )
+  end
+
+  @doc """
   Registers (enrolls) a new node in the fleet.
 
   On enrollment the node's live `available_*` capacity is initialised to its
