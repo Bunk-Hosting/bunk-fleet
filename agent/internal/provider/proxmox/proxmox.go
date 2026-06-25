@@ -1,0 +1,403 @@
+// Package proxmox implements provider.Provider against the Proxmox VE REST
+// API (/api2/json) using API-token authentication.
+//
+// Authentication uses the header:
+//
+//	Authorization: PVEAPIToken=USER@REALM!TOKENID=SECRET
+//
+// which requires no login ticket / CSRF dance and is well suited to an
+// unattended agent.
+package proxmox
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
+)
+
+// Config holds the connection parameters for a Proxmox VE node.
+type Config struct {
+	// Host is the base URL of the PVE API, e.g. "https://10.0.0.5:8006".
+	Host string
+	// Node is the cluster node name targeted by this agent, e.g. "pve".
+	Node string
+	// TokenID is the full token identifier "USER@REALM!TOKENID".
+	TokenID string
+	// TokenSecret is the secret UUID value of the API token.
+	TokenSecret string
+	// VerifySSL toggles TLS certificate verification. Many homelab PVE nodes
+	// use self-signed certs, so this may be false in practice.
+	VerifySSL bool
+}
+
+// Client is a Proxmox VE provider implementation.
+type Client struct {
+	cfg  Config
+	base string
+	http *http.Client
+}
+
+// compile-time assertion that Client satisfies provider.Provider.
+var _ provider.Provider = (*Client)(nil)
+
+// New constructs a Client from cfg. It returns an error if required fields are
+// missing.
+func New(cfg Config) (*Client, error) {
+	if cfg.Host == "" {
+		return nil, errors.New("proxmox: Host is required")
+	}
+	if cfg.Node == "" {
+		return nil, errors.New("proxmox: Node is required")
+	}
+	if cfg.TokenID == "" || cfg.TokenSecret == "" {
+		return nil, errors.New("proxmox: TokenID and TokenSecret are required")
+	}
+	return &Client{
+		cfg:  cfg,
+		base: strings.TrimRight(cfg.Host, "/") + "/api2/json",
+		http: httpClient(cfg.VerifySSL),
+	}, nil
+}
+
+// httpClient builds an *http.Client whose transport optionally skips TLS
+// verification (for self-signed PVE certificates).
+func httpClient(verifySSL bool) *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: !verifySSL, //nolint:gosec // operator-controlled, homelab certs
+		},
+	}
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: tr,
+	}
+}
+
+// authHeader returns the value for the Authorization header.
+func authHeader(tokenID, secret string) string {
+	return "PVEAPIToken=" + tokenID + "=" + secret
+}
+
+// Name implements provider.Provider.
+func (c *Client) Name() string { return "proxmox" }
+
+// doJSON performs an authenticated request against the PVE API and decodes the
+// JSON response into out (which may be nil). For POST/PUT, body is encoded as
+// application/x-www-form-urlencoded from form.
+func (c *Client) doJSON(ctx context.Context, method, path string, form url.Values, out any) error {
+	var bodyReader io.Reader
+	if form != nil {
+		bodyReader = strings.NewReader(form.Encode())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, bodyReader)
+	if err != nil {
+		return fmt.Errorf("proxmox: build request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader(c.cfg.TokenID, c.cfg.TokenSecret))
+	if form != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("proxmox: %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return fmt.Errorf("proxmox: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("proxmox: %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("proxmox: decode %s %s: %w", method, path, err)
+	}
+	return nil
+}
+
+// --- Capacity -------------------------------------------------------------
+
+// nodeStatus mirrors the subset of GET /nodes/{node}/status we consume.
+type nodeStatus struct {
+	Data struct {
+		CPUInfo struct {
+			CPUs int `json:"cpus"`
+		} `json:"cpuinfo"`
+		Memory struct {
+			Total int64 `json:"total"`
+			Used  int64 `json:"used"`
+			Free  int64 `json:"free"`
+		} `json:"memory"`
+		RootFS struct {
+			Total int64 `json:"total"`
+			Used  int64 `json:"used"`
+			Avail int64 `json:"avail"`
+			Free  int64 `json:"free"`
+		} `json:"rootfs"`
+	} `json:"data"`
+}
+
+// guestEntry mirrors entries from GET /nodes/{node}/qemu (the VM list).
+type guestEntry struct {
+	VMID   int     `json:"vmid"`
+	Name   string  `json:"name"`
+	Status string  `json:"status"`
+	CPUs   float64 `json:"cpus"`
+	MaxMem int64   `json:"maxmem"`
+}
+
+type guestList struct {
+	Data []guestEntry `json:"data"`
+}
+
+// parseCapacity computes a Capacity snapshot from a node status payload and the
+// list of guests. Available vCPU is derived by subtracting the sum of vCPUs
+// assigned to running guests from the node's physical core count (clamped at
+// zero). Memory/disk availability come straight from the node status.
+//
+// It is split out from Capacity so it can be unit-tested without a live PVE.
+func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
+	const mib = 1 << 20
+	const gib = 1 << 30
+
+	totalVCPU := ns.Data.CPUInfo.CPUs
+
+	usedVCPU := 0
+	for _, g := range guests {
+		if g.Status == "running" {
+			usedVCPU += int(g.CPUs)
+		}
+	}
+	availVCPU := totalVCPU - usedVCPU
+	if availVCPU < 0 {
+		availVCPU = 0
+	}
+
+	out := provider.Capacity{
+		TotalVCPU:   totalVCPU,
+		AvailVCPU:   availVCPU,
+		TotalRAMMB:  int(ns.Data.Memory.Total / mib),
+		AvailRAMMB:  int(ns.Data.Memory.Free / mib),
+		TotalDiskGB: int(ns.Data.RootFS.Total / gib),
+		AvailDiskGB: int(ns.Data.RootFS.Avail / gib),
+	}
+	// RootFS may report "free" rather than "avail" on some versions.
+	if out.AvailDiskGB == 0 && ns.Data.RootFS.Free > 0 {
+		out.AvailDiskGB = int(ns.Data.RootFS.Free / gib)
+	}
+	return out
+}
+
+// Capacity implements provider.Provider. It queries node status and the guest
+// list and combines them on a best-effort basis.
+func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
+	var ns nodeStatus
+	if err := c.doJSON(ctx, http.MethodGet, "/nodes/"+url.PathEscape(c.cfg.Node)+"/status", nil, &ns); err != nil {
+		return provider.Capacity{}, err
+	}
+
+	var gl guestList
+	// A failure to list guests is non-fatal: we still report node totals.
+	if err := c.doJSON(ctx, http.MethodGet, "/nodes/"+url.PathEscape(c.cfg.Node)+"/qemu", nil, &gl); err != nil {
+		return parseCapacity(ns, nil), nil
+	}
+	return parseCapacity(ns, gl.Data), nil
+}
+
+// --- Lifecycle ------------------------------------------------------------
+
+// taskResponse is the standard PVE "UPID" wrapper returned by async ops.
+type taskResponse struct {
+	Data string `json:"data"`
+}
+
+// nextVMID asks the cluster for the next free VMID.
+func (c *Client) nextVMID(ctx context.Context) (int, error) {
+	var resp struct {
+		Data string `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/cluster/nextid", nil, &resp); err != nil {
+		return 0, err
+	}
+	id, err := strconv.Atoi(strings.TrimSpace(resp.Data))
+	if err != nil {
+		return 0, fmt.Errorf("proxmox: unexpected nextid %q: %w", resp.Data, err)
+	}
+	return id, nil
+}
+
+// CreateVM implements provider.Provider.
+//
+// The flow is: allocate a VMID, clone the template, push CPU/RAM and
+// cloud-init configuration, then start the guest. Cloning and config are wired
+// up; resize and disk-grow flows are left as clearly-marked TODOs so the
+// happy path is explicit and reviewable.
+func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.VMStatus, error) {
+	if spec.TemplateID == 0 {
+		return provider.VMStatus{}, errors.New("proxmox: CreateVM requires a non-zero TemplateID")
+	}
+
+	newID, err := c.nextVMID(ctx)
+	if err != nil {
+		return provider.VMStatus{}, err
+	}
+
+	node := url.PathEscape(c.cfg.Node)
+
+	// 1. Clone the template into the new VMID.
+	cloneForm := url.Values{}
+	cloneForm.Set("newid", strconv.Itoa(newID))
+	cloneForm.Set("name", spec.Name)
+	cloneForm.Set("full", "1")
+	var task taskResponse
+	clonePath := fmt.Sprintf("/nodes/%s/qemu/%d/clone", node, spec.TemplateID)
+	if err := c.doJSON(ctx, http.MethodPost, clonePath, cloneForm, &task); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: clone template %d: %w", spec.TemplateID, err)
+	}
+	// TODO: poll the returned UPID (task.Data) via
+	// /nodes/{node}/tasks/{upid}/status until the clone completes before
+	// configuring; for now we proceed optimistically.
+
+	// 2. Configure CPU/RAM, cloud-init and networking.
+	cfgForm := url.Values{}
+	if spec.VCPU > 0 {
+		cfgForm.Set("cores", strconv.Itoa(spec.VCPU))
+	}
+	if spec.RAMMB > 0 {
+		cfgForm.Set("memory", strconv.Itoa(spec.RAMMB))
+	}
+	if len(spec.SSHKeys) > 0 {
+		// PVE expects URL-encoded, newline-separated keys.
+		cfgForm.Set("sshkeys", url.QueryEscape(strings.Join(spec.SSHKeys, "\n")))
+	}
+	if spec.IPConfig != "" {
+		cfgForm.Set("ipconfig0", spec.IPConfig)
+	}
+	if user, ok := spec.CloudInit["user"]; ok {
+		cfgForm.Set("ciuser", user)
+	}
+	if pass, ok := spec.CloudInit["password"]; ok {
+		cfgForm.Set("cipassword", pass)
+	}
+	cfgPath := fmt.Sprintf("/nodes/%s/qemu/%d/config", node, newID)
+	if err := c.doJSON(ctx, http.MethodPost, cfgPath, cfgForm, nil); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: configure vm %d: %w", newID, err)
+	}
+
+	// TODO: grow the primary disk to spec.DiskGB via
+	// POST /nodes/{node}/qemu/{id}/resize (disk=scsi0,size=+NG).
+
+	// 3. Start the guest.
+	startPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/start", node, newID)
+	if err := c.doJSON(ctx, http.MethodPost, startPath, url.Values{}, nil); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: start vm %d: %w", newID, err)
+	}
+
+	return provider.VMStatus{
+		ID:    strconv.Itoa(newID),
+		State: "provisioning",
+	}, nil
+}
+
+// DeleteVM implements provider.Provider. It stops the guest (best effort) and
+// then destroys it. A missing guest is treated as success.
+func (c *Client) DeleteVM(ctx context.Context, id string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	node := url.PathEscape(c.cfg.Node)
+
+	// Best-effort stop; ignore errors (guest may already be stopped).
+	stopPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/stop", node, vmid)
+	_ = c.doJSON(ctx, http.MethodPost, stopPath, url.Values{}, nil)
+
+	delPath := fmt.Sprintf("/nodes/%s/qemu/%d", node, vmid)
+	if err := c.doJSON(ctx, http.MethodDelete, delPath, nil, nil); err != nil {
+		// Proxmox returns a non-2xx for an unknown VMID; surface other errors
+		// but treat a clear "does not exist" as success.
+		if strings.Contains(err.Error(), "does not exist") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// vmCurrentStatus mirrors GET /nodes/{node}/qemu/{id}/status/current.
+type vmCurrentStatus struct {
+	Data struct {
+		Status string `json:"status"`
+	} `json:"data"`
+}
+
+// vmAgentIfaces mirrors the QEMU guest-agent network-interface query.
+type vmAgentIfaces struct {
+	Data struct {
+		Result []struct {
+			Name    string `json:"name"`
+			IPAddrs []struct {
+				Type    string `json:"ip-address-type"`
+				Address string `json:"ip-address"`
+			} `json:"ip-addresses"`
+		} `json:"result"`
+	} `json:"data"`
+}
+
+// StatusVM implements provider.Provider. It reports lifecycle state and, when
+// the guest agent is available, the primary non-loopback IPv4 address.
+func (c *Client) StatusVM(ctx context.Context, id string) (provider.VMStatus, error) {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	node := url.PathEscape(c.cfg.Node)
+
+	var cur vmCurrentStatus
+	statusPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/current", node, vmid)
+	if err := c.doJSON(ctx, http.MethodGet, statusPath, nil, &cur); err != nil {
+		return provider.VMStatus{}, err
+	}
+
+	st := provider.VMStatus{ID: id, State: cur.Data.Status}
+	if st.State == "" {
+		st.State = "unknown"
+	}
+
+	// Best-effort IP discovery via the guest agent; failures are ignored.
+	var ifaces vmAgentIfaces
+	agentPath := fmt.Sprintf("/nodes/%s/qemu/%d/agent/network-get-interfaces", node, vmid)
+	if err := c.doJSON(ctx, http.MethodGet, agentPath, nil, &ifaces); err == nil {
+		st.IP = firstIPv4(ifaces)
+	}
+	return st, nil
+}
+
+// firstIPv4 returns the first non-loopback IPv4 address from a guest-agent
+// interface listing, or "" if none is found.
+func firstIPv4(ifaces vmAgentIfaces) string {
+	for _, ifc := range ifaces.Data.Result {
+		for _, addr := range ifc.IPAddrs {
+			if addr.Type == "ipv4" && addr.Address != "" && !strings.HasPrefix(addr.Address, "127.") {
+				return addr.Address
+			}
+		}
+	}
+	return ""
+}
