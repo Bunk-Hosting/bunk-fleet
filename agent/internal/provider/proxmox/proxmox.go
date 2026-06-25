@@ -486,6 +486,11 @@ func (c *Client) StatusVM(ctx context.Context, id string) (provider.VMStatus, er
 // a pure helper, split out of FindByName so the name-matching logic can be
 // unit-tested without a live PVE.
 func findGuestByName(guests []guestEntry, name string) (vmid int, status string, found bool) {
+	// An empty query never matches: a nameless guest must not be treated as a
+	// match for an "unset" name (which would make idempotency dangerously broad).
+	if name == "" {
+		return 0, "", false
+	}
 	for _, g := range guests {
 		if g.Name == name {
 			return g.VMID, g.Status, true
