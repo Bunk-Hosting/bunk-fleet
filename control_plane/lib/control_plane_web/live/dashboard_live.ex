@@ -2,27 +2,44 @@ defmodule ControlPlaneWeb.DashboardLive do
   @moduledoc """
   Realtime operator/admin dashboard for the Bunk Fleet control plane.
 
-  Renders a dark-themed overview of regions, nodes and VPSes and self-refreshes
-  every 2 seconds (only once the socket is connected) by re-reading the `Fleet`
-  context — simple polling rather than PubSub, which is plenty for an operator
-  view.
+  Renders a dark-themed overview of regions, nodes and VPSes that updates in real
+  time (only once the socket is connected): on mount it subscribes to the
+  `ControlPlane.Fleet.Events` `"fleet:changes"` topic and reloads the `Fleet`
+  context whenever a fleet change is broadcast — sub-second, event-driven updates
+  instead of constant polling.
+
+  A slow 15s fallback timer is kept purely as a safety net: if an event is ever
+  dropped (broadcasting is best-effort) the dashboard still reconciles within
+  that window.
   """
   use ControlPlaneWeb, :live_view
 
   alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Events
 
-  @refresh_ms 2_000
+  # Slow backstop refresh. Updates normally arrive via PubSub (sub-second); this
+  # only catches a dropped/best-effort broadcast, so it can be far less frequent
+  # than the old 2s full-poll.
+  @refresh_ms 15_000
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
+      Events.subscribe()
       :timer.send_interval(@refresh_ms, :refresh)
     end
 
     {:ok, load(socket)}
   end
 
+  # Event-driven update: some part of the fleet changed, reload the data. The
+  # `kind` is coarse, so we always do a full reload (cheap relative to render).
   @impl true
+  def handle_info({:fleet_changed, _kind}, socket) do
+    {:noreply, load(socket)}
+  end
+
+  # Slow fallback refresh (safety net for a dropped best-effort broadcast).
   def handle_info(:refresh, socket) do
     {:noreply, load(socket)}
   end
@@ -62,7 +79,7 @@ defmodule ControlPlaneWeb.DashboardLive do
     <header>
       <h1>Bunk Fleet · Operator Dashboard</h1>
       <div class="muted">
-        Live view · auto-refreshing every 2s · {Calendar.strftime(@now, "%Y-%m-%d %H:%M:%S UTC")}
+        Live view · realtime updates · {Calendar.strftime(@now, "%Y-%m-%d %H:%M:%S UTC")}
       </div>
 
       <div class="summary">

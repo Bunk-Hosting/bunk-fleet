@@ -6,7 +6,7 @@ defmodule ControlPlane.Fleet do
   import Ecto.Query, warn: false
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Node, Region, Vps}
+  alias ControlPlane.Fleet.{Events, Node, Region, Vps}
 
   # A node is considered "online" for scheduling purposes only if it has reported
   # a heartbeat within this window.
@@ -119,7 +119,18 @@ defmodule ControlPlane.Fleet do
     node
     |> Node.mark_online_changeset(attrs)
     |> Repo.update()
+    |> tap_ok(fn _node -> Events.broadcast_changed(:node) end)
   end
+
+  # Runs `fun` only when `result` is `{:ok, value}`, then returns `result`
+  # unchanged. Used to fire a best-effort PubSub event as a side-effect after a
+  # successful DB write without altering the function's return value.
+  defp tap_ok({:ok, value} = result, fun) do
+    fun.(value)
+    result
+  end
+
+  defp tap_ok(result, _fun), do: result
 
   # A node enrolls before it has reported any capacity, so `available_*` starts
   # nil. On the FIRST heartbeat (which establishes total_*) we seed available_*
@@ -193,7 +204,11 @@ defmodule ControlPlane.Fleet do
           n.status == :online and
             (is_nil(n.last_heartbeat_at) or n.last_heartbeat_at < ^cutoff)
 
-    Repo.update_all(query, set: [status: :offline, updated_at: now()])
+    {count, _} = result = Repo.update_all(query, set: [status: :offline, updated_at: now()])
+
+    if count > 0, do: Events.broadcast_changed(:nodes_offline)
+
+    result
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)

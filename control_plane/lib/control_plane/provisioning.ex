@@ -17,6 +17,7 @@ defmodule ControlPlane.Provisioning do
   alias Ecto.Multi
   alias ControlPlane.Repo
   alias ControlPlane.Fleet.{Command, Node, Reservation, Vps}
+  alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Scheduler
 
   # How long a `:delivered` command may sit without a reported result before it
@@ -77,12 +78,18 @@ defmodule ControlPlane.Provisioning do
           end)
 
         case Repo.transaction(multi) do
-          {:ok, %{vps: vps, command: command}} -> {:ok, %{vps: vps, command: command}}
-          {:error, _step, reason, _changes} -> {:error, reason}
+          {:ok, %{vps: vps, command: command}} ->
+            Events.broadcast_changed(:vps)
+            {:ok, %{vps: vps, command: command}}
+
+          {:error, _step, reason, _changes} ->
+            {:error, reason}
         end
 
       {:error, :no_capacity} ->
         {:ok, _failed} = mark_vps_failed(vps)
+        # The VPS was persisted (now :failed) so the dashboard should still update.
+        Events.broadcast_changed(:vps)
         {:error, :no_capacity}
     end
   end
@@ -131,8 +138,12 @@ defmodule ControlPlane.Provisioning do
           end)
 
         case Repo.transaction(multi) do
-          {:ok, %{vps: vps, command: command}} -> {:ok, %{vps: vps, command: command}}
-          {:error, _step, reason, _changes} -> {:error, reason}
+          {:ok, %{vps: vps, command: command}} ->
+            Events.broadcast_changed(:vps)
+            {:ok, %{vps: vps, command: command}}
+
+          {:error, _step, reason, _changes} ->
+            {:error, reason}
         end
     end
   end
@@ -234,10 +245,16 @@ defmodule ControlPlane.Provisioning do
       |> finalize_vps(command, outcome, result)
 
     case Repo.transaction(multi) do
-      {:ok, %{command: command}} -> {:ok, command}
+      {:ok, %{command: command}} ->
+        Events.broadcast_changed(:vps)
+        {:ok, command}
+
       # The result was already applied by a prior (or concurrent) delivery.
-      {:error, :lock, :already_applied, _changes} -> {:ok, command}
-      {:error, _step, reason, _changes} -> {:error, reason}
+      {:error, :lock, :already_applied, _changes} ->
+        {:ok, command}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
     end
   end
 
