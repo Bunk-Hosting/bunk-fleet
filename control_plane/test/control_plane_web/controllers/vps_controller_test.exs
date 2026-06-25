@@ -3,7 +3,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
   alias ControlPlane.{Accounts, Provisioning, Repo}
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Fleet.{Node, Region, Vps}
 
   @password "super-secret-pw-123"
 
@@ -116,6 +116,35 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert %{"error" => "region_not_found"} =
                conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
     end
+
+    test "422 for a zero/negative spec", %{conn: conn, region: region, user: user} do
+      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 0, "ram_mb" => 4096, "disk_gb" => 50}
+      assert %{"error" => "invalid_vps"} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+
+      neg = %{params | "vcpu" => 2, "disk_gb" => -10}
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", neg) |> json_response(422)
+      # Nothing was persisted for the rejected requests.
+      assert Fleet.list_vpses_for_owner(user.id) == []
+    end
+
+    test "422 for an absurdly large spec", %{conn: conn, region: region, user: user} do
+      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 9_999, "ram_mb" => 4096, "disk_gb" => 50}
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+    end
+
+    test "429 once the per-owner quota is reached", %{conn: conn, region: region, user: user} do
+      prev = Application.get_env(:control_plane, :max_vpses_per_owner)
+      Application.put_env(:control_plane, :max_vpses_per_owner, 1)
+      on_exit(fn -> restore_env(:max_vpses_per_owner, prev) end)
+
+      ok = %{"region_id" => region.id, "name" => "one", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", ok) |> json_response(201)
+
+      over = %{ok | "name" => "two"}
+      assert %{"error" => "quota_exceeded"} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", over) |> json_response(429)
+    end
   end
 
   # --- show / delete ownership ----------------------------------------------
@@ -146,5 +175,16 @@ defmodule ControlPlaneWeb.VpsControllerTest do
                conn |> auth(user) |> get(~p"/api/v1/vpses/#{mine.id}") |> json_response(200)
       assert id == mine.id
     end
+
+    test "owner can clean up their own :failed VPS", %{conn: conn, region: region, user: user} do
+      vps = create_vps_for(user, region, "broken")
+      {:ok, failed} = vps |> Ecto.Changeset.change(status: :failed) |> Repo.update()
+
+      assert conn |> auth(user) |> delete(~p"/api/v1/vpses/#{failed.id}") |> json_response(202)
+      assert Repo.get!(Vps, failed.id).status == :deleted
+    end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:control_plane, key)
+  defp restore_env(key, value), do: Application.put_env(:control_plane, key, value)
 end

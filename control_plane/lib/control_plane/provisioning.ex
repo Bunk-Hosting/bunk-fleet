@@ -46,6 +46,43 @@ defmodule ControlPlane.Provisioning do
   `:owner_email`, `:template_id`, `:ssh_keys` (default `[]`), `:cloud_init`
   (default `%{}`), `:ip_config` (default `nil`).
   """
+  @doc """
+  Creates a VPS on behalf of an authenticated owner, enforcing the per-owner quota
+  and stamping ownership from the trusted session (never the request body).
+
+  Any `owner_id`/`owner_email` present in `attrs` is dropped and replaced with the
+  caller's, so a user cannot provision a VPS into someone else's account. Returns
+  `{:error, :quota_exceeded}` when the owner already holds the maximum number of
+  live (non-`:deleted`/non-`:failed`) VPSes.
+  """
+  def create_vps_for_owner(%{id: owner_id, email: email}, attrs) do
+    if count_live_vpses(owner_id) >= max_vpses_per_owner() do
+      {:error, :quota_exceeded}
+    else
+      attrs
+      |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+      |> Map.put(:owner_id, owner_id)
+      |> Map.put(:owner_email, email)
+      |> create_vps()
+    end
+  end
+
+  @doc """
+  Counts an owner's live VPSes — everything except `:deleted`/`:failed`, which no
+  longer occupy capacity and so don't count against quota.
+  """
+  def count_live_vpses(owner_id) do
+    Repo.one(
+      from v in Vps,
+        where: v.owner_id == ^owner_id and v.status not in [:deleted, :failed],
+        select: count(v.id)
+    )
+  end
+
+  defp max_vpses_per_owner do
+    Application.get_env(:control_plane, :max_vpses_per_owner, 10)
+  end
+
   def create_vps(attrs) do
     req = %{
       region_id: attrs[:region_id] || attrs["region_id"],
@@ -116,6 +153,12 @@ defmodule ControlPlane.Provisioning do
       # (which could double-release the reservation at finalize time).
       %Vps{status: status} when status in [:deleting, :deleted] ->
         {:error, :already_deleting}
+
+      # A :failed VPS has no live VM and no held reservation (the reservation, if
+      # any, was already released when provisioning failed), so it can be cleaned
+      # up directly — no agent round-trip needed.
+      %Vps{status: :failed} = vps ->
+        mark_vps_deleted(vps)
 
       %Vps{node_id: nil} ->
         {:error, :no_node}
@@ -406,6 +449,20 @@ defmodule ControlPlane.Provisioning do
     vps
     |> Vps.changeset(%{status: :failed})
     |> Repo.update()
+  end
+
+  # Directly marks a VPS :deleted (no agent command), used to clean up a :failed
+  # VPS. Mirrors the success shape of `delete_vps/1` (`command: nil`, no command
+  # was issued) so callers can treat both uniformly.
+  defp mark_vps_deleted(%Vps{} = vps) do
+    case vps |> Vps.changeset(%{status: :deleted}) |> Repo.update() do
+      {:ok, vps} ->
+        Events.broadcast_changed(:vps)
+        {:ok, %{vps: vps, command: nil}}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)

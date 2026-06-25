@@ -62,8 +62,25 @@ defmodule ControlPlane.Fleet.Vps do
       :last_metered_at
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
+    |> validate_spec()
     |> assoc_constraint(:region)
     |> assoc_constraint(:node)
     |> assoc_constraint(:user)
+  end
+
+  # Hard platform bounds on the requested spec. The lower bounds (> 0) are a
+  # data-integrity guard: a zero/negative spec would otherwise sail through the
+  # scheduler's `available_* >= requested` check and *inflate* node capacity when
+  # the reservation is later restored. The upper bounds are sanity ceilings for a
+  # single VPS (per-plan/quota limits live above this, in the owner flow).
+  @max_vcpu 64
+  @max_ram_mb 262_144
+  @max_disk_gb 8_192
+
+  defp validate_spec(changeset) do
+    changeset
+    |> validate_number(:vcpu, greater_than: 0, less_than_or_equal_to: @max_vcpu)
+    |> validate_number(:ram_mb, greater_than: 0, less_than_or_equal_to: @max_ram_mb)
+    |> validate_number(:disk_gb, greater_than: 0, less_than_or_equal_to: @max_disk_gb)
   end
 end

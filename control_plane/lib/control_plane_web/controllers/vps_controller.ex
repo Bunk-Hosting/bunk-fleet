@@ -39,12 +39,13 @@ defmodule ControlPlaneWeb.VpsController do
     user = conn.assigns.current_user
 
     with {:ok, region_id} <- resolve_region_id(params),
-         {:ok, %{vps: vps}} <- Provisioning.create_vps(build_attrs(params, region_id, user)) do
+         {:ok, %{vps: vps}} <- Provisioning.create_vps_for_owner(user, build_attrs(params, region_id)) do
       conn
       |> put_status(:created)
       |> json(%{vps: vps_json(vps)})
     else
       {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
+      {:error, :quota_exceeded} -> error(conn, :too_many_requests, "quota_exceeded")
       {:error, :no_capacity} -> error(conn, :conflict, "no_capacity")
       {:error, _reason} -> error(conn, :unprocessable_entity, "invalid_vps")
     end
@@ -68,16 +69,16 @@ defmodule ControlPlaneWeb.VpsController do
 
   # --- helpers --------------------------------------------------------------
 
-  defp build_attrs(params, region_id, user) do
+  # Ownership is deliberately omitted here: `Provisioning.create_vps_for_owner/2`
+  # stamps `owner_id`/`owner_email` from the authenticated session and drops any
+  # owner fields a caller might try to smuggle in, so spoofing is impossible.
+  defp build_attrs(params, region_id) do
     %{
       region_id: region_id,
       name: params["name"],
       vcpu: params["vcpu"],
       ram_mb: params["ram_mb"],
       disk_gb: params["disk_gb"],
-      # Ownership is taken from the authenticated session, never the request body.
-      owner_id: user.id,
-      owner_email: user.email,
       template_id: default_template_id(),
       ssh_keys: params["ssh_keys"] || [],
       cloud_init: params["cloud_init"] || %{},
