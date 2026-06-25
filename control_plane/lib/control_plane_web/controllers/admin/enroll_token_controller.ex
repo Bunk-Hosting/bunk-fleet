@@ -109,11 +109,11 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
   defp control_plane_url(conn) do
     case Application.get_env(:control_plane, :public_url) do
       url when is_binary(url) and url != "" -> url
-      _ -> request_url(conn)
+      _ -> derive_base_url(conn)
     end
   end
 
-  defp request_url(conn) do
+  defp derive_base_url(conn) do
     "#{conn.scheme}://#{conn.host}#{port_suffix(conn)}"
   end
 
