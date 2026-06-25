@@ -68,17 +68,34 @@ defmodule ControlPlane.Fleet do
   `total_vcpu` / `total_ram_mb` / `total_disk_gb`.
   """
   def mark_online_heartbeat(%Node{} = node, total_attrs) do
-    attrs =
+    totals =
       total_attrs
       |> normalize_keys()
       |> Map.take([:total_vcpu, :total_ram_mb, :total_disk_gb])
+
+    attrs =
+      totals
       |> Map.put(:last_heartbeat_at, now())
       |> Map.put(:status, :online)
+      |> maybe_init_available(node, totals)
 
     node
     |> Node.mark_online_changeset(attrs)
     |> Repo.update()
   end
+
+  # A node enrolls before it has reported any capacity, so `available_*` starts
+  # nil. On the FIRST heartbeat (which establishes total_*) we seed available_*
+  # to the totals — a fresh node hosts no VPSes. After that, available_* is owned
+  # exclusively by the scheduler and heartbeats never touch it again.
+  defp maybe_init_available(attrs, %Node{available_vcpu: nil}, totals) do
+    attrs
+    |> Map.put(:available_vcpu, totals[:total_vcpu])
+    |> Map.put(:available_ram_mb, totals[:total_ram_mb])
+    |> Map.put(:available_disk_gb, totals[:total_disk_gb])
+  end
+
+  defp maybe_init_available(attrs, %Node{}, _totals), do: attrs
 
   @doc """
   Lists nodes in the given region that are currently `:online` and have reported a

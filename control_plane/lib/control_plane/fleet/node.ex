@@ -95,7 +95,9 @@ defmodule ControlPlane.Fleet.Node do
   Unlike `heartbeat_changeset/2`, this one is allowed to set `:status` because it is
   driven by trusted server logic (`ControlPlane.Fleet.mark_online_heartbeat/2`)
   after the agent's bearer token has been authenticated — not directly from agent
-  input. It still never touches `available_*` (scheduler-owned).
+  input. `available_*` may be set ONLY here and ONLY to seed a brand-new node's
+  capacity on its first heartbeat (see `Fleet.mark_online_heartbeat/2`); steady-state
+  it stays scheduler-owned.
   """
   def mark_online_changeset(node, attrs) do
     node
@@ -103,6 +105,9 @@ defmodule ControlPlane.Fleet.Node do
       :total_vcpu,
       :total_ram_mb,
       :total_disk_gb,
+      :available_vcpu,
+      :available_ram_mb,
+      :available_disk_gb,
       :last_heartbeat_at,
       :status
     ])
