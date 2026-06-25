@@ -110,5 +110,19 @@ defmodule ControlPlane.AccountsTest do
       assert :ok = Accounts.delete_user_session_token(token)
       refute Accounts.get_user_by_session_token(token)
     end
+
+    test "delete_all revokes every session of the user", %{user: user} do
+      t1 = Accounts.generate_user_session_token(user)
+      t2 = Accounts.generate_user_session_token(user)
+      other = register_fixture(%{email: "other@example.com"})
+      t_other = Accounts.generate_user_session_token(other)
+
+      assert :ok = Accounts.delete_all_user_session_tokens(user)
+
+      refute Accounts.get_user_by_session_token(t1)
+      refute Accounts.get_user_by_session_token(t2)
+      # Another user's sessions are untouched.
+      assert Accounts.get_user_by_session_token(t_other)
+    end
   end
 end

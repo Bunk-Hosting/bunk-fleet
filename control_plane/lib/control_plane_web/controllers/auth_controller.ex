@@ -67,13 +67,22 @@ defmodule ControlPlaneWeb.AuthController do
     send_resp(conn, :no_content, "")
   end
 
+  @doc """
+  Revokes every session of the authenticated user ("log out everywhere"), giving a
+  kill switch for a leaked token without DB surgery.
+  """
+  def logout_all(conn, _params) do
+    Accounts.delete_all_user_session_tokens(conn.assigns.current_user)
+    send_resp(conn, :no_content, "")
+  end
+
   # --- helpers --------------------------------------------------------------
 
   defp encode_token(token), do: Base.url_encode64(token, padding: false)
 
   defp bearer_token(conn) do
     case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> {:ok, String.trim(token)}
+      ["Bearer " <> token | _] when token != "" -> {:ok, token}
       _ -> :error
     end
   end

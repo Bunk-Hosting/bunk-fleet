@@ -74,4 +74,13 @@ defmodule ControlPlane.Accounts do
   end
 
   def delete_user_session_token(_token), do: :ok
+
+  @doc """
+  Revokes all of `user`'s session tokens ("log out everywhere"). Use this as the
+  kill switch for a leaked token and on any future password change. Always `:ok`.
+  """
+  def delete_all_user_session_tokens(%User{} = user) do
+    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["session"]))
+    :ok
+  end
 end

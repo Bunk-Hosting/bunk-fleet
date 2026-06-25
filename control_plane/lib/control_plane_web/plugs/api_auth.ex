@@ -31,9 +31,12 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
     end
   end
 
+  # The token alphabet is URL-safe Base64 (no whitespace), so we match the header
+  # strictly rather than trimming — a malformed header is an auth failure, not
+  # something to silently repair. An empty token short-circuits to :error.
   defp bearer_token(conn) do
     case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> {:ok, String.trim(token)}
+      ["Bearer " <> token | _] when token != "" -> {:ok, token}
       _ -> :error
     end
   end

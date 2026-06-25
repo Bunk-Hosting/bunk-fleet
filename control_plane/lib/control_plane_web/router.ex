@@ -62,6 +62,7 @@ defmodule ControlPlaneWeb.Router do
 
     get "/auth/me", AuthController, :me
     delete "/auth/logout", AuthController, :logout
+    delete "/auth/logout/all", AuthController, :logout_all
   end
 
   # bunk-agent onboarding / heartbeat / command API.

@@ -14,7 +14,7 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
     |> Repo.insert!()
   end
 
-  defp insert_node(region, attrs \\ %{}) do
+  defp insert_node(region, attrs) do
     base = %{
       name: "node-#{System.unique_integer([:positive])}",
       region_id: region.id,

@@ -87,4 +87,20 @@ defmodule ControlPlaneWeb.AuthControllerTest do
       assert json_response(me_conn, 401)
     end
   end
+
+  describe "DELETE /api/v1/auth/logout/all" do
+    setup [:register_user]
+
+    test "revokes every session of the user", %{conn: conn, user: user} do
+      t1 = Accounts.generate_user_session_token(user) |> Base.url_encode64(padding: false)
+      t2 = Accounts.generate_user_session_token(user) |> Base.url_encode64(padding: false)
+
+      out = conn |> put_token(t1) |> delete(~p"/api/v1/auth/logout/all")
+      assert response(out, 204)
+
+      # Both the presenting token and the other live session are now invalid.
+      assert build_conn() |> put_token(t1) |> get(~p"/api/v1/auth/me") |> json_response(401)
+      assert build_conn() |> put_token(t2) |> get(~p"/api/v1/auth/me") |> json_response(401)
+    end
+  end
 end
