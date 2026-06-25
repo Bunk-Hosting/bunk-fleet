@@ -55,6 +55,32 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Applies an authenticated heartbeat from a node: refreshes its advertised `total_*`
+  capacity and `last_heartbeat_at`, and (re)asserts the node as `:online`.
+
+  The `:online` status transition is trusted server-side logic (the node's agent
+  token has already been authenticated), so it is applied here via
+  `Node.mark_online_changeset/2` rather than the agent-driven
+  `Node.heartbeat_changeset/2`. As with all heartbeats, `available_*` is never
+  touched — that remains owned solely by the scheduler.
+
+  `total_attrs` may use either atom or string keys and is expected to carry
+  `total_vcpu` / `total_ram_mb` / `total_disk_gb`.
+  """
+  def mark_online_heartbeat(%Node{} = node, total_attrs) do
+    attrs =
+      total_attrs
+      |> normalize_keys()
+      |> Map.take([:total_vcpu, :total_ram_mb, :total_disk_gb])
+      |> Map.put(:last_heartbeat_at, now())
+      |> Map.put(:status, :online)
+
+    node
+    |> Node.mark_online_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Lists nodes in the given region that are currently `:online` and have reported a
   recent heartbeat.
   """

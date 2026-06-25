@@ -31,6 +31,7 @@ defmodule ControlPlane.Fleet.Node do
 
     field :last_heartbeat_at, :utc_datetime
     field :enroll_token_hash, :string
+    field :agent_token_hash, :string
     field :public_key, :string
     field :owner_email, :string
 
@@ -56,11 +57,13 @@ defmodule ControlPlane.Fleet.Node do
       :available_disk_gb,
       :last_heartbeat_at,
       :enroll_token_hash,
+      :agent_token_hash,
       :public_key,
       :owner_email
     ])
     |> validate_required([:name, :region_id])
     |> assoc_constraint(:region)
+    |> unique_constraint(:agent_token_hash)
   end
 
   @doc """
@@ -83,5 +86,26 @@ defmodule ControlPlane.Fleet.Node do
       :last_heartbeat_at
     ])
     |> validate_required([:last_heartbeat_at])
+  end
+
+  @doc """
+  Server-side changeset applied when an authenticated heartbeat both refreshes a
+  node's advertised totals AND (re)asserts it as `:online`.
+
+  Unlike `heartbeat_changeset/2`, this one is allowed to set `:status` because it is
+  driven by trusted server logic (`ControlPlane.Fleet.mark_online_heartbeat/2`)
+  after the agent's bearer token has been authenticated — not directly from agent
+  input. It still never touches `available_*` (scheduler-owned).
+  """
+  def mark_online_changeset(node, attrs) do
+    node
+    |> cast(attrs, [
+      :total_vcpu,
+      :total_ram_mb,
+      :total_disk_gb,
+      :last_heartbeat_at,
+      :status
+    ])
+    |> validate_required([:last_heartbeat_at, :status])
   end
 end

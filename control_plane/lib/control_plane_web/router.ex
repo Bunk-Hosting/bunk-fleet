@@ -5,8 +5,28 @@ defmodule ControlPlaneWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Worker-node API: everything in `:api` plus agent-token bearer authentication.
+  pipeline :node_api do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.NodeAuth
+  end
+
   scope "/api", ControlPlaneWeb do
     pipe_through :api
+  end
+
+  # bunk-agent onboarding / heartbeat / command API.
+  scope "/v1", ControlPlaneWeb do
+    pipe_through :api
+
+    post "/enroll", EnrollController, :enroll
+  end
+
+  scope "/v1", ControlPlaneWeb do
+    pipe_through :node_api
+
+    post "/heartbeat", HeartbeatController, :create
+    get "/commands", CommandController, :index
   end
 
   # Enable LiveDashboard in development
