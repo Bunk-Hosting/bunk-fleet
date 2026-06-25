@@ -12,7 +12,8 @@ defmodule ControlPlane.Application do
         ControlPlaneWeb.Telemetry,
         ControlPlane.Repo,
         {DNSCluster, query: Application.get_env(:control_plane, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: ControlPlane.PubSub}
+        {Phoenix.PubSub, name: ControlPlane.PubSub},
+        ControlPlane.RateLimiter
       ] ++
         reconciler_child() ++
         [

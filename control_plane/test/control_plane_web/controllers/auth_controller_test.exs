@@ -88,6 +88,25 @@ defmodule ControlPlaneWeb.AuthControllerTest do
     end
   end
 
+  describe "rate limiting" do
+    # A dedicated X-Forwarded-For IP isolates this test's counter bucket from every
+    # other test (which use the default 127.0.0.1), so the shared limiter can't
+    # cause cross-test interference.
+    defp hammer_login(ip) do
+      build_conn()
+      |> put_req_header("x-forwarded-for", ip)
+      |> post(~p"/api/v1/auth/login", %{"email" => "nobody@example.com", "password" => "wrong-password-123"})
+    end
+
+    test "429s after too many auth attempts from one client" do
+      ip = "203.0.113.7"
+      # The configured limit is 30/min: the first 30 are served (401 wrong creds)...
+      for _ <- 1..30, do: hammer_login(ip)
+      # ...and the 31st is rejected with 429.
+      assert %{"error" => "rate_limited"} = hammer_login(ip) |> json_response(429)
+    end
+  end
+
   describe "DELETE /api/v1/auth/logout/all" do
     setup [:register_user]
 

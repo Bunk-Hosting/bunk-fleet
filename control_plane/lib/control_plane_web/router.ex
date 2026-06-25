@@ -56,9 +56,16 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :api
   end
 
+  # Open, unauthenticated auth endpoints are rate-limited per client IP to blunt
+  # credential-stuffing and registration spam.
+  pipeline :auth_public do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "auth", max: 30, window_ms: 60_000
+  end
+
   # User accounts: open registration/login, then authenticated session routes.
   scope "/api/v1", ControlPlaneWeb do
-    pipe_through :api
+    pipe_through :auth_public
 
     post "/auth/register", AuthController, :register
     post "/auth/login", AuthController, :login
