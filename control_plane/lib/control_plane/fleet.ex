@@ -50,6 +50,19 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Returns the nodes operated by `owner_email` (matching the payout-attribution
+  key on `nodes.owner_email`), region preloaded, newest first.
+  """
+  def list_nodes_for_owner(owner_email) do
+    Repo.all(
+      from n in Node,
+        where: n.owner_email == ^owner_email,
+        order_by: [desc: n.inserted_at],
+        preload: [:region]
+    )
+  end
+
+  @doc """
   Returns all VPSes, with their region preloaded, newest first.
   """
   def list_vpses do

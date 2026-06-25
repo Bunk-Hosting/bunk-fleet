@@ -45,6 +45,13 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.ApiAuth
   end
 
+  # Operator self-service API: authenticated *and* gated to the :operator/:admin role.
+  pipeline :operator_api do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.ApiAuth
+    plug ControlPlaneWeb.Plugs.RequireOperator
+  end
+
   scope "/api", ControlPlaneWeb do
     pipe_through :api
   end
@@ -69,6 +76,15 @@ defmodule ControlPlaneWeb.Router do
 
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
+  end
+
+  # Operator self-service: onboard nodes + track earnings (role-gated).
+  scope "/api/v1/operator", ControlPlaneWeb do
+    pipe_through :operator_api
+
+    post "/enroll-tokens", OperatorController, :create_enroll_token
+    get "/nodes", OperatorController, :nodes
+    get "/earnings", OperatorController, :earnings
   end
 
   # bunk-agent onboarding / heartbeat / command API.

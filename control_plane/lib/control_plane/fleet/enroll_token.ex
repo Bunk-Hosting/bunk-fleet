@@ -10,6 +10,7 @@ defmodule ControlPlane.Fleet.EnrollToken do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias ControlPlane.Accounts.User
   alias ControlPlane.Fleet.Region
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -20,7 +21,13 @@ defmodule ControlPlane.Fleet.EnrollToken do
     field :expires_at, :utc_datetime
     field :used_at, :utc_datetime
 
+    # The operator who minted this token. `owner_email` is denormalized so it can
+    # be copied onto the enrolled node (which payouts key off). Both nil for an
+    # admin-minted token with no operator owner.
+    field :owner_email, :string
+
     belongs_to :region, Region
+    belongs_to :user, User, foreign_key: :owner_id
 
     timestamps(type: :utc_datetime)
   end
@@ -28,9 +35,10 @@ defmodule ControlPlane.Fleet.EnrollToken do
   @doc false
   def changeset(enroll_token, attrs) do
     enroll_token
-    |> cast(attrs, [:token_hash, :tier, :expires_at, :used_at, :region_id])
+    |> cast(attrs, [:token_hash, :tier, :expires_at, :used_at, :region_id, :owner_id, :owner_email])
     |> validate_required([:token_hash, :region_id])
     |> unique_constraint(:token_hash)
     |> assoc_constraint(:region)
+    |> assoc_constraint(:user)
   end
 end
