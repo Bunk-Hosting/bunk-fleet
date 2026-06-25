@@ -46,6 +46,21 @@ defmodule ControlPlane.Provisioning do
   `:owner_email`, `:template_id`, `:ssh_keys` (default `[]`), `:cloud_init`
   (default `%{}`), `:ip_config` (default `nil`).
   """
+  def create_vps(attrs) do
+    req = %{
+      region_id: attrs[:region_id] || attrs["region_id"],
+      vcpu: attrs[:vcpu] || attrs["vcpu"],
+      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
+      disk_gb: attrs[:disk_gb] || attrs["disk_gb"]
+    }
+
+    # Persist the VPS up front so that even a placement failure leaves a durable,
+    # `:failed` record for the customer rather than rolling everything back.
+    with {:ok, vps} <- Repo.insert(vps_changeset(attrs)) do
+      place_and_dispatch(vps, req, attrs)
+    end
+  end
+
   @doc """
   Creates a VPS on behalf of an authenticated owner, enforcing the per-owner quota
   and stamping ownership from the trusted session (never the request body).
@@ -81,21 +96,6 @@ defmodule ControlPlane.Provisioning do
 
   defp max_vpses_per_owner do
     Application.get_env(:control_plane, :max_vpses_per_owner, 10)
-  end
-
-  def create_vps(attrs) do
-    req = %{
-      region_id: attrs[:region_id] || attrs["region_id"],
-      vcpu: attrs[:vcpu] || attrs["vcpu"],
-      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
-      disk_gb: attrs[:disk_gb] || attrs["disk_gb"]
-    }
-
-    # Persist the VPS up front so that even a placement failure leaves a durable,
-    # `:failed` record for the customer rather than rolling everything back.
-    with {:ok, vps} <- Repo.insert(vps_changeset(attrs)) do
-      place_and_dispatch(vps, req, attrs)
-    end
   end
 
   defp place_and_dispatch(%Vps{} = vps, req, attrs) do
