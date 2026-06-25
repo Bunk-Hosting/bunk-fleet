@@ -100,8 +100,8 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
   # Not async: a shared sandbox connection is required so the Reconciler process
   # (a different pid) can see the data we insert and write back to it.
   describe "Reconciler GenServer" do
-    @describetag async: false
-
+    # The Reconciler runs in its own pid; Ecto.Adapters.SQL.Sandbox.allow/3 (below)
+    # shares this test's sandbox connection with it so it sees our inserts.
     test "marks a stale node offline on its tick" do
       region = insert_region()
       stale = insert_node(region, %{status: :online, last_heartbeat_at: stale_at()})
