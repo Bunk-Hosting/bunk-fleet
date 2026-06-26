@@ -235,6 +235,34 @@ func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
 		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
 
+	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
+		var p struct {
+			VMID string `json:"vm_id"`
+		}
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+			logger.Error("power: bad payload", "id", cmd.ID, "kind", string(cmd.Kind), "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			return
+		}
+		var err error
+		switch cmd.Kind {
+		case transport.CmdStart:
+			err = prov.PowerOn(ctx, p.VMID)
+		case transport.CmdStop:
+			err = prov.PowerOff(ctx, p.VMID)
+		case transport.CmdPause:
+			err = prov.Suspend(ctx, p.VMID)
+		case transport.CmdResume:
+			err = prov.Resume(ctx, p.VMID)
+		}
+		if err != nil {
+			logger.Error("power command failed", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: p.VMID, Error: err.Error()})
+			return
+		}
+		logger.Info("power command done", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID)
+		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
+
 	default:
 		logger.Warn("unknown command kind; ignoring", "id", cmd.ID, "kind", string(cmd.Kind))
 		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})

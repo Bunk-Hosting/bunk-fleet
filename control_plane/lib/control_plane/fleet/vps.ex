@@ -15,7 +15,7 @@ defmodule ControlPlane.Fleet.Vps do
     field :name, :string
 
     field :status, Ecto.Enum,
-      values: [:queued, :provisioning, :active, :failed, :deleting, :deleted],
+      values: [:queued, :provisioning, :active, :stopped, :paused, :failed, :deleting, :deleted],
       default: :queued
 
     # Requested spec.

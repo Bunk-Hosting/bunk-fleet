@@ -192,6 +192,61 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Dispatches a power command (`:start`/`:stop`/`:pause`/`:resume`) to a VPS's node.
+
+  Guards on the VPS's current status so only valid transitions are issued: start
+  from `:stopped`; stop from `:active`/`:paused`; pause from `:active`; resume from
+  `:paused`. The VPS must be placed and provisioned (`node_id` + `provider_vm_id`).
+  The status only changes once the agent reports the command done (see
+  `apply_result/2`), so the dashboard reflects the real hypervisor state.
+
+  Returns `{:ok, %{vps: vps, command: command}}`, or `{:error, reason}` where reason
+  is `:not_found`, `:not_provisioned`, or `{:invalid_status, status}`.
+  """
+  def start_vps(vps_id), do: dispatch_power(vps_id, :start, [:stopped])
+  def stop_vps(vps_id), do: dispatch_power(vps_id, :stop, [:active, :paused])
+  def pause_vps(vps_id), do: dispatch_power(vps_id, :pause, [:active])
+  def resume_vps(vps_id), do: dispatch_power(vps_id, :resume, [:paused])
+
+  defp dispatch_power(vps_id, kind, allowed) do
+    case Repo.get(Vps, vps_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Vps{node_id: nil} ->
+        {:error, :not_provisioned}
+
+      %Vps{provider_vm_id: nil} ->
+        {:error, :not_provisioned}
+
+      %Vps{status: status} = vps ->
+        if status in allowed do
+          multi =
+            Multi.insert(Multi.new(), :command, fn _ ->
+              Command.changeset(%Command{}, %{
+                node_id: vps.node_id,
+                vps_id: vps.id,
+                kind: kind,
+                status: :pending,
+                payload: %{"vm_id" => vps.provider_vm_id}
+              })
+            end)
+
+          case Repo.transaction(multi) do
+            {:ok, %{command: command}} ->
+              Events.broadcast_changed(:vps)
+              {:ok, %{vps: vps, command: command}}
+
+            {:error, _step, reason, _changes} ->
+              {:error, reason}
+          end
+        else
+          {:error, {:invalid_status, status}}
+        end
+    end
+  end
+
+  @doc """
   Lists the `:pending` commands awaiting delivery for `node`, oldest first.
   """
   def pending_commands_for_node(%Node{id: node_id}) do
@@ -395,6 +450,38 @@ defmodule ControlPlane.Provisioning do
         "VPS left intact for retry"
     )
 
+    multi
+  end
+
+  # Power command succeeded: transition the VPS to the resulting power state.
+  # Only a live VPS is transitioned (a delete that raced in must never be
+  # resurrected); capacity is untouched because power state != capacity.
+  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :done, _result)
+       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+    target =
+      case kind do
+        :start -> :active
+        :resume -> :active
+        :stop -> :stopped
+        :pause -> :paused
+      end
+
+    Multi.run(multi, :vps, fn repo, _changes ->
+      vps = repo.get!(Vps, vps_id)
+
+      if vps.status in [:active, :stopped, :paused] do
+        vps |> Vps.changeset(%{status: target}) |> repo.update()
+      else
+        {:ok, vps}
+      end
+    end)
+  end
+
+  # Power command failed: leave the VPS as-is; the error is recorded on the
+  # command by the caller. Log for visibility.
+  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :failed, result)
+       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+    Logger.error("#{kind} command failed for vps #{vps_id}: #{inspect(result["error"])}")
     multi
   end
 

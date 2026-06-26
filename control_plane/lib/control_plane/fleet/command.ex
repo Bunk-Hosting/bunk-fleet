@@ -15,7 +15,7 @@ defmodule ControlPlane.Fleet.Command do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "commands" do
-    field :kind, Ecto.Enum, values: [:provision, :delete]
+    field :kind, Ecto.Enum, values: [:provision, :delete, :start, :stop, :pause, :resume]
     field :payload, :map, default: %{}
 
     field :status, Ecto.Enum,

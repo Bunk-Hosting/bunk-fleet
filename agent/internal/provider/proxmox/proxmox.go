@@ -432,10 +432,104 @@ func (c *Client) DeleteVM(ctx context.Context, id string) error {
 	return nil
 }
 
+// currentState reads the guest's lifecycle status and qmpstatus (the latter
+// distinguishes a paused guest, whose status stays "running").
+func (c *Client) currentState(ctx context.Context, vmid int) (status, qmp string, err error) {
+	node := url.PathEscape(c.cfg.Node)
+	path := fmt.Sprintf("/nodes/%s/qemu/%d/status/current", node, vmid)
+	var cur vmCurrentStatus
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &cur); err != nil {
+		return "", "", err
+	}
+	return cur.Data.Status, cur.Data.QmpStatus, nil
+}
+
+// powerOp issues a status/{op} action and waits for the resulting task.
+func (c *Client) powerOp(ctx context.Context, vmid int, op string) error {
+	node := url.PathEscape(c.cfg.Node)
+	path := fmt.Sprintf("/nodes/%s/qemu/%d/status/%s", node, vmid, op)
+	var task taskResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, url.Values{}, &task); err != nil {
+		return fmt.Errorf("proxmox: %s vm %d: %w", op, vmid, err)
+	}
+	if err := c.waitTask(ctx, task.Data); err != nil {
+		return fmt.Errorf("proxmox: %s vm %d: %w", op, vmid, err)
+	}
+	return nil
+}
+
+// PowerOn implements provider.Provider; idempotent if the guest already runs.
+func (c *Client) PowerOn(ctx context.Context, id string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	status, _, err := c.currentState(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if status == "running" {
+		return nil
+	}
+	return c.powerOp(ctx, vmid, "start")
+}
+
+// PowerOff implements provider.Provider; idempotent if already stopped.
+func (c *Client) PowerOff(ctx context.Context, id string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	status, _, err := c.currentState(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if status == "stopped" {
+		return nil
+	}
+	return c.powerOp(ctx, vmid, "stop")
+}
+
+// Suspend implements provider.Provider (suspend-to-RAM); idempotent if paused.
+func (c *Client) Suspend(ctx context.Context, id string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	status, qmp, err := c.currentState(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if qmp == "paused" {
+		return nil
+	}
+	if status != "running" {
+		return fmt.Errorf("proxmox: suspend vm %d: not running (status=%s)", vmid, status)
+	}
+	return c.powerOp(ctx, vmid, "suspend")
+}
+
+// Resume implements provider.Provider; idempotent if already running.
+func (c *Client) Resume(ctx context.Context, id string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	status, qmp, err := c.currentState(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if status == "running" && qmp != "paused" {
+		return nil
+	}
+	return c.powerOp(ctx, vmid, "resume")
+}
+
 // vmCurrentStatus mirrors GET /nodes/{node}/qemu/{id}/status/current.
 type vmCurrentStatus struct {
 	Data struct {
-		Status string `json:"status"`
+		Status    string `json:"status"`
+		QmpStatus string `json:"qmpstatus"`
 	} `json:"data"`
 }
 

@@ -284,7 +284,7 @@ func TestParseCapacityRootFSFreeFallback(t *testing.T) {
 	const gib = 1 << 30
 	var ns nodeStatus
 	ns.Data.RootFS.Total = 200 * gib
-	ns.Data.RootFS.Avail = 0       // not provided
+	ns.Data.RootFS.Avail = 0        // not provided
 	ns.Data.RootFS.Free = 150 * gib // fallback source
 
 	got := parseCapacity(ns, nil)

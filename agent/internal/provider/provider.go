@@ -86,6 +86,18 @@ type Provider interface {
 	// Capacity returns a best-effort snapshot of node resources.
 	Capacity(ctx context.Context) (Capacity, error)
 
+	// PowerOn starts a stopped guest. Idempotent: a no-op if already running.
+	PowerOn(ctx context.Context, id string) error
+
+	// PowerOff stops a running guest. Idempotent: a no-op if already stopped.
+	PowerOff(ctx context.Context, id string) error
+
+	// Suspend pauses (suspend-to-RAM) a running guest. Idempotent if already paused.
+	Suspend(ctx context.Context, id string) error
+
+	// Resume un-pauses a suspended guest. Idempotent if already running.
+	Resume(ctx context.Context, id string) error
+
 	// Name returns the short provider identifier, e.g. "proxmox".
 	Name() string
 }

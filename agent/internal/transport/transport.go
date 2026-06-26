@@ -29,6 +29,14 @@ const (
 	CmdProvision CommandKind = "provision"
 	// CmdDelete asks the agent to destroy a VM. Payload carries the target id.
 	CmdDelete CommandKind = "delete"
+	// CmdStart powers on a stopped VM. Payload carries the target id.
+	CmdStart CommandKind = "start"
+	// CmdStop powers off a running VM. Payload carries the target id.
+	CmdStop CommandKind = "stop"
+	// CmdPause suspends (to RAM) a running VM. Payload carries the target id.
+	CmdPause CommandKind = "pause"
+	// CmdResume un-suspends a paused VM. Payload carries the target id.
+	CmdResume CommandKind = "resume"
 )
 
 // EnrollRequest is sent once to exchange a one-time token for node credentials.
