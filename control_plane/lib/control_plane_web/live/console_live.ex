@@ -89,10 +89,10 @@ defmodule ControlPlaneWeb.ConsoleLive do
     <style>
       .cwrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px; }
       .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
-      .badge { font-size:12px; color:#8b949e; text-decoration:none; border:1px solid #2d3540; padding:5px 10px; border-radius:7px; }
+      .badge { font-size:12px; color:#8c90a1; text-decoration:none; border:1px solid #333539; padding:5px 10px; border-radius:7px; }
       h1 { font-size:18px; margin:0 0 2px; }
-      .muted { color:#8b949e; font-size:13px; }
-      .term { height: 70vh; background:#0b0f14; border:1px solid #232a33; border-radius:10px; padding:8px; }
+      .muted { color:#8c90a1; font-size:13px; }
+      .term { height: 70vh; background:#0c0e12; border:1px solid #333539; border-radius:10px; padding:8px; }
     </style>
     """
   end

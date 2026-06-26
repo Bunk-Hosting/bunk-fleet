@@ -67,9 +67,9 @@ defmodule ControlPlaneWeb.HostLive do
 
     <style>
       .create-form { display:flex; gap:10px; flex-wrap:wrap; margin: 8px 0; }
-      .create-form select { padding:9px 11px; background:#0b0f14; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; }
-      .create-form button { padding:9px 18px; background:#2563eb; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; }
-      pre.cmd { background:#0b0f14; border:1px solid #2d3540; border-radius:8px; padding:14px; overflow-x:auto; font-family:ui-monospace,monospace; font-size:13px; color:#7ee2a8; }
+      .create-form select { padding:9px 11px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; }
+      .create-form button { padding:9px 18px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; }
+      pre.cmd { background:#0c0e12; border:1px solid #333539; border-radius:8px; padding:14px; overflow-x:auto; font-family:ui-monospace,monospace; font-size:13px; color:#7ee2a8; }
     </style>
     """
   end

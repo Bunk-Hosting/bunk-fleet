@@ -4,23 +4,42 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Bunk Hosting | VPS Beheer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      /* Bunk Hosting theme (matches the previous frontend) */
+      body { background:#111318 !important; color:#e2e2e8 !important; font-family:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif !important; }
+      h1,h2,h3,.brand { font-family:"Manrope","Inter",sans-serif !important; letter-spacing:-0.01em; }
+      a { color:#00dbe7; }
+      ::selection { background:rgba(0,219,231,0.30); color:#e2e2e8; }
+      .bunk-bg-dots { position:fixed; inset:0; z-index:0; pointer-events:none; background-image:radial-gradient(rgba(0,219,231,0.12) 1px, transparent 1px); background-size:32px 32px; }
+      .bunk-orb { position:fixed; z-index:0; pointer-events:none; border-radius:50%; }
+      .bunk-orb-a { width:55vw; height:55vw; top:-15%; right:-12%; background:rgba(0,106,242,0.15); filter:blur(120px); }
+      .bunk-orb-b { width:45vw; height:45vw; bottom:-20%; left:-10%; background:rgba(0,219,231,0.10); filter:blur(100px); }
+      body > main, body > .wrap, body > .auth, body > .cwrap, main, .auth, .cwrap { position:relative; z-index:1; }
+      /* brand wordmark used on auth pages */
+      .brand { font-weight:900 !important; letter-spacing:-0.03em; text-transform:uppercase; }
+      .brand .d { color:#00dbe7; }
+    </style>
     <title>Bunk Fleet · Operator Dashboard</title>
     <style>
       :root { color-scheme: dark; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        background: #0b0f14;
-        color: #e6edf3;
+        background: #0c0e12;
+        color: #e2e2e8;
         font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         font-size: 14px;
         line-height: 1.5;
       }
-      a { color: #58a6ff; }
+      a { color: #00dbe7; }
       .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
       h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; letter-spacing: .3px; }
-      h2 { font-size: 15px; margin: 28px 0 10px; font-weight: 600; color: #c9d1d9; }
-      .muted { color: #8b949e; }
+      h2 { font-size: 15px; margin: 28px 0 10px; font-weight: 600; color: #c2c6d8; }
+      .muted { color: #8c90a1; }
       .summary {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -28,22 +47,22 @@
         margin: 16px 0 4px;
       }
       .card {
-        background: #11161d;
-        border: 1px solid #232a33;
+        background: #1a1c20;
+        border: 1px solid #333539;
         border-radius: 10px;
         padding: 12px 14px;
       }
-      .card .label { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+      .card .label { color: #8c90a1; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
       .card .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
       table { width: 100%; border-collapse: collapse; }
       .table-wrap {
-        background: #11161d;
-        border: 1px solid #232a33;
+        background: #1a1c20;
+        border: 1px solid #333539;
         border-radius: 10px;
         overflow: hidden;
       }
-      th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #1c232c; vertical-align: middle; }
-      th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+      th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #333539; vertical-align: middle; }
+      th { color: #8c90a1; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
       tr:last-child td { border-bottom: none; }
       td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
       .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
@@ -55,17 +74,17 @@
         position: relative;
         height: 8px;
         width: 120px;
-        background: #1c232c;
+        background: #333539;
         border-radius: 4px;
         overflow: hidden;
         margin-bottom: 2px;
       }
-      .bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: #3081f7; }
+      .bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: #006af2; }
       .bar.high > span { background: #d29922; }
-      .bar.crit > span { background: #da3633; }
-      .cap-label { font-size: 11px; color: #8b949e; }
-      .empty { padding: 16px 12px; color: #8b949e; }
-      .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid #2d3540; color: #c9d1d9; }
+      .bar.crit > span { background: #e01c1c; }
+      .cap-label { font-size: 11px; color: #8c90a1; }
+      .empty { padding: 16px 12px; color: #8c90a1; }
+      .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid #333539; color: #c2c6d8; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.14/priv/static/phoenix.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.2.3/priv/static/phoenix_live_view.min.js"></script>
@@ -82,7 +101,7 @@
               cursorBlink: true,
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
               fontSize: 13,
-              theme: { background: "#0b0f14", foreground: "#e6edf3" }
+              theme: { background: "#0c0e12", foreground: "#e2e2e8" }
             });
             let fit = new window.FitAddon.FitAddon();
             term.loadAddon(fit);
@@ -116,6 +135,9 @@
     </script>
   </head>
   <body>
+    <div class="bunk-bg-dots"></div>
+    <div class="bunk-orb bunk-orb-a"></div>
+    <div class="bunk-orb bunk-orb-b"></div>
     {@inner_content}
   </body>
 </html>

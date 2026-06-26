@@ -75,17 +75,17 @@ defmodule ControlPlaneWeb.SecurityLive do
     <style>
       .wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px; }
       .hdr { display:flex; justify-content:space-between; align-items:center; }
-      .badge { font-size:12px; color:#8b949e; text-decoration:none; border:1px solid #2d3540; padding:5px 10px; border-radius:7px; }
+      .badge { font-size:12px; color:#8c90a1; text-decoration:none; border:1px solid #333539; padding:5px 10px; border-radius:7px; }
       h2 { font-size:16px; margin-top:22px; }
-      .muted { color:#8b949e; font-size:13px; line-height:1.7; }
+      .muted { color:#8c90a1; font-size:13px; line-height:1.7; }
       .ok { color:#7ee2a8; }
-      code { background:#0b0f14; border:1px solid #2d3540; border-radius:6px; padding:3px 7px; font-size:13px; }
+      code { background:#0c0e12; border:1px solid #333539; border-radius:6px; padding:3px 7px; font-size:13px; }
       .qr { background:#fff; display:inline-block; padding:10px; border-radius:10px; margin:10px 0; }
       .codeform { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
-      .codeform input { padding:10px 12px; background:#0b0f14; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; font-size:16px; letter-spacing:3px; text-align:center; }
-      button { padding:9px 18px; background:#2563eb; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; font-size:13px; }
-      button.danger { background:#b91c1c; }
-      button.ghost { background:#21262d; border:1px solid #2d3540; }
+      .codeform input { padding:10px 12px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; font-size:16px; letter-spacing:3px; text-align:center; }
+      button { padding:9px 18px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; font-size:13px; }
+      button.danger { background:#e01c1c; }
+      button.ghost { background:#282a2e; border:1px solid #333539; }
       .flash-info { background:#0f2417; border:1px solid #1c5236; color:#7ee2a8; padding:9px 12px; border-radius:8px; font-size:13px; }
       .flash-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; font-size:13px; }
     </style>

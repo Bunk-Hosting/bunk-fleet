@@ -135,7 +135,7 @@ defmodule ControlPlaneWeb.PortalLive do
             <tr :for={e <- @ledger}>
               <td class="muted">{Calendar.strftime(e.inserted_at, "%d-%m %H:%M")}</td>
               <td>{e.description}</td>
-              <td style={"text-align:right;color:" <> if(e.amount_cents >= 0, do: "#7ee2a8", else: "#e6edf3")}>{eur(e.amount_cents)}</td>
+              <td style={"text-align:right;color:" <> if(e.amount_cents >= 0, do: "#7ee2a8", else: "#e2e2e8")}>{eur(e.amount_cents)}</td>
             </tr>
             <tr :if={@ledger == []}>
               <td class="muted" colspan="3">Nog geen boekingen.</td>
@@ -172,14 +172,14 @@ defmodule ControlPlaneWeb.PortalLive do
 
     <style>
       .create-form { display:flex; gap:10px; flex-wrap:wrap; margin: 10px 0 4px; }
-      .create-form input, .create-form select { padding:9px 11px; background:#0b0f14; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; font-size:13px; }
-      .create-form button { padding:9px 18px; background:#2563eb; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; }
-      .btn { padding:5px 12px; margin-right:6px; background:#21262d; border:1px solid #2d3540; border-radius:7px; color:#e6edf3; font-size:12px; cursor:pointer; }
-      .btn:hover { background:#2d333b; }
+      .create-form input, .create-form select { padding:9px 11px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; font-size:13px; }
+      .create-form button { padding:9px 18px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; cursor:pointer; }
+      .btn { padding:5px 12px; margin-right:6px; background:#282a2e; border:1px solid #333539; border-radius:7px; color:#e2e2e8; font-size:12px; cursor:pointer; }
+      .btn:hover { background:#282a2e; }
       .btn-danger { color:#ff9b9b; border-color:#5c2228; }
       .flash-info { background:#0d2818; border:1px solid #1c5235; color:#7ee2a8; padding:9px 12px; border-radius:8px; }
       .flash-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; }
-      .dot.blue { background:#3081f7; } .dot.purple { background:#a371f7; }
+      .dot.blue { background:#006af2; } .dot.purple { background:#a371f7; }
     </style>
     """
   end

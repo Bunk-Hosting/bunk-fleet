@@ -124,21 +124,21 @@ defmodule ControlPlaneWeb.TopupLive do
     <style>
       .wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px; }
       .hdr { display:flex; justify-content:space-between; align-items:flex-start; }
-      .badge { font-size:12px; color:#8b949e; text-decoration:none; border:1px solid #2d3540; padding:5px 10px; border-radius:7px; }
+      .badge { font-size:12px; color:#8c90a1; text-decoration:none; border:1px solid #333539; padding:5px 10px; border-radius:7px; }
       h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:15px; margin-top:24px; }
-      .muted { color:#8b949e; font-size:13px; line-height:1.7; }
+      .muted { color:#8c90a1; font-size:13px; line-height:1.7; }
       .presets { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0; }
-      .presets button { padding:10px 18px; background:#161b22; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; font-weight:600; cursor:pointer; }
-      .presets button:hover { border-color:#3081f7; }
+      .presets button { padding:10px 18px; background:#1e2024; border:1px solid #333539; border-radius:8px; color:#e2e2e8; font-weight:600; cursor:pointer; }
+      .presets button:hover { border-color:#006af2; }
       .custom { display:flex; gap:10px; margin-top:6px; }
-      .custom input { padding:9px 12px; background:#0b0f14; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; }
+      .custom input { padding:9px 12px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; }
       .custom button, .table-wrap button { cursor:pointer; }
-      .custom button { padding:9px 18px; background:#2563eb; border:none; border-radius:8px; color:#fff; font-weight:600; }
+      .custom button { padding:9px 18px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; }
       table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
-      th, td { text-align:left; padding:7px 8px; border-bottom:1px solid #1c2330; }
-      table.pay td:first-child { color:#8b949e; width:140px; }
-      code { background:#0b0f14; border:1px solid #2d3540; border-radius:6px; padding:2px 7px; }
-      button.ghost { background:#21262d; border:1px solid #2d3540; border-radius:7px; color:#e6edf3; font-size:12px; padding:4px 10px; }
+      th, td { text-align:left; padding:7px 8px; border-bottom:1px solid #333539; }
+      table.pay td:first-child { color:#8c90a1; width:140px; }
+      code { background:#0c0e12; border:1px solid #333539; border-radius:6px; padding:2px 7px; }
+      button.ghost { background:#282a2e; border:1px solid #333539; border-radius:7px; color:#e2e2e8; font-size:12px; padding:4px 10px; }
       .flash-info { background:#0f2417; border:1px solid #1c5236; color:#7ee2a8; padding:9px 12px; border-radius:8px; font-size:13px; }
       .flash-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; font-size:13px; }
     </style>
