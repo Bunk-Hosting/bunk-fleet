@@ -149,10 +149,16 @@ defmodule ControlPlane.Provisioning do
       nil ->
         {:error, :not_found}
 
-      # Already being deleted / deleted: don't enqueue a second delete command
-      # (which could double-release the reservation at finalize time).
-      %Vps{status: status} when status in [:deleting, :deleted] ->
+      %Vps{status: :deleted} ->
         {:error, :already_deleting}
+
+      # Already :deleting: only block if a delete command is still in flight. If a
+      # previous delete terminally failed (e.g. a transient Proxmox error), allow
+      # a fresh attempt so a VPS can never get permanently stuck undeletable.
+      %Vps{status: :deleting} = vps ->
+        if delete_in_flight?(vps.id),
+          do: {:error, :already_deleting},
+          else: dispatch_delete(vps)
 
       # A :failed VPS has no live VM and no held reservation (the reservation, if
       # any, was already released when provisioning failed), so it can be cleaned
@@ -167,27 +173,40 @@ defmodule ControlPlane.Provisioning do
         {:error, :no_node}
 
       %Vps{} = vps ->
-        multi =
-          Multi.new()
-          |> Multi.update(:vps, Vps.changeset(vps, %{status: :deleting}))
-          |> Multi.insert(:command, fn %{vps: vps} ->
-            Command.changeset(%Command{}, %{
-              node_id: vps.node_id,
-              vps_id: vps.id,
-              kind: :delete,
-              status: :pending,
-              payload: %{"vm_id" => vps.provider_vm_id}
-            })
-          end)
+        dispatch_delete(vps)
+    end
+  end
 
-        case Repo.transaction(multi) do
-          {:ok, %{vps: vps, command: command}} ->
-            Events.broadcast_changed(:vps)
-            {:ok, %{vps: vps, command: command}}
+  # True if a delete command for this VPS is still pending/delivered (in flight).
+  defp delete_in_flight?(vps_id) do
+    Repo.exists?(
+      from c in Command,
+        where: c.vps_id == ^vps_id and c.kind == :delete and c.status in [:pending, :delivered]
+    )
+  end
 
-          {:error, _step, reason, _changes} ->
-            {:error, reason}
-        end
+  # Moves the VPS to :deleting and enqueues a :delete command for its node's agent.
+  defp dispatch_delete(%Vps{} = vps) do
+    multi =
+      Multi.new()
+      |> Multi.update(:vps, Vps.changeset(vps, %{status: :deleting}))
+      |> Multi.insert(:command, fn %{vps: vps} ->
+        Command.changeset(%Command{}, %{
+          node_id: vps.node_id,
+          vps_id: vps.id,
+          kind: :delete,
+          status: :pending,
+          payload: %{"vm_id" => vps.provider_vm_id}
+        })
+      end)
+
+    case Repo.transaction(multi) do
+      {:ok, %{vps: vps, command: command}} ->
+        Events.broadcast_changed(:vps)
+        {:ok, %{vps: vps, command: command}}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
     end
   end
 

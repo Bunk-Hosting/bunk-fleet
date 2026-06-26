@@ -121,4 +121,26 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
       assert Repo.get!(Vps, vps.id).status == :stopped
     end
   end
+
+  describe "delete retry" do
+    test "re-dispatches a delete after the previous one terminally failed" do
+      vps = setup_vps(:active)
+      {:ok, %{command: cmd}} = Provisioning.delete_vps(vps.id)
+      # Agent reports the destroy failed (e.g. transient Proxmox error); the
+      # command becomes terminal but the VPS stays :deleting.
+      {:ok, _} = Provisioning.apply_result(cmd, %{"status" => "failed", "error" => "VM is running"})
+      assert Repo.get!(Vps, vps.id).status == :deleting
+
+      # A fresh delete is allowed (no in-flight command) and enqueues a new one.
+      assert {:ok, %{command: cmd2}} = Provisioning.delete_vps(vps.id)
+      assert cmd2.kind == :delete
+      assert cmd2.id != cmd.id
+    end
+
+    test "blocks a second delete while one is still in flight" do
+      vps = setup_vps(:active)
+      {:ok, _} = Provisioning.delete_vps(vps.id)
+      assert {:error, :already_deleting} = Provisioning.delete_vps(vps.id)
+    end
+  end
 end

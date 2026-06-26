@@ -410,9 +410,15 @@ func (c *Client) DeleteVM(ctx context.Context, id string) error {
 	}
 	node := url.PathEscape(c.cfg.Node)
 
-	// Best-effort stop; ignore errors (guest may already be stopped).
-	stopPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/stop", node, vmid)
-	_ = c.doJSON(ctx, http.MethodPost, stopPath, url.Values{}, nil)
+	// A destroy on a running VM is rejected ("VM is running"). Stop it first
+	// and WAIT for the stop task to finish before deleting.
+	if status, _, err := c.currentState(ctx, vmid); err == nil && status != "stopped" {
+		stopPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/stop", node, vmid)
+		var stopTask taskResponse
+		if err := c.doJSON(ctx, http.MethodPost, stopPath, url.Values{}, &stopTask); err == nil {
+			_ = c.waitTask(ctx, stopTask.Data)
+		}
+	}
 
 	delPath := fmt.Sprintf("/nodes/%s/qemu/%d", node, vmid)
 	var delTask taskResponse

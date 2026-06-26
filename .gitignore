@@ -1,4 +1,7 @@
 *.env.prod
+.e2e*
+.e2e_vps_id
+.enroll_token
 .env.prod
 .pnpm-store/
 _build/
