@@ -154,6 +154,8 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses", VpsController, :create
     delete "/vpses/:id", VpsController, :delete
     get "/billing/usage", BillingController, :usage
+    get "/credits", CreditController, :show
+    post "/credits", CreditController, :create
   end
 
   # Enable LiveDashboard in development

@@ -17,6 +17,9 @@ defmodule ControlPlane.Accounts do
   """
   def get_user!(id), do: Repo.get!(User, id)
 
+  @doc "Looks up a user by email (citext, case-insensitive). Returns nil if none."
+  def get_user_by_email(email) when is_binary(email), do: Repo.get_by(User, email: email)
+
   @doc """
   Registers a new user from `attrs` (`email`, `password`, optionally `name`/`role`).
 
