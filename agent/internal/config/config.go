@@ -29,6 +29,18 @@ type OfferConfig struct {
 	DiskGB int
 }
 
+// VpsNetworkConfig describes how this worker attaches and addresses customer
+// VPSes. Bridge/VLAN are applied locally to each VM's NIC; the IP range is also
+// reported to the control plane so it can hand out non-conflicting addresses.
+type VpsNetworkConfig struct {
+	Bridge     string
+	VLAN       int
+	Gateway    string
+	CidrPrefix int
+	RangeStart string
+	RangeEnd   string
+}
+
 // Config is the fully-resolved agent configuration.
 type Config struct {
 	// ControlPlaneURL is the base URL the agent dials out to.
@@ -45,6 +57,8 @@ type Config struct {
 	StateDir string
 	// Offer caps the capacity advertised to the control plane (0 per dimension = all).
 	Offer OfferConfig
+	// VpsNetwork configures the network VPSes are attached to and addressed on.
+	VpsNetwork VpsNetworkConfig
 }
 
 // envOr returns the environment variable named key, or def if unset/empty.
@@ -121,6 +135,13 @@ func Load() (Config, error) {
 		offerVCPU = fs.Int("offer-vcpu", envInt("BUNK_OFFER_VCPU", 0), "max vCPUs to advertise (0 = all)")
 		offerRAM  = fs.Int("offer-ram-mb", envInt("BUNK_OFFER_RAM_MB", 0), "max RAM (MB) to advertise (0 = all)")
 		offerDisk = fs.Int("offer-disk-gb", envInt("BUNK_OFFER_DISK_GB", 0), "max disk (GB) to advertise (0 = all)")
+
+		vpsBridge     = fs.String("vps-bridge", envOr("BUNK_VPS_BRIDGE", ""), "Proxmox bridge for VPS NICs (e.g. vmbr0); empty = inherit template")
+		vpsVLAN       = fs.Int("vps-vlan", envInt("BUNK_VPS_VLAN", 0), "VLAN tag for VPS NICs (0 = untagged)")
+		vpsGateway    = fs.String("vps-gateway", envOr("BUNK_VPS_GATEWAY", ""), "gateway address for VPS IPs")
+		vpsCidrPrefix = fs.Int("vps-cidr-prefix", envInt("BUNK_VPS_CIDR_PREFIX", 0), "CIDR prefix length for VPS IPs (e.g. 24)")
+		vpsRangeStart = fs.String("vps-range-start", envOr("BUNK_VPS_RANGE_START", ""), "first assignable VPS IP")
+		vpsRangeEnd   = fs.String("vps-range-end", envOr("BUNK_VPS_RANGE_END", ""), "last assignable VPS IP")
 	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -134,6 +155,14 @@ func Load() (Config, error) {
 		HeartbeatInterval: *heartbeat,
 		StateDir:          *stateDir,
 		Offer:             OfferConfig{VCPU: *offerVCPU, RAMMB: *offerRAM, DiskGB: *offerDisk},
+		VpsNetwork: VpsNetworkConfig{
+			Bridge:     *vpsBridge,
+			VLAN:       *vpsVLAN,
+			Gateway:    *vpsGateway,
+			CidrPrefix: *vpsCidrPrefix,
+			RangeStart: *vpsRangeStart,
+			RangeEnd:   *vpsRangeEnd,
+		},
 		Proxmox: ProxmoxConfig{
 			Host:        *pveHost,
 			Node:        *pveNode,

@@ -35,6 +35,14 @@ defmodule ControlPlane.Fleet.Node do
     field :public_key, :string
     field :owner_email, :string
 
+    # Per-node VPS network (optional; nil = use the global default range). Bridge
+    # and VLAN stay agent-local; the control plane only needs the IP range to hand
+    # out non-conflicting addresses on this worker's subnet.
+    field :vps_gateway, :string
+    field :vps_cidr_prefix, :integer
+    field :vps_range_start, :string
+    field :vps_range_end, :string
+
     belongs_to :region, Region
 
     timestamps(type: :utc_datetime)
@@ -59,11 +67,74 @@ defmodule ControlPlane.Fleet.Node do
       :enroll_token_hash,
       :agent_token_hash,
       :public_key,
-      :owner_email
+      :owner_email,
+      :vps_gateway,
+      :vps_cidr_prefix,
+      :vps_range_start,
+      :vps_range_end
     ])
     |> validate_required([:name, :region_id])
+    |> validate_vps_network()
     |> assoc_constraint(:region)
     |> unique_constraint(:agent_token_hash)
+  end
+
+  # If a worker declares ANY VPS-network field, require a complete, valid tuple so
+  # the allocator can never crash on bad input or hand out a wrong-subnet address.
+  defp validate_vps_network(changeset) do
+    declared? =
+      Enum.any?([:vps_range_start, :vps_range_end, :vps_gateway, :vps_cidr_prefix], fn f ->
+        not is_nil(get_field(changeset, f))
+      end)
+
+    if declared? do
+      changeset
+      |> validate_required([:vps_range_start, :vps_range_end, :vps_gateway, :vps_cidr_prefix])
+      |> validate_ipv4(:vps_range_start)
+      |> validate_ipv4(:vps_range_end)
+      |> validate_ipv4(:vps_gateway)
+      |> validate_number(:vps_cidr_prefix, greater_than_or_equal_to: 1, less_than_or_equal_to: 32)
+      |> validate_range_order()
+    else
+      changeset
+    end
+  end
+
+  defp validate_ipv4(changeset, field) do
+    validate_change(changeset, field, fn ^field, value ->
+      if valid_ipv4?(value), do: [], else: [{field, "is not a valid IPv4 address"}]
+    end)
+  end
+
+  defp valid_ipv4?(value) when is_binary(value) do
+    case String.split(value, ".") do
+      [_, _, _, _] = parts ->
+        Enum.all?(parts, fn p ->
+          match?({n, ""} when n >= 0 and n <= 255, Integer.parse(p))
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp valid_ipv4?(_), do: false
+
+  defp validate_range_order(changeset) do
+    s = get_field(changeset, :vps_range_start)
+    e = get_field(changeset, :vps_range_end)
+
+    if is_binary(s) and is_binary(e) and valid_ipv4?(s) and valid_ipv4?(e) and
+         ipv4_to_int(s) > ipv4_to_int(e) do
+      add_error(changeset, :vps_range_end, "must be >= vps_range_start")
+    else
+      changeset
+    end
+  end
+
+  defp ipv4_to_int(ip) do
+    [a, b, c, d] = ip |> String.split(".") |> Enum.map(&String.to_integer/1)
+    a * 16_777_216 + b * 65_536 + c * 256 + d
   end
 
   @doc """

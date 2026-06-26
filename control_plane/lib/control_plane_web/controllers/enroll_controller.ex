@@ -10,7 +10,13 @@ defmodule ControlPlaneWeb.EnrollController do
   def enroll(conn, %{"token" => token} = params) when is_binary(token) do
     attrs = %{
       hypervisor: Map.get(params, "hypervisor", "proxmox"),
-      agent_version: Map.get(params, "agent_version")
+      agent_version: Map.get(params, "agent_version"),
+      vps_network: %{
+        gateway: params["vps_gateway"],
+        cidr_prefix: params["vps_cidr_prefix"],
+        range_start: params["vps_range_start"],
+        range_end: params["vps_range_end"]
+      }
     }
 
     case Enrollment.enroll(token, attrs) do

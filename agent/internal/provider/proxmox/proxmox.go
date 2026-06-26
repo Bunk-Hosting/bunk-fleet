@@ -38,6 +38,10 @@ type Config struct {
 	// VerifySSL toggles TLS certificate verification. Many homelab PVE nodes
 	// use self-signed certs, so this may be false in practice.
 	VerifySSL bool
+	// Bridge, when set, is forced as the VPS NIC bridge (else the template's NIC
+	// is inherited). VLAN > 0 adds an 802.1q tag for a dedicated VPS network.
+	Bridge string
+	VLAN   int
 }
 
 // Client is a Proxmox VE provider implementation.
@@ -52,6 +56,20 @@ var _ provider.Provider = (*Client)(nil)
 
 // New constructs a Client from cfg. It returns an error if required fields are
 // missing.
+// safeBridge reports whether s is a non-empty, alphanumeric Proxmox bridge name,
+// preventing injection of extra options into the net0 parameter string.
+func safeBridge(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
 func New(cfg Config) (*Client, error) {
 	if cfg.Host == "" {
 		return nil, errors.New("proxmox: Host is required")
@@ -373,6 +391,13 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 	}
 	if spec.IPConfig != "" {
 		cfgForm.Set("ipconfig0", spec.IPConfig)
+	}
+	if safeBridge(c.cfg.Bridge) {
+		net0 := "virtio,bridge=" + c.cfg.Bridge
+		if c.cfg.VLAN > 0 && c.cfg.VLAN <= 4094 {
+			net0 += ",tag=" + strconv.Itoa(c.cfg.VLAN)
+		}
+		cfgForm.Set("net0", net0)
 	}
 	if user, ok := spec.CloudInit["user"]; ok {
 		cfgForm.Set("ciuser", user)

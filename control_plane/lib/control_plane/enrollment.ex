@@ -70,13 +70,14 @@ defmodule ControlPlane.Enrollment do
 
   Any malformed/used/expired/unknown token yields `{:error, :invalid_token}`.
   """
-  def enroll(token_plaintext, %{hypervisor: hypervisor})
+  def enroll(token_plaintext, %{hypervisor: hypervisor} = attrs)
       when is_binary(token_plaintext) do
     agent_token = generate_token()
+    net = Map.get(attrs, :vps_network, %{})
 
     Repo.transaction(fn ->
       with %EnrollToken{} = token <- fetch_valid_token(token_plaintext),
-           {:ok, node} <- create_node(token, hypervisor, agent_token),
+           {:ok, node} <- create_node(token, hypervisor, agent_token, net),
            {:ok, _token} <- consume_token(token) do
         %{node: node, agent_token: agent_token}
       else
@@ -118,7 +119,7 @@ defmodule ControlPlane.Enrollment do
     Repo.one(query)
   end
 
-  defp create_node(%EnrollToken{} = token, hypervisor, agent_token) do
+  defp create_node(%EnrollToken{} = token, hypervisor, agent_token, net) do
     %Node{}
     |> Node.changeset(%{
       name: "node-" <> short_id(),
@@ -130,7 +131,12 @@ defmodule ControlPlane.Enrollment do
       agent_token_hash: hash(agent_token),
       # Inherit the minting operator so metering/payouts accrue to them. Without
       # this the node has no owner and `Billing.meter_active_vpses/1` skips it.
-      owner_email: token.owner_email
+      owner_email: token.owner_email,
+      # The worker's declared VPS IP range (nil for default-network workers).
+      vps_gateway: Map.get(net, :gateway),
+      vps_cidr_prefix: Map.get(net, :cidr_prefix),
+      vps_range_start: Map.get(net, :range_start),
+      vps_range_end: Map.get(net, :range_end)
     })
     |> Repo.insert()
   end

@@ -74,29 +74,11 @@ defmodule ControlPlane.Provisioning do
     if count_live_vpses(owner_id) >= max_vpses_per_owner() do
       {:error, :quota_exceeded}
     else
-      with {:ok, attrs} <- maybe_allocate_ip(attrs) do
-        attrs
-        |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
-        |> Map.put(:owner_id, owner_id)
-        |> Map.put(:owner_email, email)
-        |> create_vps()
-      end
-    end
-  end
-
-  # Auto-assigns an IP from the pool when the caller did not supply ip_config, so
-  # customers never have to think about networking.
-  defp maybe_allocate_ip(attrs) do
-    if attrs[:ip_config] || attrs["ip_config"] do
-      {:ok, attrs}
-    else
-      case ControlPlane.Fleet.IpPool.allocate() do
-        {:ok, %{ip: ip, config: cfg}} ->
-          {:ok, attrs |> Map.put(:ip_config, cfg) |> Map.put(:ip_address, ip)}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      attrs
+      |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+      |> Map.put(:owner_id, owner_id)
+      |> Map.put(:owner_email, email)
+      |> create_vps()
     end
   end
 
@@ -123,10 +105,19 @@ defmodule ControlPlane.Provisioning do
   defp place_and_dispatch(%Vps{} = vps, req, attrs) do
     case Scheduler.place(req, vps_id: vps.id) do
       {:ok, %{node: node}} ->
+        # IP allocation, the VPS update and the command insert run in ONE
+        # transaction. Allocation takes a per-node advisory lock and the
+        # `vpses_active_ip_uidx` unique index is the DB backstop, so two
+        # concurrent creates on the same node can never share an address.
         multi =
           Multi.new()
-          |> Multi.update(:vps, Vps.changeset(vps, %{node_id: node.id, status: :provisioning}))
-          |> Multi.insert(:command, fn %{vps: vps} ->
+          |> Multi.run(:allocation, fn repo, _changes -> allocate_ip(repo, attrs, node) end)
+          |> Multi.run(:vps, fn repo, %{allocation: {_attrs, ip}} ->
+            vps
+            |> Vps.changeset(%{node_id: node.id, status: :provisioning, ip_address: ip})
+            |> repo.update()
+          end)
+          |> Multi.insert(:command, fn %{vps: vps, allocation: {attrs, _ip}} ->
             Command.changeset(%Command{}, %{
               node_id: node.id,
               vps_id: vps.id,
@@ -142,6 +133,10 @@ defmodule ControlPlane.Provisioning do
             {:ok, %{vps: vps, command: command}}
 
           {:error, _step, reason, _changes} ->
+            # Any failure here is AFTER the scheduler reserved capacity, so release
+            # the held reservation and restore the node's capacity (else it leaks).
+            {:ok, _} = fail_and_release_reservation(vps.id)
+            Events.broadcast_changed(:vps)
             {:error, reason}
         end
 
@@ -151,6 +146,47 @@ defmodule ControlPlane.Provisioning do
         Events.broadcast_changed(:vps)
         {:error, :no_capacity}
     end
+  end
+
+  # Resolves the VPS IP inside the dispatch transaction. An explicit ip_config
+  # (admin override) wins; otherwise a per-node advisory lock serialises pool
+  # allocation so concurrent creates can't pick the same address.
+  defp allocate_ip(repo, attrs, node) do
+    if attrs[:ip_config] || attrs["ip_config"] do
+      {:ok, {attrs, attrs[:ip_address] || attrs["ip_address"]}}
+    else
+      repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:vps_ip, node.id})])
+
+      case ControlPlane.Fleet.IpPool.allocate(node) do
+        {:ok, %{ip: ip, config: cfg}} ->
+          {:ok, {attrs |> Map.put(:ip_config, cfg) |> Map.put(:ip_address, ip), ip}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Marks a VPS :failed and releases its held reservation, returning the freed
+  # capacity to the node (mirrors the agent-reported provision-failure path).
+  defp fail_and_release_reservation(vps_id) do
+    Multi.new()
+    |> Multi.run(:vps, fn repo, _changes ->
+      repo.get!(Vps, vps_id) |> Vps.changeset(%{status: :failed}) |> repo.update()
+    end)
+    |> Multi.run(:reservation, fn repo, _changes ->
+      held_reservation!(vps_id) |> Reservation.changeset(%{status: :released}) |> repo.update()
+    end)
+    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
+      node = Repo.get!(Node, reservation.node_id)
+
+      Ecto.Changeset.change(node,
+        available_vcpu: node.available_vcpu + reservation.vcpu,
+        available_ram_mb: node.available_ram_mb + reservation.ram_mb,
+        available_disk_gb: node.available_disk_gb + reservation.disk_gb
+      )
+    end)
+    |> Repo.transaction()
   end
 
   @doc """

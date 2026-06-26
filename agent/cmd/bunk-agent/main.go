@@ -47,6 +47,8 @@ func run(logger *slog.Logger) error {
 		TokenID:     cfg.Proxmox.TokenID,
 		TokenSecret: cfg.Proxmox.TokenSecret,
 		VerifySSL:   cfg.Proxmox.VerifySSL,
+		Bridge:      cfg.VpsNetwork.Bridge,
+		VLAN:        cfg.VpsNetwork.VLAN,
 	})
 	if err != nil {
 		return err
@@ -64,7 +66,12 @@ func run(logger *slog.Logger) error {
 		logger.Info("loaded persisted enrollment", "node_id", nodeID)
 	} else if cfg.EnrollToken != "" {
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken)
+		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, transport.VpsNetwork{
+			Gateway:    cfg.VpsNetwork.Gateway,
+			CidrPrefix: cfg.VpsNetwork.CidrPrefix,
+			RangeStart: cfg.VpsNetwork.RangeStart,
+			RangeEnd:   cfg.VpsNetwork.RangeEnd,
+		})
 		cancel()
 		if err != nil {
 			return err

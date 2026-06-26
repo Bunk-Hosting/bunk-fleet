@@ -47,6 +47,20 @@ type EnrollRequest struct {
 	Hypervisor string `json:"hypervisor"`
 	// AgentVersion is the build/version string of this agent.
 	AgentVersion string `json:"agent_version"`
+	// VpsGateway/VpsCidrPrefix/VpsRangeStart/VpsRangeEnd describe this worker's
+	// VPS IP range so the control plane can allocate non-conflicting addresses.
+	VpsGateway    string `json:"vps_gateway,omitempty"`
+	VpsCidrPrefix int    `json:"vps_cidr_prefix,omitempty"`
+	VpsRangeStart string `json:"vps_range_start,omitempty"`
+	VpsRangeEnd   string `json:"vps_range_end,omitempty"`
+}
+
+// VpsNetwork is the IP-range part of a worker's VPS network, sent at enrollment.
+type VpsNetwork struct {
+	Gateway    string
+	CidrPrefix int
+	RangeStart string
+	RangeEnd   string
 }
 
 // EnrollResponse carries the durable identity and credentials assigned to the
@@ -167,15 +181,19 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 
 // Enroll exchanges a one-time token for node credentials and stores them on the
 // Client for subsequent calls.
-func (c *Client) Enroll(ctx context.Context, token string) (EnrollResponse, error) {
+func (c *Client) Enroll(ctx context.Context, token string, net VpsNetwork) (EnrollResponse, error) {
 	if token == "" {
 		return EnrollResponse{}, errors.New("transport: empty enrollment token")
 	}
 	var out EnrollResponse
 	req := EnrollRequest{
-		Token:        token,
-		Hypervisor:   "proxmox",
-		AgentVersion: "dev",
+		Token:         token,
+		Hypervisor:    "proxmox",
+		AgentVersion:  "dev",
+		VpsGateway:    net.Gateway,
+		VpsCidrPrefix: net.CidrPrefix,
+		VpsRangeStart: net.RangeStart,
+		VpsRangeEnd:   net.RangeEnd,
 	}
 	if err := c.post(ctx, "/v1/enroll", req, &out); err != nil {
 		return EnrollResponse{}, err
