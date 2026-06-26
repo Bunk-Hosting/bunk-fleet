@@ -1,0 +1,8 @@
+*.env.prod
+.env.prod
+.pnpm-store/
+_build/
+control_plane/*.txt
+control_plane/e2e_*.exs
+control_plane/roundtrip_seed.exs
+deps/
