@@ -74,11 +74,29 @@ defmodule ControlPlane.Provisioning do
     if count_live_vpses(owner_id) >= max_vpses_per_owner() do
       {:error, :quota_exceeded}
     else
-      attrs
-      |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
-      |> Map.put(:owner_id, owner_id)
-      |> Map.put(:owner_email, email)
-      |> create_vps()
+      with {:ok, attrs} <- maybe_allocate_ip(attrs) do
+        attrs
+        |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+        |> Map.put(:owner_id, owner_id)
+        |> Map.put(:owner_email, email)
+        |> create_vps()
+      end
+    end
+  end
+
+  # Auto-assigns an IP from the pool when the caller did not supply ip_config, so
+  # customers never have to think about networking.
+  defp maybe_allocate_ip(attrs) do
+    if attrs[:ip_config] || attrs["ip_config"] do
+      {:ok, attrs}
+    else
+      case ControlPlane.Fleet.IpPool.allocate() do
+        {:ok, %{ip: ip, config: cfg}} ->
+          {:ok, attrs |> Map.put(:ip_config, cfg) |> Map.put(:ip_address, ip)}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -533,6 +551,7 @@ defmodule ControlPlane.Provisioning do
       disk_gb: attrs[:disk_gb] || attrs["disk_gb"],
       owner_email: attrs[:owner_email] || attrs["owner_email"],
       owner_id: attrs[:owner_id] || attrs["owner_id"],
+      ip_address: attrs[:ip_address] || attrs["ip_address"],
       status: :queued
     })
   end

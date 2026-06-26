@@ -44,4 +44,13 @@ config :phoenix, :json_library, Jason
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
+
+# VPS data-network range from which the IpPool hands out addresses to customer
+# VPSes (Proxmox vmbr2 / 10.10.0.0/19). Override per-env in runtime.exs.
+config :control_plane, :vps_network,
+  prefix: 19,
+  gateway: "10.10.0.1",
+  range_start: "10.10.0.20",
+  range_end: "10.10.4.254"
+
 import_config "#{config_env()}.exs"
