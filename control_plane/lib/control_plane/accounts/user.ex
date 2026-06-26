@@ -20,6 +20,8 @@ defmodule ControlPlane.Accounts.User do
     field :role, Ecto.Enum, values: [:user, :operator, :admin], default: :user
     field :name, :string
     field :confirmed_at, :utc_datetime
+    field :totp_secret, :binary, redact: true
+    field :totp_confirmed_at, :utc_datetime
 
     timestamps(type: :utc_datetime)
   end

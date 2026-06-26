@@ -36,6 +36,8 @@ defmodule ControlPlane.MixProject do
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.10"},
       {:pbkdf2_elixir, "~> 2.0"},
+      {:nimble_totp, "~> 1.0"},
+      {:eqrcode, "~> 0.2"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:telemetry_metrics, "~> 1.0"},

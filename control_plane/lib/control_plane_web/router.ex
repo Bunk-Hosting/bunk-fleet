@@ -40,6 +40,8 @@ defmodule ControlPlaneWeb.Router do
 
     get "/login", UserSessionController, :new
     post "/login", UserSessionController, :create
+    get "/login/mfa", UserSessionController, :mfa_new
+    post "/login/mfa", UserSessionController, :mfa_create
     get "/register", UserRegistrationController, :new
     post "/register", UserRegistrationController, :create
     delete "/logout", UserSessionController, :delete
@@ -52,6 +54,7 @@ defmodule ControlPlaneWeb.Router do
     live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
       live "/app", PortalLive, :index
       live "/app/host", HostLive, :index
+      live "/app/security", SecurityLive, :index
     end
   end
 

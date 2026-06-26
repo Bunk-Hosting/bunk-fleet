@@ -20,6 +20,65 @@ defmodule ControlPlane.Accounts do
   @doc "Looks up a user by email (citext, case-insensitive). Returns nil if none."
   def get_user_by_email(email) when is_binary(email), do: Repo.get_by(User, email: email)
 
+  @doc "Looks up a user by id, or nil if not found."
+  def get_user(id), do: Repo.get(User, id)
+
+  ## TOTP multi-factor authentication
+
+  @doc "True once the user has set up AND confirmed a TOTP authenticator."
+  def totp_active?(%User{totp_confirmed_at: nil}), do: false
+  def totp_active?(%User{totp_secret: secret}) when is_binary(secret), do: true
+  def totp_active?(_), do: false
+
+  @doc "Generates a fresh (unconfirmed) TOTP secret for the user and persists it."
+  def start_totp_setup(%User{} = user) do
+    {:ok, user} =
+      user
+      |> Ecto.Changeset.change(totp_secret: NimbleTOTP.secret(), totp_confirmed_at: nil)
+      |> Repo.update()
+
+    user
+  end
+
+  @doc "Confirms TOTP setup by verifying a code against the pending secret."
+  def confirm_totp(%User{totp_secret: secret} = user, code) when is_binary(secret) do
+    if valid_totp_code?(secret, code) do
+      user
+      |> Ecto.Changeset.change(totp_confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
+      |> Repo.update()
+    else
+      {:error, :invalid_code}
+    end
+  end
+
+  def confirm_totp(_user, _code), do: {:error, :invalid_code}
+
+  @doc "Disables TOTP (also cancels an unconfirmed setup), clearing the secret."
+  def disable_totp(%User{} = user) do
+    user
+    |> Ecto.Changeset.change(totp_secret: nil, totp_confirmed_at: nil)
+    |> Repo.update()
+  end
+
+  @doc "Validates a login TOTP code for an MFA-active user."
+  def valid_totp?(%User{totp_secret: secret}, code) when is_binary(secret), do: valid_totp_code?(secret, code)
+  def valid_totp?(_user, _code), do: false
+
+  @doc "The otpauth:// URI to encode into a QR code for authenticator apps."
+  def totp_uri(%User{email: email, totp_secret: secret}) when is_binary(secret),
+    do: NimbleTOTP.otpauth_uri("Bunk:" <> email, secret, issuer: "Bunk")
+
+  @doc "The base32 secret for manual entry into an authenticator app."
+  def totp_secret_base32(%User{totp_secret: secret}) when is_binary(secret),
+    do: Base.encode32(secret, padding: false)
+
+  defp valid_totp_code?(secret, code) when is_binary(code) do
+    trimmed = String.trim(code)
+    byte_size(trimmed) == 6 and NimbleTOTP.valid?(secret, trimmed)
+  end
+
+  defp valid_totp_code?(_secret, _code), do: false
+
   @doc """
   Registers a new user from `attrs` (`email`, `password`, optionally `name`/`role`).
 
