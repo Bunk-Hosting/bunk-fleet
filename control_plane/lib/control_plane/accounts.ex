@@ -24,9 +24,14 @@ defmodule ControlPlane.Accounts do
   password).
   """
   def register_user(attrs) do
-    %User{}
-    |> User.registration_changeset(attrs)
-    |> Repo.insert()
+    case %User{} |> User.registration_changeset(attrs) |> Repo.insert() do
+      {:ok, user} = ok ->
+        ControlPlane.Credits.grant_signup_bonus(user.id)
+        ok
+
+      error ->
+        error
+    end
   end
 
   @doc """
