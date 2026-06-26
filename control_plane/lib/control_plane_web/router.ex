@@ -51,6 +51,7 @@ defmodule ControlPlaneWeb.Router do
 
     live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
       live "/app", PortalLive, :index
+      live "/app/host", HostLive, :index
     end
   end
 
@@ -81,6 +82,12 @@ defmodule ControlPlaneWeb.Router do
 
   scope "/api", ControlPlaneWeb do
     pipe_through :api
+  end
+
+  # Public worker installer script (curl | bash).
+  scope "/", ControlPlaneWeb do
+    pipe_through :api
+    get "/install.sh", WorkerInstallController, :script
   end
 
   # Open, unauthenticated auth endpoints are rate-limited per client IP to blunt

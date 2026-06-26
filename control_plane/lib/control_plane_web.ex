@@ -17,7 +17,7 @@ defmodule ControlPlaneWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt dist)
 
   def live_view do
     quote do

@@ -84,6 +84,7 @@ defmodule ControlPlaneWeb.PortalLive do
           <h1>Mijn VPS-servers</h1>
           <p class="muted">Ingelogd als {@current_user.email}</p>
         </div>
+        <.link navigate={~p"/app/host"} class="badge">Word host</.link>
         <.link href={~p"/logout"} method="delete" class="badge">Uitloggen</.link>
       </div>
 
