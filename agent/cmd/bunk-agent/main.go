@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -55,8 +56,13 @@ func run(logger *slog.Logger) error {
 	// Control-plane client.
 	cp := transport.New(cfg.ControlPlaneURL, nil)
 
-	// Enroll if a one-time token was supplied.
-	if cfg.EnrollToken != "" {
+	// Credentials: prefer persisted enrollment (survives restarts) over consuming
+	// a fresh single-use token; only enroll when no state exists yet.
+	statePath := filepath.Join(cfg.StateDir, "state.json")
+	if nodeID, agentToken, ok := loadState(statePath); ok {
+		cp.SetCredentials(nodeID, agentToken)
+		logger.Info("loaded persisted enrollment", "node_id", nodeID)
+	} else if cfg.EnrollToken != "" {
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken)
 		cancel()
@@ -64,8 +70,11 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		logger.Info("enrolled with control plane", "node_id", resp.NodeID)
+		if err := saveState(statePath, resp.NodeID, resp.AgentToken); err != nil {
+			logger.Warn("could not persist enrollment; a restart will need a fresh token", "err", err)
+		}
 	} else {
-		logger.Warn("no enroll token provided; heartbeats will fail until credentials are set")
+		logger.Warn("no enroll token and no persisted state; heartbeats will fail until credentials are set")
 	}
 
 	// Command consumer: long-poll the control plane for provision/delete

@@ -33,6 +33,8 @@ type Config struct {
 	Proxmox ProxmoxConfig
 	// HeartbeatInterval controls how often capacity is reported.
 	HeartbeatInterval time.Duration
+	// StateDir is where the agent persists its enrollment so it survives restarts.
+	StateDir string
 }
 
 // envOr returns the environment variable named key, or def if unset/empty.
@@ -90,6 +92,8 @@ func Load() (Config, error) {
 		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true), "verify Proxmox TLS certificate")
 
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second), "capacity heartbeat interval")
+
+		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
 	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -101,6 +105,7 @@ func Load() (Config, error) {
 		EnrollToken:       *enrollToken,
 		Hypervisor:        *hypervisor,
 		HeartbeatInterval: *heartbeat,
+		StateDir:          *stateDir,
 		Proxmox: ProxmoxConfig{
 			Host:        *pveHost,
 			Node:        *pveNode,

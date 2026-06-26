@@ -19,7 +19,9 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates \
     && addgroup -S bunk \
-    && adduser -S -G bunk bunk
+    && adduser -S -G bunk bunk \
+    && mkdir -p /var/lib/bunk-agent \
+    && chown bunk:bunk /var/lib/bunk-agent
 
 COPY --from=build /bunk-agent /usr/local/bin/bunk-agent
 
