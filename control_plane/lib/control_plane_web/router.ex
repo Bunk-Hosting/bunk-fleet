@@ -56,6 +56,7 @@ defmodule ControlPlaneWeb.Router do
       live "/app/host", HostLive, :index
       live "/app/security", SecurityLive, :index
       live "/app/topup", TopupLive, :index
+      live "/app/vps/:id/console", ConsoleLive, :index
     end
   end
 

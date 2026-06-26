@@ -28,6 +28,20 @@ EOF
 else
   echo "REUSING existing $ENV_FILE"
 fi
+# Console SSH key — the in-browser console SSHes into VPSes with this; its public
+# key is injected into every VPS via cloud-init. Generated once, base64 in the env.
+if ! grep -q '^CONSOLE_SSH_PRIVATE_KEY=' "$ENV_FILE"; then
+  TMPK=$(mktemp -u)
+  ssh-keygen -t rsa -b 2048 -m PEM -N '' -C bunk-console -f "$TMPK" >/dev/null
+  {
+    echo "CONSOLE_SSH_PRIVATE_KEY=$(base64 -w0 "$TMPK")"
+    echo "CONSOLE_SSH_PUBLIC_KEY=$(base64 -w0 "${TMPK}.pub")"
+    echo "CONSOLE_SSH_USER=root"
+  } >> "$ENV_FILE"
+  rm -f "$TMPK" "${TMPK}.pub"
+  echo "GENERATED console SSH key"
+fi
+
 set -a; . "$ENV_FILE"; set +a
 DATABASE_URL="ecto://bunkfleet:${DB_PASSWORD}@${PGNAME}/control_plane"
 
@@ -65,6 +79,9 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e PHX_HOST="$PHX_HOST" \
   -e PUBLIC_URL="$PUBLIC_URL" \
   -e PORT=4000 \
+  -e CONSOLE_SSH_PRIVATE_KEY \
+  -e CONSOLE_SSH_PUBLIC_KEY \
+  -e CONSOLE_SSH_USER \
   "$IMG" >/dev/null
 echo "STARTED $CPNAME on :4000"
 

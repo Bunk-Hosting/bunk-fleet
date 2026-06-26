@@ -69,10 +69,45 @@
     </style>
     <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.14/priv/static/phoenix.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.2.3/priv/static/phoenix_live_view.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
     <script>
       window.addEventListener("DOMContentLoaded", function () {
         let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+        let Hooks = {};
+        Hooks.Terminal = {
+          mounted() {
+            let term = new window.Terminal({
+              cursorBlink: true,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize: 13,
+              theme: { background: "#0b0f14", foreground: "#e6edf3" }
+            });
+            let fit = new window.FitAddon.FitAddon();
+            term.loadAddon(fit);
+            term.open(this.el);
+            fit.fit();
+            term.focus();
+            this.term = term;
+            term.onData((d) => this.pushEvent("input", { data: d }));
+            this.handleEvent("output", ({ data }) => {
+              let bin = atob(data), bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              term.write(bytes);
+            });
+            this.handleEvent("closed", () => term.write("\r\n\x1b[31m[verbinding gesloten]\x1b[0m\r\n"));
+            this._resize = () => { fit.fit(); this.pushEvent("resize", { cols: term.cols, rows: term.rows }); };
+            window.addEventListener("resize", this._resize);
+            this._resize();
+          },
+          destroyed() {
+            window.removeEventListener("resize", this._resize);
+            if (this.term) this.term.dispose();
+          }
+        };
         let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
+          hooks: Hooks,
           params: { _csrf_token: csrfToken }
         });
         liveSocket.connect();

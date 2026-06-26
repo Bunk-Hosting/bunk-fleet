@@ -102,6 +102,16 @@ defmodule ControlPlane.Provisioning do
     Application.get_env(:control_plane, :default_template_id, 9000)
   end
 
+  # The in-browser console connects to each VPS over SSH with the platform console
+  # key, so its public key is injected into every VPS via cloud-init (next to the
+  # customer's own keys). Empty list when no console key is configured.
+  defp console_public_keys do
+    case (Application.get_env(:control_plane, :console) || [])[:ssh_public_key] do
+      key when is_binary(key) and key != "" -> [key]
+      _ -> []
+    end
+  end
+
   defp place_and_dispatch(%Vps{} = vps, req, attrs) do
     case Scheduler.place(req, vps_id: vps.id) do
       {:ok, %{node: node}} ->
@@ -605,7 +615,7 @@ defmodule ControlPlane.Provisioning do
       "disk_gb" => vps.disk_gb,
       "template_id" => attrs[:template_id] || attrs["template_id"] || default_template_id(),
       "cloud_init" => attrs[:cloud_init] || attrs["cloud_init"] || %{},
-      "ssh_keys" => attrs[:ssh_keys] || attrs["ssh_keys"] || [],
+      "ssh_keys" => (attrs[:ssh_keys] || attrs["ssh_keys"] || []) ++ console_public_keys(),
       "ip_config" => attrs[:ip_config] || attrs["ip_config"]
     }
   end

@@ -155,6 +155,7 @@ defmodule ControlPlaneWeb.PortalLive do
               <td class="mono">{v.ip_address || "—"}</td>
               <td class="muted">{v.vcpu} vCPU · {v.ram_mb} MB · {v.disk_gb} GB</td>
               <td>
+                <.link :if={v.status == :active} navigate={~p"/app/vps/#{v.id}/console"} class="btn">Console</.link>
                 <button :if={v.status == :stopped} phx-click="start" phx-value-id={v.id} class="btn">Start</button>
                 <button :if={v.status in [:active, :paused]} phx-click="stop" phx-value-id={v.id} class="btn">Stop</button>
                 <button :if={v.status == :active} phx-click="pause" phx-value-id={v.id} class="btn">Pauze</button>

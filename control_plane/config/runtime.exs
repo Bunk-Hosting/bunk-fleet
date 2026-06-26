@@ -69,9 +69,26 @@ if config_env() == :prod do
   # node-enrollment install commands. Read HERE (runtime), not config.exs, so a
   # release picks them up from the environment at boot instead of freezing a
   # build-time value.
+  console_private_key =
+    case System.get_env("CONSOLE_SSH_PRIVATE_KEY") do
+      b64 when is_binary(b64) and b64 != "" -> Base.decode64!(b64)
+      _ -> nil
+    end
+
+  console_public_key =
+    case System.get_env("CONSOLE_SSH_PUBLIC_KEY") do
+      b64 when is_binary(b64) and b64 != "" -> Base.decode64!(b64)
+      _ -> nil
+    end
+
   config :control_plane,
     admin_token: System.get_env("ADMIN_TOKEN"),
-    public_url: System.get_env("PUBLIC_URL") || "https://#{host}"
+    public_url: System.get_env("PUBLIC_URL") || "https://#{host}",
+    console: [
+      ssh_private_key: console_private_key,
+      ssh_public_key: console_public_key,
+      ssh_user: System.get_env("CONSOLE_SSH_USER") || "root"
+    ]
 
   # Billing rates (money per resource-hour) as decimal strings — `ControlPlane.Billing`
   # coerces them to Decimal so money math stays exact. Non-zero defaults so a fresh

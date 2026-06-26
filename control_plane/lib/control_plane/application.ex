@@ -13,7 +13,9 @@ defmodule ControlPlane.Application do
         ControlPlane.Repo,
         {DNSCluster, query: Application.get_env(:control_plane, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: ControlPlane.PubSub},
-        ControlPlane.RateLimiter
+        ControlPlane.RateLimiter,
+        # Tracks live console SSH sessions per user (duplicate keys = {:user, id}).
+        {Registry, keys: :duplicate, name: ControlPlane.Console.Registry}
       ] ++
         reconciler_child() ++
         [

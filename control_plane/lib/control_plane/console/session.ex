@@ -1,0 +1,130 @@
+defmodule ControlPlane.Console.Session do
+  @moduledoc """
+  Bridges a browser terminal to a VPS over SSH. ConsoleLive starts one (linked),
+  it dials the VPS with the platform console key, allocates a PTY + shell, forwards
+  channel output to the owning LiveView as `{:console_output, binary}`, and accepts
+  `send_input/2` / `resize/3`. The connect runs in `handle_continue` so the caller
+  (mount) never blocks. The process traps exits, so closing the tab (a linked
+  LiveView exit) deterministically tears the SSH connection down.
+  """
+  use GenServer
+  require Logger
+
+  @max_input 65_536
+  @max_dim 1000
+
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+  def send_input(pid, data), do: GenServer.cast(pid, {:input, data})
+  def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
+
+  @impl true
+  def init(%{host: host, port: port, user: user, owner: owner} = opts) do
+    Process.flag(:trap_exit, true)
+
+    if uid = opts[:user_id] do
+      Registry.register(ControlPlane.Console.Registry, {:user, uid}, nil)
+    end
+
+    state = %{conn: nil, chan: nil, owner: owner, host: host, port: port, user: user}
+    {:ok, state, {:continue, :connect}}
+  end
+
+  @impl true
+  def handle_continue(:connect, st) do
+    _ = start_ssh()
+    key = (Application.get_env(:control_plane, :console) || [])[:ssh_private_key]
+
+    if is_nil(key) do
+      notify_closed(st.owner, :no_console_key)
+      {:stop, :normal, st}
+    else
+      opts = [
+        user: String.to_charlist(st.user),
+        silently_accept_hosts: true,
+        key_cb: {ControlPlane.Console.KeyCb, [pem: key]},
+        auth_methods: ~c"publickey",
+        connect_timeout: 10_000
+      ]
+
+      case :ssh.connect(String.to_charlist(st.host), st.port, opts) do
+        {:ok, conn} ->
+          case open_shell(conn) do
+            {:ok, chan} ->
+              {:noreply, %{st | conn: conn, chan: chan}}
+
+            {:error, reason} ->
+              :ssh.close(conn)
+              notify_closed(st.owner, reason)
+              {:stop, :normal, st}
+          end
+
+        {:error, reason} ->
+          notify_closed(st.owner, reason)
+          {:stop, :normal, st}
+      end
+    end
+  end
+
+  defp start_ssh do
+    case :ssh.start() do
+      :ok -> :ok
+      {:error, {:already_started, _}} -> :ok
+      other -> other
+    end
+  end
+
+  defp open_shell(conn) do
+    with {:ok, chan} <- :ssh_connection.session_channel(conn, 10_000),
+         :success <-
+           :ssh_connection.ptty_alloc(conn, chan, [
+             {:term, ~c"xterm-256color"},
+             {:width, 80},
+             {:height, 24}
+           ]),
+         :ok <- :ssh_connection.shell(conn, chan) do
+      {:ok, chan}
+    else
+      other -> {:error, other}
+    end
+  end
+
+  defp notify_closed(owner, reason), do: send(owner, {:console_closed, reason})
+
+  @impl true
+  def handle_cast({:input, data}, %{conn: conn, chan: chan} = st)
+      when not is_nil(conn) and is_binary(data) and byte_size(data) <= @max_input do
+    :ssh_connection.send(conn, chan, data)
+    {:noreply, st}
+  end
+
+  def handle_cast({:resize, cols, rows}, %{conn: conn, chan: chan} = st)
+      when not is_nil(conn) and is_integer(cols) and is_integer(rows) and
+             cols > 0 and rows > 0 and cols <= @max_dim and rows <= @max_dim do
+    :ssh_connection.window_change(conn, chan, cols, rows)
+    {:noreply, st}
+  end
+
+  def handle_cast(_msg, st), do: {:noreply, st}
+
+  @impl true
+  def handle_info({:ssh_cm, conn, {:data, chan, _type, data}}, st) do
+    send(st.owner, {:console_output, data})
+    :ssh_connection.adjust_window(conn, chan, byte_size(data))
+    {:noreply, st}
+  end
+
+  def handle_info({:ssh_cm, _conn, {:closed, _chan}}, st) do
+    notify_closed(st.owner, :remote_closed)
+    {:stop, :normal, st}
+  end
+
+  def handle_info({:ssh_cm, _conn, _msg}, st), do: {:noreply, st}
+  def handle_info({:EXIT, _from, _reason}, st), do: {:stop, :normal, st}
+  def handle_info(_other, st), do: {:noreply, st}
+
+  @impl true
+  def terminate(_reason, st) do
+    if is_map(st) and st[:conn], do: :ssh.close(st.conn)
+    :ok
+  end
+end
