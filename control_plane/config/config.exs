@@ -53,4 +53,11 @@ config :control_plane, :vps_network,
   range_start: "10.10.0.20",
   range_end: "10.10.4.254"
 
+# Bank/iDEAL payment details shown to customers funding their wallet. Placeholders
+# here; set the real values via runtime config before going live.
+config :control_plane, :payment,
+  iban: "NL00 BUNK 0000 0000 00",
+  beneficiary: "Bunk Hosting",
+  bic: "BUNKNL2A"
+
 import_config "#{config_env()}.exs"

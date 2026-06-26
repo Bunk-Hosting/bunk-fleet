@@ -55,6 +55,7 @@ defmodule ControlPlaneWeb.Router do
       live "/app", PortalLive, :index
       live "/app/host", HostLive, :index
       live "/app/security", SecurityLive, :index
+      live "/app/topup", TopupLive, :index
     end
   end
 
@@ -159,6 +160,8 @@ defmodule ControlPlaneWeb.Router do
     get "/billing/usage", BillingController, :usage
     get "/credits", CreditController, :show
     post "/credits", CreditController, :create
+    get "/topups", TopupController, :index
+    post "/topups/:id/confirm", TopupController, :confirm
   end
 
   # Enable LiveDashboard in development

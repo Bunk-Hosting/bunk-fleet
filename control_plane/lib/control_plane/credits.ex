@@ -10,7 +10,7 @@ defmodule ControlPlane.Credits do
   """
   import Ecto.Query
   alias ControlPlane.Repo
-  alias ControlPlane.Credits.LedgerEntry
+  alias ControlPlane.Credits.{LedgerEntry, TopupRequest}
 
   @signup_bonus_cents 1000
   @size_prices_cents %{"small" => 300, "medium" => 600, "large" => 1200}
@@ -70,4 +70,75 @@ defmodule ControlPlane.Credits do
   @doc "Credits an amount back (e.g. refund a failed provision)."
   def refund(_user_id, amount_cents, _kind, _desc) when amount_cents <= 0, do: {:ok, nil}
   def refund(user_id, amount_cents, kind, description), do: add_entry(user_id, amount_cents, kind, description)
+
+  ## Top-up requests (self-service wallet funding; admin confirms receipt)
+
+  @doc "Creates a pending top-up request with a unique payment reference."
+  def create_topup_request(user_id, amount_cents) do
+    %TopupRequest{}
+    |> TopupRequest.changeset(%{user_id: user_id, amount_cents: amount_cents, reference: generate_reference(), status: :pending})
+    |> Repo.insert()
+  end
+
+  def list_topup_requests(user_id, limit \\ 20) do
+    Repo.all(
+      from t in TopupRequest,
+        where: t.user_id == ^user_id,
+        order_by: [desc: t.inserted_at],
+        limit: ^limit
+    )
+  end
+
+  @doc "All pending requests (admin queue), oldest first, with the user preloaded."
+  def list_pending_topups do
+    Repo.all(from t in TopupRequest, where: t.status == :pending, order_by: [asc: t.inserted_at], preload: [:user])
+  end
+
+  @doc """
+  Confirms a pending top-up (admin, after payment received): credits the wallet
+  and marks the request paid, atomically. A non-pending request yields
+  `{:error, :not_pending}` so a double-confirm can never double-credit.
+  """
+  def mark_topup_paid(id) do
+    Repo.transaction(fn ->
+      # Lock the row so two concurrent confirms can't both observe :pending and
+      # credit the wallet twice (READ COMMITTED would otherwise allow it).
+      case Repo.one(from t in TopupRequest, where: t.id == ^id, lock: "FOR UPDATE") do
+        nil ->
+          Repo.rollback(:not_found)
+
+        %TopupRequest{status: :pending} = tr ->
+          {:ok, _} = add_entry(tr.user_id, tr.amount_cents, "topup", "Tegoed bijgeboekt (" <> tr.reference <> ")")
+
+          {:ok, tr} =
+            tr
+            |> Ecto.Changeset.change(status: :paid, paid_at: DateTime.truncate(DateTime.utc_now(), :second))
+            |> Repo.update()
+
+          tr
+
+        _ ->
+          Repo.rollback(:not_pending)
+      end
+    end)
+  end
+
+  @doc "Lets a user cancel their own still-pending request."
+  def cancel_topup_request(user_id, id) do
+    Repo.transaction(fn ->
+      case Repo.one(from t in TopupRequest, where: t.id == ^id, lock: "FOR UPDATE") do
+        %TopupRequest{user_id: ^user_id, status: :pending} = tr ->
+          {:ok, tr} = tr |> Ecto.Changeset.change(status: :cancelled) |> Repo.update()
+          tr
+
+        _ ->
+          Repo.rollback(:not_cancellable)
+      end
+    end)
+  end
+
+  defp generate_reference do
+    rand = :crypto.strong_rand_bytes(5) |> Base.encode32(padding: false) |> binary_part(0, 8)
+    "BUNK-" <> rand
+  end
 end
