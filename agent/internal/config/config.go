@@ -21,6 +21,14 @@ type ProxmoxConfig struct {
 	VerifySSL   bool
 }
 
+// OfferConfig caps how much capacity the operator chooses to advertise to the
+// control plane. A zero value for a dimension means "offer everything available".
+type OfferConfig struct {
+	VCPU   int
+	RAMMB  int
+	DiskGB int
+}
+
 // Config is the fully-resolved agent configuration.
 type Config struct {
 	// ControlPlaneURL is the base URL the agent dials out to.
@@ -35,6 +43,8 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	// StateDir is where the agent persists its enrollment so it survives restarts.
 	StateDir string
+	// Offer caps the capacity advertised to the control plane (0 per dimension = all).
+	Offer OfferConfig
 }
 
 // envOr returns the environment variable named key, or def if unset/empty.
@@ -71,6 +81,19 @@ func envDuration(key string, def time.Duration) time.Duration {
 	return d
 }
 
+// envInt parses an integer environment variable, falling back to def.
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
 // Load parses flags (with env fallbacks) and returns the resolved Config. It
 // validates required fields and returns a descriptive error if any are missing
 // or malformed.
@@ -94,6 +117,10 @@ func Load() (Config, error) {
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second), "capacity heartbeat interval")
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
+
+		offerVCPU = fs.Int("offer-vcpu", envInt("BUNK_OFFER_VCPU", 0), "max vCPUs to advertise (0 = all)")
+		offerRAM  = fs.Int("offer-ram-mb", envInt("BUNK_OFFER_RAM_MB", 0), "max RAM (MB) to advertise (0 = all)")
+		offerDisk = fs.Int("offer-disk-gb", envInt("BUNK_OFFER_DISK_GB", 0), "max disk (GB) to advertise (0 = all)")
 	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -106,6 +133,7 @@ func Load() (Config, error) {
 		Hypervisor:        *hypervisor,
 		HeartbeatInterval: *heartbeat,
 		StateDir:          *stateDir,
+		Offer:             OfferConfig{VCPU: *offerVCPU, RAMMB: *offerRAM, DiskGB: *offerDisk},
 		Proxmox: ProxmoxConfig{
 			Host:        *pveHost,
 			Node:        *pveNode,

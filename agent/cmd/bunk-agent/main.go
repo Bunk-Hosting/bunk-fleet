@@ -98,7 +98,7 @@ func run(logger *slog.Logger) error {
 	logger.Info("starting heartbeat loop", "interval", cfg.HeartbeatInterval.String())
 
 	// Send an immediate first heartbeat, then on each tick.
-	sendHeartbeat(ctx, logger, prov, cp)
+	sendHeartbeat(ctx, logger, prov, cp, cfg.Offer)
 
 	for {
 		select {
@@ -106,15 +106,40 @@ func run(logger *slog.Logger) error {
 			logger.Info("shutdown signal received, stopping")
 			return nil
 		case <-ticker.C:
-			sendHeartbeat(ctx, logger, prov, cp)
+			sendHeartbeat(ctx, logger, prov, cp, cfg.Offer)
 		}
 	}
+}
+
+// capOffer caps advertised capacity to the operator's chosen offer (0 per
+// dimension = unlimited), clamping availability so the scheduler never sees
+// more free capacity than is actually offered.
+func capOffer(c provider.Capacity, o config.OfferConfig) provider.Capacity {
+	if o.VCPU > 0 && c.TotalVCPU > o.VCPU {
+		c.TotalVCPU = o.VCPU
+	}
+	if c.AvailVCPU > c.TotalVCPU {
+		c.AvailVCPU = c.TotalVCPU
+	}
+	if o.RAMMB > 0 && c.TotalRAMMB > o.RAMMB {
+		c.TotalRAMMB = o.RAMMB
+	}
+	if c.AvailRAMMB > c.TotalRAMMB {
+		c.AvailRAMMB = c.TotalRAMMB
+	}
+	if o.DiskGB > 0 && c.TotalDiskGB > o.DiskGB {
+		c.TotalDiskGB = o.DiskGB
+	}
+	if c.AvailDiskGB > c.TotalDiskGB {
+		c.AvailDiskGB = c.TotalDiskGB
+	}
+	return c
 }
 
 // sendHeartbeat collects capacity from the provider and reports it to the
 // control plane. Errors are logged but never fatal: a single failed heartbeat
 // must not take the agent down.
-func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client) {
+func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, offer config.OfferConfig) {
 	hbCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
@@ -123,6 +148,7 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		logger.Error("capacity query failed", "err", err)
 		return
 	}
+	capacity = capOffer(capacity, offer)
 
 	hb := transport.Heartbeat{
 		NodeID:      cp.NodeID(),

@@ -48,6 +48,11 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     read -rsp "Proxmox API token-secret: " PXSEC; echo
     read -rp "TLS-certificaat verifiëren? (j/N): " VSSL
     case "$VSSL" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
+    echo
+    echo "Hoeveel capaciteit wil je aanbieden? (leeg laten = alles beschikbaar)"
+    read -rp "  vCPU-cores: " OFFER_VCPU
+    read -rp "  RAM in MB:  " OFFER_RAM
+    read -rp "  Disk in GB: " OFFER_DISK
 
     echo
     echo "-> bunk-worker binary downloaden..."
@@ -71,6 +76,9 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Environment=BUNK_PROXMOX_TOKEN_ID=$PXTID
     Environment=BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
     Environment=BUNK_PROXMOX_VERIFY_SSL=$VSSL
+    Environment=BUNK_OFFER_VCPU=${OFFER_VCPU:-0}
+    Environment=BUNK_OFFER_RAM_MB=${OFFER_RAM:-0}
+    Environment=BUNK_OFFER_DISK_GB=${OFFER_DISK:-0}
     Environment=BUNK_STATE_DIR=/var/lib/bunk-worker
     ExecStart=/usr/local/bin/bunk-worker
     Restart=always
