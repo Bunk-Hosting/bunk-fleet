@@ -116,6 +116,10 @@ defmodule ControlPlane.Provisioning do
     Application.get_env(:control_plane, :max_vpses_per_owner, 10)
   end
 
+  defp default_template_id do
+    Application.get_env(:control_plane, :default_template_id, 9000)
+  end
+
   defp place_and_dispatch(%Vps{} = vps, req, attrs) do
     case Scheduler.place(req, vps_id: vps.id) do
       {:ok, %{node: node}} ->
@@ -563,7 +567,7 @@ defmodule ControlPlane.Provisioning do
       "vcpu" => vps.vcpu,
       "ram_mb" => vps.ram_mb,
       "disk_gb" => vps.disk_gb,
-      "template_id" => attrs[:template_id] || attrs["template_id"],
+      "template_id" => attrs[:template_id] || attrs["template_id"] || default_template_id(),
       "cloud_init" => attrs[:cloud_init] || attrs["cloud_init"] || %{},
       "ssh_keys" => attrs[:ssh_keys] || attrs["ssh_keys"] || [],
       "ip_config" => attrs[:ip_config] || attrs["ip_config"]
