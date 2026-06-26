@@ -16,7 +16,7 @@ defmodule ControlPlane.Fleet.Node do
 
     field :tier, Ecto.Enum, values: [:datacenter, :community], default: :community
     field :status, Ecto.Enum, values: [:pending, :online, :draining, :offline], default: :pending
-    field :hypervisor, Ecto.Enum, values: [:proxmox, :incus], default: :proxmox
+    field :hypervisor, Ecto.Enum, values: [:proxmox, :esxi, :incus], default: :proxmox
 
     # Total advertised capacity of the node.
     field :total_vcpu, :integer

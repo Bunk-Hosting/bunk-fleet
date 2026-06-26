@@ -41,6 +41,19 @@ type VpsNetworkConfig struct {
 	RangeEnd   string
 }
 
+// EsxiConfig holds vSphere/ESXi connection + placement parameters.
+type EsxiConfig struct {
+	URL          string
+	User         string
+	Password     string
+	Insecure     bool
+	Datacenter   string
+	Datastore    string
+	ResourcePool string
+	Folder       string
+	Template     string
+}
+
 // Config is the fully-resolved agent configuration.
 type Config struct {
 	// ControlPlaneURL is the base URL the agent dials out to.
@@ -51,6 +64,8 @@ type Config struct {
 	Hypervisor string
 	// Proxmox holds backend-specific settings.
 	Proxmox ProxmoxConfig
+	// Esxi holds vSphere/ESXi settings (used when Hypervisor == "esxi").
+	Esxi EsxiConfig
 	// HeartbeatInterval controls how often capacity is reported.
 	HeartbeatInterval time.Duration
 	// StateDir is where the agent persists its enrollment so it survives restarts.
@@ -132,6 +147,16 @@ func Load() (Config, error) {
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
 
+		esxiURL      = fs.String("esxi-url", envOr("BUNK_ESXI_URL", ""), "vSphere/ESXi SDK URL (https://host/sdk)")
+		esxiUser     = fs.String("esxi-user", envOr("BUNK_ESXI_USER", ""), "vSphere/ESXi username")
+		esxiPass     = fs.String("esxi-password", envOr("BUNK_ESXI_PASSWORD", ""), "vSphere/ESXi password")
+		esxiInsecure = fs.Bool("esxi-insecure", envBool("BUNK_ESXI_INSECURE", false), "skip vSphere TLS verification")
+		esxiDC       = fs.String("esxi-datacenter", envOr("BUNK_ESXI_DATACENTER", ""), "vSphere datacenter (default when empty)")
+		esxiDS       = fs.String("esxi-datastore", envOr("BUNK_ESXI_DATASTORE", ""), "vSphere datastore (default when empty)")
+		esxiPool     = fs.String("esxi-resource-pool", envOr("BUNK_ESXI_RESOURCE_POOL", ""), "vSphere resource pool (default when empty)")
+		esxiFolder   = fs.String("esxi-folder", envOr("BUNK_ESXI_FOLDER", ""), "vSphere VM folder (default when empty)")
+		esxiTemplate = fs.String("esxi-template", envOr("BUNK_ESXI_TEMPLATE", ""), "template VM name to clone")
+
 		offerVCPU = fs.Int("offer-vcpu", envInt("BUNK_OFFER_VCPU", 0), "max vCPUs to advertise (0 = all)")
 		offerRAM  = fs.Int("offer-ram-mb", envInt("BUNK_OFFER_RAM_MB", 0), "max RAM (MB) to advertise (0 = all)")
 		offerDisk = fs.Int("offer-disk-gb", envInt("BUNK_OFFER_DISK_GB", 0), "max disk (GB) to advertise (0 = all)")
@@ -170,6 +195,17 @@ func Load() (Config, error) {
 			TokenSecret: *pveSecret,
 			VerifySSL:   *pveVerify,
 		},
+		Esxi: EsxiConfig{
+			URL:          *esxiURL,
+			User:         *esxiUser,
+			Password:     *esxiPass,
+			Insecure:     *esxiInsecure,
+			Datacenter:   *esxiDC,
+			Datastore:    *esxiDS,
+			ResourcePool: *esxiPool,
+			Folder:       *esxiFolder,
+			Template:     *esxiTemplate,
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -183,14 +219,23 @@ func (c Config) validate() error {
 	if c.ControlPlaneURL == "" {
 		return errors.New("config: control-plane-url is required")
 	}
-	if c.Hypervisor != "proxmox" {
-		return fmt.Errorf("config: unsupported hypervisor %q (only \"proxmox\" is supported)", c.Hypervisor)
-	}
-	if c.Proxmox.Host == "" || c.Proxmox.Node == "" {
-		return errors.New("config: proxmox-host and proxmox-node are required")
-	}
-	if c.Proxmox.TokenID == "" || c.Proxmox.TokenSecret == "" {
-		return errors.New("config: proxmox-token-id and proxmox-token-secret are required")
+	switch c.Hypervisor {
+	case "proxmox":
+		if c.Proxmox.Host == "" || c.Proxmox.Node == "" {
+			return errors.New("config: proxmox-host and proxmox-node are required")
+		}
+		if c.Proxmox.TokenID == "" || c.Proxmox.TokenSecret == "" {
+			return errors.New("config: proxmox-token-id and proxmox-token-secret are required")
+		}
+	case "esxi":
+		if c.Esxi.URL == "" || c.Esxi.User == "" || c.Esxi.Password == "" {
+			return errors.New("config: esxi-url, esxi-user and esxi-password are required")
+		}
+		if c.Esxi.Template == "" {
+			return errors.New("config: esxi-template is required")
+		}
+	default:
+		return fmt.Errorf("config: unsupported hypervisor %q (proxmox or esxi)", c.Hypervisor)
 	}
 	if c.HeartbeatInterval <= 0 {
 		return errors.New("config: heartbeat-interval must be positive")

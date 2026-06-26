@@ -1,0 +1,446 @@
+// Package esxi implements provider.Provider against VMware vSphere/ESXi using
+// govmomi. VMs are cloned from a template; cloud-init is delivered via guestinfo
+// (the VMware datasource). Each operation opens a short-lived session so there is
+// no long-lived connection to keep healthy. ESXi support is built and
+// simulator-tested; live validation on a real host comes later (Proxmox-first).
+package esxi
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
+
+	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
+)
+
+// Config holds vSphere/ESXi connection + placement parameters.
+type Config struct {
+	URL          string // e.g. https://vcenter.example.com/sdk
+	User         string
+	Password     string
+	Insecure     bool
+	Datacenter   string // optional; default datacenter when empty
+	Datastore    string // optional; default datastore when empty
+	ResourcePool string // optional; default pool when empty
+	Folder       string // optional; default VM folder when empty
+	Template     string // required: name of the template VM to clone
+}
+
+// Client is a stateless vSphere provider; it connects per operation.
+type Client struct{ cfg Config }
+
+func New(cfg Config) (*Client, error) {
+	switch {
+	case cfg.URL == "":
+		return nil, errors.New("esxi: url is required")
+	case cfg.User == "" || cfg.Password == "":
+		return nil, errors.New("esxi: user and password are required")
+	case cfg.Template == "":
+		return nil, errors.New("esxi: template is required")
+	}
+	return &Client{cfg: cfg}, nil
+}
+
+func (c *Client) Name() string { return "esxi" }
+
+func (c *Client) connect(ctx context.Context) (*govmomi.Client, error) {
+	u, err := url.Parse(c.cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("esxi: bad url: %w", err)
+	}
+	u.User = url.UserPassword(c.cfg.User, c.cfg.Password)
+	return govmomi.NewClient(ctx, u, c.cfg.Insecure)
+}
+
+func (c *Client) finder(ctx context.Context, gc *govmomi.Client) (*find.Finder, error) {
+	f := find.NewFinder(gc.Client, true)
+
+	var (
+		dc  *object.Datacenter
+		err error
+	)
+	if c.cfg.Datacenter != "" {
+		dc, err = f.Datacenter(ctx, c.cfg.Datacenter)
+	} else {
+		dc, err = f.DefaultDatacenter(ctx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("esxi: datacenter: %w", err)
+	}
+
+	f.SetDatacenter(dc)
+	return f, nil
+}
+
+func vmByID(gc *govmomi.Client, id string) *object.VirtualMachine {
+	return object.NewVirtualMachine(gc.Client, types.ManagedObjectReference{Type: "VirtualMachine", Value: id})
+}
+
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*find.NotFoundError); ok {
+		return true
+	}
+	if soap.IsSoapFault(err) {
+		switch soap.ToSoapFault(err).VimFault().(type) {
+		case types.ManagedObjectNotFound, *types.ManagedObjectNotFound:
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+// CreateVM clones the configured template into a new powered-on VM.
+func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.VMStatus, error) {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return provider.VMStatus{}, err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	f, err := c.finder(ctx, gc)
+	if err != nil {
+		return provider.VMStatus{}, err
+	}
+
+	tmpl, err := f.VirtualMachine(ctx, c.cfg.Template)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: template %q: %w", c.cfg.Template, err)
+	}
+
+	ds, err := f.DatastoreOrDefault(ctx, c.cfg.Datastore)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: datastore: %w", err)
+	}
+	pool, err := f.ResourcePoolOrDefault(ctx, c.cfg.ResourcePool)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: resource pool: %w", err)
+	}
+	folder, err := f.FolderOrDefault(ctx, c.cfg.Folder)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: folder: %w", err)
+	}
+
+	dsRef := ds.Reference()
+	poolRef := pool.Reference()
+	metadata, userdata := cloudInit(spec)
+
+	cloneSpec := types.VirtualMachineCloneSpec{
+		Location: types.VirtualMachineRelocateSpec{Datastore: &dsRef, Pool: &poolRef},
+		Config: &types.VirtualMachineConfigSpec{
+			NumCPUs:  int32(spec.VCPU),
+			MemoryMB: int64(spec.RAMMB),
+			ExtraConfig: []types.BaseOptionValue{
+				&types.OptionValue{Key: "guestinfo.metadata", Value: base64.StdEncoding.EncodeToString([]byte(metadata))},
+				&types.OptionValue{Key: "guestinfo.metadata.encoding", Value: "base64"},
+				&types.OptionValue{Key: "guestinfo.userdata", Value: base64.StdEncoding.EncodeToString([]byte(userdata))},
+				&types.OptionValue{Key: "guestinfo.userdata.encoding", Value: "base64"},
+			},
+		},
+		PowerOn:  true,
+		Template: false,
+	}
+
+	task, err := tmpl.Clone(ctx, folder, spec.Name, cloneSpec)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: clone: %w", err)
+	}
+	info, err := task.WaitForResult(ctx, nil)
+	if err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: clone task: %w", err)
+	}
+
+	ref, ok := info.Result.(types.ManagedObjectReference)
+	if !ok {
+		return provider.VMStatus{}, errors.New("esxi: clone returned no VM reference")
+	}
+	return provider.VMStatus{ID: ref.Value, State: "provisioning"}, nil
+}
+
+func (c *Client) DeleteVM(ctx context.Context, id string) error {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	vm := vmByID(gc, id)
+
+	state, err := vm.PowerState(ctx)
+	if err != nil {
+		if isNotFound(err) {
+			return nil // already gone
+		}
+		return fmt.Errorf("esxi: power state: %w", err)
+	}
+
+	if state != types.VirtualMachinePowerStatePoweredOff {
+		if t, err := vm.PowerOff(ctx); err == nil {
+			_ = t.Wait(ctx)
+		}
+	}
+
+	t, err := vm.Destroy(ctx)
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("esxi: destroy: %w", err)
+	}
+	return t.Wait(ctx)
+}
+
+func (c *Client) StatusVM(ctx context.Context, id string) (provider.VMStatus, error) {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return provider.VMStatus{}, err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	vm := vmByID(gc, id)
+	return statusOf(ctx, gc, vm, id)
+}
+
+func (c *Client) FindByName(ctx context.Context, name string) (provider.VMStatus, bool, error) {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return provider.VMStatus{}, false, err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	f, err := c.finder(ctx, gc)
+	if err != nil {
+		return provider.VMStatus{}, false, err
+	}
+
+	vm, err := f.VirtualMachine(ctx, name)
+	if err != nil {
+		if isNotFound(err) {
+			return provider.VMStatus{}, false, nil
+		}
+		return provider.VMStatus{}, false, err
+	}
+
+	st, err := statusOf(ctx, gc, vm, vm.Reference().Value)
+	if err != nil {
+		return provider.VMStatus{}, false, err
+	}
+	return st, true, nil
+}
+
+func statusOf(ctx context.Context, gc *govmomi.Client, vm *object.VirtualMachine, id string) (provider.VMStatus, error) {
+	var mvm mo.VirtualMachine
+	pc := property.DefaultCollector(gc.Client)
+	if err := pc.RetrieveOne(ctx, vm.Reference(), []string{"summary.runtime", "guest"}, &mvm); err != nil {
+		return provider.VMStatus{}, fmt.Errorf("esxi: status: %w", err)
+	}
+
+	ip := ""
+	if mvm.Guest != nil {
+		ip = mvm.Guest.IpAddress
+	}
+	return provider.VMStatus{ID: id, State: normalizeState(mvm.Summary.Runtime.PowerState), IP: ip}, nil
+}
+
+func normalizeState(s types.VirtualMachinePowerState) string {
+	switch s {
+	case types.VirtualMachinePowerStatePoweredOn:
+		return "running"
+	case types.VirtualMachinePowerStatePoweredOff:
+		return "stopped"
+	case types.VirtualMachinePowerStateSuspended:
+		return "paused"
+	default:
+		return "unknown"
+	}
+}
+
+func (c *Client) PowerOn(ctx context.Context, id string) error  { return c.power(ctx, id, "on") }
+func (c *Client) PowerOff(ctx context.Context, id string) error { return c.power(ctx, id, "off") }
+func (c *Client) Suspend(ctx context.Context, id string) error  { return c.power(ctx, id, "suspend") }
+func (c *Client) Resume(ctx context.Context, id string) error   { return c.power(ctx, id, "on") }
+
+func (c *Client) power(ctx context.Context, id, op string) error {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	vm := vmByID(gc, id)
+	state, err := vm.PowerState(ctx)
+	if err != nil {
+		return fmt.Errorf("esxi: power state: %w", err)
+	}
+
+	var task *object.Task
+	switch op {
+	case "on":
+		if state == types.VirtualMachinePowerStatePoweredOn {
+			return nil
+		}
+		task, err = vm.PowerOn(ctx)
+	case "off":
+		if state == types.VirtualMachinePowerStatePoweredOff {
+			return nil
+		}
+		task, err = vm.PowerOff(ctx)
+	case "suspend":
+		if state != types.VirtualMachinePowerStatePoweredOn {
+			return nil
+		}
+		task, err = vm.Suspend(ctx)
+	}
+	if err != nil {
+		return fmt.Errorf("esxi: power %s: %w", op, err)
+	}
+	return task.Wait(ctx)
+}
+
+func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return provider.Capacity{}, err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	f, err := c.finder(ctx, gc)
+	if err != nil {
+		return provider.Capacity{}, err
+	}
+
+	host, err := f.DefaultHostSystem(ctx)
+	if err != nil {
+		hosts, e := f.HostSystemList(ctx, "*")
+		if e != nil || len(hosts) == 0 {
+			return provider.Capacity{}, fmt.Errorf("esxi: host: %w", err)
+		}
+		host = hosts[0]
+	}
+
+	pc := property.DefaultCollector(gc.Client)
+
+	var hs mo.HostSystem
+	if err := pc.RetrieveOne(ctx, host.Reference(), []string{"summary", "datastore", "vm"}, &hs); err != nil {
+		return provider.Capacity{}, fmt.Errorf("esxi: host props: %w", err)
+	}
+
+	totalVCPU, totalRAM := 0, 0
+	if hs.Summary.Hardware != nil {
+		totalVCPU = int(hs.Summary.Hardware.NumCpuThreads)
+		totalRAM = int(hs.Summary.Hardware.MemorySize / (1024 * 1024))
+	}
+
+	usedVCPU, usedRAM := 0, 0
+	if len(hs.Vm) > 0 {
+		var vms []mo.VirtualMachine
+		if err := pc.Retrieve(ctx, hs.Vm, []string{"summary.config", "summary.runtime"}, &vms); err == nil {
+			for _, vm := range vms {
+				if vm.Summary.Runtime.PowerState == types.VirtualMachinePowerStatePoweredOn {
+					usedVCPU += int(vm.Summary.Config.NumCpu)
+					usedRAM += int(vm.Summary.Config.MemorySizeMB)
+				}
+			}
+		}
+	}
+
+	totalDisk, availDisk := 0, 0
+	if len(hs.Datastore) > 0 {
+		var dss []mo.Datastore
+		if err := pc.Retrieve(ctx, hs.Datastore, []string{"summary"}, &dss); err == nil {
+			for _, d := range dss {
+				totalDisk += int(d.Summary.Capacity / (1024 * 1024 * 1024))
+				availDisk += int(d.Summary.FreeSpace / (1024 * 1024 * 1024))
+			}
+		}
+	}
+
+	return provider.Capacity{
+		TotalVCPU:   totalVCPU,
+		AvailVCPU:   nonNeg(totalVCPU - usedVCPU),
+		TotalRAMMB:  totalRAM,
+		AvailRAMMB:  nonNeg(totalRAM - usedRAM),
+		TotalDiskGB: totalDisk,
+		AvailDiskGB: availDisk,
+	}, nil
+}
+
+func nonNeg(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// cloudInit builds guestinfo metadata + userdata (NoCloud-style) from the spec.
+func cloudInit(spec provider.VMSpec) (metadata, userdata string) {
+	var b strings.Builder
+	b.WriteString("#cloud-config\n")
+	if len(spec.SSHKeys) > 0 {
+		b.WriteString("ssh_authorized_keys:\n")
+		for _, k := range spec.SSHKeys {
+			b.WriteString("  - ")
+			b.WriteString(k)
+			b.WriteString("\n")
+		}
+	}
+	userdata = b.String()
+
+	var m strings.Builder
+	m.WriteString("instance-id: ")
+	m.WriteString(spec.Name)
+	m.WriteString("\nlocal-hostname: ")
+	m.WriteString(spec.Name)
+	m.WriteString("\n")
+	if net := networkConfig(spec.IPConfig); net != "" {
+		m.WriteString(net)
+	}
+	metadata = m.String()
+	return metadata, userdata
+}
+
+// networkConfig converts a Proxmox-style "ip=A.B.C.D/PFX,gw=G" into cloud-init
+// network-config v2. Returns "" for dhcp/empty/unparseable input.
+func networkConfig(ipConfig string) string {
+	if ipConfig == "" || strings.Contains(ipConfig, "dhcp") {
+		return ""
+	}
+
+	var ipcidr, gw string
+	for _, part := range strings.Split(ipConfig, ",") {
+		part = strings.TrimSpace(part)
+		switch {
+		case strings.HasPrefix(part, "ip="):
+			ipcidr = strings.TrimPrefix(part, "ip=")
+		case strings.HasPrefix(part, "gw="):
+			gw = strings.TrimPrefix(part, "gw=")
+		}
+	}
+	if ipcidr == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("network:\n  version: 2\n  ethernets:\n    id0:\n      match:\n        name: e*\n      addresses:\n        - ")
+	b.WriteString(ipcidr)
+	b.WriteString("\n")
+	if gw != "" {
+		b.WriteString("      gateway4: ")
+		b.WriteString(gw)
+		b.WriteString("\n")
+	}
+	return b.String()
+}

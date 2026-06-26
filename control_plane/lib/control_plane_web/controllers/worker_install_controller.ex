@@ -38,16 +38,26 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     [ -z "$TOKEN" ] && read -rp "Enroll-token (uit de portal): " TOKEN
     [ -z "$TOKEN" ] && { echo "Een enroll-token is verplicht."; exit 1; }
 
-    read -rp "Hypervisor (proxmox) [proxmox]: " HYP; HYP="${HYP:-proxmox}"
-    if [ "$HYP" != "proxmox" ]; then
-      echo "Op dit moment wordt alleen Proxmox ondersteund (ESXi volgt)."; exit 1
+    read -rp "Hypervisor (proxmox/esxi) [proxmox]: " HYP; HYP="${HYP:-proxmox}"
+    PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false
+    ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DS=""; ESXI_RP=""; ESXI_TMPL=""
+    if [ "$HYP" = "proxmox" ]; then
+      read -rp "Proxmox API host (https://IP:8006): " PXHOST
+      read -rp "Proxmox node-naam (bv. pve): " PXNODE
+      read -rp "Proxmox API token-id (user@realm!tokenid): " PXTID
+      read -rsp "Proxmox API token-secret: " PXSEC; echo
+      read -rp "TLS-certificaat verifiëren? (j/N): " VS; case "$VS" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
+    elif [ "$HYP" = "esxi" ]; then
+      read -rp "vSphere/ESXi URL (https://host/sdk): " ESXI_URL
+      read -rp "Gebruiker: " ESXI_USER
+      read -rsp "Wachtwoord: " ESXI_PASS; echo
+      read -rp "TLS-certificaat verifiëren? (j/N): " VS; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
+      read -rp "Datastore (leeg = standaard): " ESXI_DS
+      read -rp "Resource pool (leeg = standaard): " ESXI_RP
+      read -rp "Template-VM naam (verplicht): " ESXI_TMPL
+    else
+      echo "Onbekende hypervisor: $HYP"; exit 1
     fi
-    read -rp "Proxmox API host (https://IP:8006): " PXHOST
-    read -rp "Proxmox node-naam (bv. pve): " PXNODE
-    read -rp "Proxmox API token-id (user@realm!tokenid): " PXTID
-    read -rsp "Proxmox API token-secret: " PXSEC; echo
-    read -rp "TLS-certificaat verifiëren? (j/N): " VSSL
-    case "$VSSL" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
     echo
     echo "Hoeveel capaciteit wil je aanbieden? (leeg laten = alles beschikbaar)"
     read -rp "  vCPU-cores: " OFFER_VCPU
@@ -91,6 +101,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Environment=BUNK_PROXMOX_TOKEN_ID=$PXTID
     Environment=BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
     Environment=BUNK_PROXMOX_VERIFY_SSL=$VSSL
+    Environment=BUNK_ESXI_URL=${ESXI_URL}
+    Environment=BUNK_ESXI_USER=${ESXI_USER}
+    Environment=BUNK_ESXI_PASSWORD=${ESXI_PASS}
+    Environment=BUNK_ESXI_INSECURE=${ESXI_INSECURE:-false}
+    Environment=BUNK_ESXI_DATASTORE=${ESXI_DS}
+    Environment=BUNK_ESXI_RESOURCE_POOL=${ESXI_RP}
+    Environment=BUNK_ESXI_TEMPLATE=${ESXI_TMPL}
     Environment=BUNK_OFFER_VCPU=${OFFER_VCPU:-0}
     Environment=BUNK_OFFER_RAM_MB=${OFFER_RAM:-0}
     Environment=BUNK_OFFER_DISK_GB=${OFFER_DISK:-0}

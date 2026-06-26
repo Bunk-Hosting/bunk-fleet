@@ -16,6 +16,7 @@ import (
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/config"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
+	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider/esxi"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider/proxmox"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/transport"
 )
@@ -41,19 +42,11 @@ func run(logger *slog.Logger) error {
 	defer stop()
 
 	// Build the hypervisor provider.
-	prov, err := proxmox.New(proxmox.Config{
-		Host:        cfg.Proxmox.Host,
-		Node:        cfg.Proxmox.Node,
-		TokenID:     cfg.Proxmox.TokenID,
-		TokenSecret: cfg.Proxmox.TokenSecret,
-		VerifySSL:   cfg.Proxmox.VerifySSL,
-		Bridge:      cfg.VpsNetwork.Bridge,
-		VLAN:        cfg.VpsNetwork.VLAN,
-	})
+	prov, err := buildProvider(cfg)
 	if err != nil {
 		return err
 	}
-	logger.Info("provider initialized", "provider", prov.Name(), "node", cfg.Proxmox.Node)
+	logger.Info("provider initialized", "provider", prov.Name(), "hypervisor", cfg.Hypervisor)
 
 	// Control-plane client.
 	cp := transport.New(cfg.ControlPlaneURL, nil)
@@ -115,6 +108,34 @@ func run(logger *slog.Logger) error {
 		case <-ticker.C:
 			sendHeartbeat(ctx, logger, prov, cp, cfg.Offer)
 		}
+	}
+}
+
+// buildProvider constructs the hypervisor provider selected by cfg.Hypervisor.
+func buildProvider(cfg config.Config) (provider.Provider, error) {
+	switch cfg.Hypervisor {
+	case "esxi":
+		return esxi.New(esxi.Config{
+			URL:          cfg.Esxi.URL,
+			User:         cfg.Esxi.User,
+			Password:     cfg.Esxi.Password,
+			Insecure:     cfg.Esxi.Insecure,
+			Datacenter:   cfg.Esxi.Datacenter,
+			Datastore:    cfg.Esxi.Datastore,
+			ResourcePool: cfg.Esxi.ResourcePool,
+			Folder:       cfg.Esxi.Folder,
+			Template:     cfg.Esxi.Template,
+		})
+	default:
+		return proxmox.New(proxmox.Config{
+			Host:        cfg.Proxmox.Host,
+			Node:        cfg.Proxmox.Node,
+			TokenID:     cfg.Proxmox.TokenID,
+			TokenSecret: cfg.Proxmox.TokenSecret,
+			VerifySSL:   cfg.Proxmox.VerifySSL,
+			Bridge:      cfg.VpsNetwork.Bridge,
+			VLAN:        cfg.VpsNetwork.VLAN,
+		})
 	}
 }
 
