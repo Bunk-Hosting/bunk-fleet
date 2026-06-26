@@ -1,0 +1,34 @@
+<div class="auth">
+  <div class="auth-card">
+    <div class="brand">bunk<span class="d">.</span>cloud</div>
+    <h1>Inloggen</h1>
+    <p class="sub">Beheer je VPS-servers.</p>
+
+    <%= if @error do %><div class="auth-err">{@error}</div><% end %>
+    <form action={~p"/login"} method="post">
+      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+      <label for="email">E-mailadres</label>
+      <input id="email" type="email" name="user[email]" required autocomplete="username" />
+      <label for="password">Wachtwoord</label>
+      <input id="password" type="password" name="user[password]" required autocomplete="current-password" />
+      <button type="submit">Inloggen</button>
+    </form>
+    <p class="auth-alt">Nog geen account? <a href={~p"/register"}>Registreer</a></p>
+  </div>
+</div>
+
+    <style>
+      .auth { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+      .auth-card { width: 100%; max-width: 400px; background: #11161d; border: 1px solid #232a33; border-radius: 14px; padding: 32px; }
+      .auth-card h1 { font-size: 22px; margin: 0 0 4px; }
+      .auth-card .sub { color: #8b949e; margin: 0 0 22px; font-size: 13px; }
+      .auth-card label { display:block; font-size: 12px; color:#8b949e; margin: 14px 0 6px; }
+      .auth-card input { width:100%; padding:10px 12px; background:#0b0f14; border:1px solid #2d3540; border-radius:8px; color:#e6edf3; font-size:14px; }
+      .auth-card input:focus { outline:none; border-color:#3081f7; }
+      .auth-card button { width:100%; margin-top:22px; padding:11px; background:#2563eb; border:none; border-radius:8px; color:#fff; font-weight:600; font-size:14px; cursor:pointer; }
+      .auth-card button:hover { background:#1d4ed8; }
+      .auth-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; font-size:13px; margin-bottom:14px; }
+      .auth-alt { text-align:center; margin-top:18px; font-size:13px; color:#8b949e; }
+      .brand { font-weight:800; font-size:20px; margin-bottom:18px; }
+      .brand .d { color:#3081f7; }
+    </style>

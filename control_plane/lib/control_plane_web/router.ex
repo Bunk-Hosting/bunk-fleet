@@ -4,6 +4,7 @@ defmodule ControlPlaneWeb.Router do
   # This app was generated with --no-html, so `use Phoenix.Router` does not bring
   # in the `live/3` macro; import it explicitly for the operator dashboard.
   import Phoenix.LiveView.Router
+  import ControlPlaneWeb.UserAuth
 
   # Browser pipeline for the (single) LiveView operator dashboard.
   pipeline :browser do
@@ -13,6 +14,12 @@ defmodule ControlPlaneWeb.Router do
     plug :put_root_layout, html: {ControlPlaneWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_user
+  end
+
+  # Browser routes that require an authenticated portal user.
+  pipeline :require_authenticated do
+    plug :require_authenticated_user
   end
 
   pipeline :api do
@@ -25,6 +32,26 @@ defmodule ControlPlaneWeb.Router do
 
     live "/", DashboardLive, :index
     live "/dashboard", DashboardLive, :index
+  end
+
+  # Customer portal: public auth pages.
+  scope "/", ControlPlaneWeb do
+    pipe_through :browser
+
+    get "/login", UserSessionController, :new
+    post "/login", UserSessionController, :create
+    get "/register", UserRegistrationController, :new
+    post "/register", UserRegistrationController, :create
+    delete "/logout", UserSessionController, :delete
+  end
+
+  # Customer portal: authenticated area.
+  scope "/", ControlPlaneWeb do
+    pipe_through [:browser, :require_authenticated]
+
+    live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
+      live "/app", PortalLive, :index
+    end
   end
 
   # Worker-node API: everything in `:api` plus agent-token bearer authentication.
