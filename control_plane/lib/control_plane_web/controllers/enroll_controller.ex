@@ -16,14 +16,18 @@ defmodule ControlPlaneWeb.EnrollController do
         cidr_prefix: params["vps_cidr_prefix"],
         range_start: params["vps_range_start"],
         range_end: params["vps_range_end"]
-      }
+      },
+      wg_public_key: params["wg_public_key"]
     }
 
     case Enrollment.enroll(token, attrs) do
-      {:ok, %{node: node, agent_token: agent_token}} ->
+      {:ok, %{node: node, agent_token: agent_token} = result} ->
+        body = %{node_id: node.id, agent_token: agent_token}
+        body = if result[:overlay], do: Map.put(body, :overlay, result.overlay), else: body
+
         conn
         |> put_status(:ok)
-        |> json(%{node_id: node.id, agent_token: agent_token})
+        |> json(body)
 
       {:error, :invalid_token} ->
         conn

@@ -53,6 +53,7 @@ type EnrollRequest struct {
 	VpsCidrPrefix int    `json:"vps_cidr_prefix,omitempty"`
 	VpsRangeStart string `json:"vps_range_start,omitempty"`
 	VpsRangeEnd   string `json:"vps_range_end,omitempty"`
+	WgPublicKey   string `json:"wg_public_key,omitempty"`
 }
 
 // VpsNetwork is the IP-range part of a worker's VPS network, sent at enrollment.
@@ -71,6 +72,17 @@ type EnrollResponse struct {
 	// AgentToken is the long-lived bearer token used to authenticate
 	// subsequent heartbeat and command requests.
 	AgentToken string `json:"agent_token"`
+	// Overlay carries the WireGuard hub parameters when the overlay is enabled.
+	Overlay *Overlay `json:"overlay,omitempty"`
+}
+
+// Overlay holds the WireGuard hub parameters returned at enrollment.
+type Overlay struct {
+	HubPublicKey string `json:"hub_public_key"`
+	Endpoint     string `json:"endpoint"`
+	HubIP        string `json:"hub_ip"`
+	OverlayIP    string `json:"overlay_ip"`
+	OverlayCIDR  string `json:"overlay_cidr"`
 }
 
 // Heartbeat is the periodic capacity report posted to the control plane.
@@ -181,7 +193,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 
 // Enroll exchanges a one-time token for node credentials and stores them on the
 // Client for subsequent calls.
-func (c *Client) Enroll(ctx context.Context, token string, net VpsNetwork) (EnrollResponse, error) {
+func (c *Client) Enroll(ctx context.Context, token string, net VpsNetwork, wgPublicKey string) (EnrollResponse, error) {
 	if token == "" {
 		return EnrollResponse{}, errors.New("transport: empty enrollment token")
 	}
@@ -194,6 +206,7 @@ func (c *Client) Enroll(ctx context.Context, token string, net VpsNetwork) (Enro
 		VpsCidrPrefix: net.CidrPrefix,
 		VpsRangeStart: net.RangeStart,
 		VpsRangeEnd:   net.RangeEnd,
+		WgPublicKey:   wgPublicKey,
 	}
 	if err := c.post(ctx, "/v1/enroll", req, &out); err != nil {
 		return EnrollResponse{}, err

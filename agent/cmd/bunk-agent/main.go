@@ -54,25 +54,45 @@ func run(logger *slog.Logger) error {
 	// Credentials: prefer persisted enrollment (survives restarts) over consuming
 	// a fresh single-use token; only enroll when no state exists yet.
 	statePath := filepath.Join(cfg.StateDir, "state.json")
-	if nodeID, agentToken, ok := loadState(statePath); ok {
-		cp.SetCredentials(nodeID, agentToken)
-		logger.Info("loaded persisted enrollment", "node_id", nodeID)
+	if st, ok := loadState(statePath); ok {
+		cp.SetCredentials(st.NodeID, st.AgentToken)
+		logger.Info("loaded persisted enrollment", "node_id", st.NodeID)
+		applyOverlay(logger, st)
 	} else if cfg.EnrollToken != "" {
+		wgPriv, wgPub, kerr := generateWGKey()
+		if kerr != nil {
+			logger.Warn("could not generate WireGuard key; overlay disabled", "err", kerr)
+		}
+
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, transport.VpsNetwork{
 			Gateway:    cfg.VpsNetwork.Gateway,
 			CidrPrefix: cfg.VpsNetwork.CidrPrefix,
 			RangeStart: cfg.VpsNetwork.RangeStart,
 			RangeEnd:   cfg.VpsNetwork.RangeEnd,
-		})
+		}, wgPub)
 		cancel()
 		if err != nil {
 			return err
 		}
 		logger.Info("enrolled with control plane", "node_id", resp.NodeID)
-		if err := saveState(statePath, resp.NodeID, resp.AgentToken); err != nil {
+
+		st := persistedState{
+			NodeID:       resp.NodeID,
+			AgentToken:   resp.AgentToken,
+			WGPrivateKey: wgPriv,
+			WGPublicKey:  wgPub,
+		}
+		if resp.Overlay != nil {
+			st.HubPublicKey = resp.Overlay.HubPublicKey
+			st.Endpoint = resp.Overlay.Endpoint
+			st.OverlayIP = resp.Overlay.OverlayIP
+			st.OverlayCIDR = resp.Overlay.OverlayCIDR
+		}
+		if err := saveState(statePath, st); err != nil {
 			logger.Warn("could not persist enrollment; a restart will need a fresh token", "err", err)
 		}
+		applyOverlay(logger, st)
 	} else {
 		logger.Warn("no enroll token and no persisted state; heartbeats will fail until credentials are set")
 	}

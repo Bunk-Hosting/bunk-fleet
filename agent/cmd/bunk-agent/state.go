@@ -6,32 +6,40 @@ import (
 	"path/filepath"
 )
 
-// persistedState is the on-disk enrollment the agent reuses across restarts so a
-// worker survives a reboot/recreate without consuming a fresh (single-use) token.
+// persistedState is the on-disk state the agent reuses across restarts: the
+// enrollment credentials plus the WireGuard overlay keypair + assigned params,
+// so a reboot keeps the same node identity AND the same overlay key the control
+// plane already trusts.
 type persistedState struct {
-	NodeID     string `json:"node_id"`
-	AgentToken string `json:"agent_token"`
+	NodeID       string `json:"node_id"`
+	AgentToken   string `json:"agent_token"`
+	WGPrivateKey string `json:"wg_private_key,omitempty"`
+	WGPublicKey  string `json:"wg_public_key,omitempty"`
+	HubPublicKey string `json:"hub_public_key,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	OverlayIP    string `json:"overlay_ip,omitempty"`
+	OverlayCIDR  string `json:"overlay_cidr,omitempty"`
 }
 
-// loadState reads persisted enrollment credentials; ok is false when none exist.
-func loadState(path string) (nodeID, agentToken string, ok bool) {
+// loadState reads persisted state; ok is false when none (or incomplete) exist.
+func loadState(path string) (persistedState, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", "", false
+		return persistedState{}, false
 	}
 	var st persistedState
 	if err := json.Unmarshal(b, &st); err != nil || st.NodeID == "" || st.AgentToken == "" {
-		return "", "", false
+		return persistedState{}, false
 	}
-	return st.NodeID, st.AgentToken, true
+	return st, true
 }
 
-// saveState writes enrollment credentials atomically with owner-only perms.
-func saveState(path, nodeID, agentToken string) error {
+// saveState writes the state atomically with owner-only perms.
+func saveState(path string, st persistedState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	b, err := json.Marshal(persistedState{NodeID: nodeID, AgentToken: agentToken})
+	b, err := json.Marshal(st)
 	if err != nil {
 		return err
 	}
