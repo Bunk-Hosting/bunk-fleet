@@ -48,7 +48,7 @@ export default function VpsDetailPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const id = Number(params.id);
+  const id = params.id as string;
 
   const [vps, setVps] = useState<Vps | null>(null);
   const [credentials, setCredentials] = useState<VpsCredentials | null>(null);

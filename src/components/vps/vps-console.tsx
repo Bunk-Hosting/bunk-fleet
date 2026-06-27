@@ -9,7 +9,7 @@ export interface VpsConsoleHandle {
 }
 
 interface VpsConsoleProps {
-  vpsId: number;
+  vpsId: string;
 }
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "expired" | "error" | "forbidden" | "ssh_error" | "hostkey";

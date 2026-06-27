@@ -12,7 +12,7 @@ import type { Vps } from "@/lib/types";
 export default function VpsConsolePage() {
   const params = useParams();
   const router = useRouter();
-  const id = Number(params.id);
+  const id = params.id as string;
 
   const consoleRef = useRef<VpsConsoleHandle>(null);
   const [vps, setVps] = useState<Vps | null>(null);

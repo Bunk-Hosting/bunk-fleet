@@ -218,7 +218,7 @@ function transformUser(u: BunkUser): User {
 
 // ── Auth ──────────────────────────────────────────────────────────────
 export const authApi = {
-  register: async (name: string, email: string, password: string, _passwordConfirm: string) => {
+  register: async (name: string, email: string, password: string, _passwordConfirm: string, _captcha?: string) => {
     const res = await api.post<{ user: BunkUser; token: string }>("/auth/register", { name, email, password });
     setToken(res.data.token);
     return { data: { detail: "ok" } };
@@ -226,7 +226,7 @@ export const authApi = {
 
   // bunk-fleet login is single-step (password → token); the frontend's optional
   // OTP/TOTP steps simply never trigger because no *_required flag is returned.
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string, _captcha?: string) => {
     const res = await api.post<{ user: BunkUser; token: string }>("/auth/login", { email, password });
     setToken(res.data.token);
     return { data: {} as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
@@ -397,16 +397,18 @@ export const billingApi = {
     }),
   },
   invoices: {
-    list: async (): Promise<{ data: { count: number; results: Invoice[] } }> => ({
+    list: async (
+      _params?: { status?: string }
+    ): Promise<{ data: { count: number; results: Invoice[] } }> => ({
       data: { count: 0, results: [] },
     }),
-    get: async (_id: string): Promise<{ data: Invoice }> => {
+    get: async (_id: string | number): Promise<{ data: Invoice }> => {
       throw new Error("Facturen zijn nog niet beschikbaar.");
     },
-    pay: async (_id: string) => {
+    pay: async (_id: string | number) => {
       throw new Error("Facturen zijn nog niet beschikbaar.");
     },
-    downloadUrl: (_id: string) => "#",
+    downloadUrl: (_id: string | number) => "#",
   },
 };
 

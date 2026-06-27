@@ -38,13 +38,13 @@ import type { User, Vps } from "@/lib/types";
 export default function AdminUserDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const userId = Number(params.id);
+  const userId = params.id as string;
   const { toast } = useToast();
 
   const [user, setUser] = useState<User | null>(null);
   const [vpsList, setVpsList] = useState<Vps[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [activeDialogOpen, setActiveDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);

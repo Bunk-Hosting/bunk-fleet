@@ -19,7 +19,7 @@ type ConnectionState = "connecting" | "open" | "closed" | "error";
 export default function VpsTerminalPage() {
   const params = useParams();
   const router = useRouter();
-  const id = Number(params.id);
+  const id = params.id as string;
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import("@xterm/xterm").Terminal | null>(null);

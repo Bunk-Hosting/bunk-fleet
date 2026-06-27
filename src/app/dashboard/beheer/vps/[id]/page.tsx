@@ -46,7 +46,7 @@ const ALL_STATUSES: VpsStatus[] = [
 export default function AdminVpsDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const vpsId = Number(params.id);
+  const vpsId = params.id as string;
   const { toast } = useToast();
 
   const [vps, setVps] = useState<Vps | null>(null);

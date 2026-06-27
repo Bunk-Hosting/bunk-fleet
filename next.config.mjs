@@ -62,7 +62,7 @@ const securityHeaders = [
 
 const BUNK_API = process.env.BUNK_API_URL || "http://192.168.10.10:4000";
 const nextConfig = {
-  typescript: { ignoreBuildErrors: true },
+  typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
   async rewrites() {
     const target = process.env.BUNK_API_URL || "http://bf-prod-cp:4000";

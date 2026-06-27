@@ -31,7 +31,7 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await billingApi.invoices.get(Number(id));
+        const res = await billingApi.invoices.get(id);
         setInvoice(res.data);
       } catch {
         toast({
