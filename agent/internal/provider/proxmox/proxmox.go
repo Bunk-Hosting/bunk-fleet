@@ -365,6 +365,28 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 		return provider.VMStatus{}, fmt.Errorf("proxmox: clone template %d into %d: %w", spec.TemplateID, newID, err)
 	}
 
+	// From here the VM physically exists on the hypervisor. Any later failure
+	// (resize/config/start) must NOT leave it orphaned: roll it back with a
+	// best-effort delete on a DETACHED context (so a cancelled ctx still cleans
+	// up). If even the rollback fails, surface the vm id so the control plane
+	// can reconcile/delete it later instead of losing track of it entirely.
+	status, err := c.configureAndStart(ctx, node, newID, spec)
+	if err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if derr := c.DeleteVM(cleanupCtx, strconv.Itoa(newID)); derr != nil {
+			return provider.VMStatus{ID: strconv.Itoa(newID), State: "error"},
+				fmt.Errorf("%w (rollback of vm %d failed: %v)", err, newID, derr)
+		}
+		return provider.VMStatus{}, err
+	}
+	return status, nil
+}
+
+// configureAndStart performs the post-clone steps (resize, config, start) on an
+// already-cloned VM. Separated out so CreateVM can roll the clone back on any
+// failure here. Returns the running VM status on success.
+func (c *Client) configureAndStart(ctx context.Context, node string, newID int, spec provider.VMSpec) (provider.VMStatus, error) {
 	// 2. Grow the primary disk to the requested size. PVE's resize is
 	// synchronous (it returns null rather than a UPID), so no task wait.
 	if spec.DiskGB > 0 {

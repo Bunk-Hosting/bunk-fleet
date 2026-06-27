@@ -293,8 +293,10 @@ func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provi
 
 		st, err := prov.CreateVM(ctx, spec)
 		if err != nil {
-			logger.Error("provision failed", "id", cmd.ID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			// st.ID is set when a partial VM could not be rolled back, so the
+			// control plane can still reconcile/delete the orphan.
+			logger.Error("provision failed", "id", cmd.ID, "vm_id", st.ID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: st.ID, Error: err.Error()})
 			return
 		}
 		logger.Info("provision done", "id", cmd.ID, "vm_id", st.ID, "ip", st.IP)
