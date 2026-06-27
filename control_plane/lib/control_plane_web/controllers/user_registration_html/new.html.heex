@@ -1,36 +1,62 @@
-<div class="auth">
-  <div class="auth-card">
-    <div class="brand">bunk<span class="d"> hosting</span></div>
-    <h1>Account aanmaken</h1>
-    <p class="sub">Begin met het hosten van VPS-servers.</p>
-
-    <%= for err <- @errors do %><div class="auth-err">{err}</div><% end %>
-    <form action={~p"/register"} method="post">
-      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-      <label for="name">Naam</label>
-      <input id="name" type="text" name="user[name]" autocomplete="name" />
-      <label for="email">E-mailadres</label>
-      <input id="email" type="email" name="user[email]" required autocomplete="username" />
-      <label for="password">Wachtwoord (min. 12 tekens)</label>
-      <input id="password" type="password" name="user[password]" required autocomplete="new-password" />
-      <button type="submit">Account aanmaken</button>
-    </form>
-    <p class="auth-alt">Al een account? <a href={~p"/login"}>Inloggen</a></p>
+<div class="min-h-screen flex flex-col bg-background bg-dot-grid">
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div class="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow"></div>
+    <div class="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow"></div>
   </div>
+  <header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10">
+    <div class="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
+      <a href="https://bunkhosting.nl" class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-accent" style="font-variation-settings:'FILL' 1">dns</span>
+        <span class="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
+      </a>
+    </div>
+  </header>
+  <main class="relative z-10 flex-1 flex items-center justify-center py-12 px-4 pt-28">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-display font-bold mb-2">Account aanmaken</h1>
+        <p class="text-muted-foreground">Maak je Bunk Hosting account aan</p>
+      </div>
+      <div class="card-gradient-border rounded-xl p-6 bg-card">
+        <%= if @errors != [] do %>
+          <div class="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <ul class="list-disc list-inside space-y-1">
+              <li :for={e <- @errors}>{e}</li>
+            </ul>
+          </div>
+        <% end %>
+        <form action={~p"/register"} method="post" class="space-y-5">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <div class="space-y-2">
+            <label for="name" class="text-sm font-medium leading-none">Naam</label>
+            <input id="name" name="user[name]" type="text" placeholder="Jan de Vries"
+              class="flex h-10 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus:border-primary/60" />
+          </div>
+          <div class="space-y-2">
+            <label for="email" class="text-sm font-medium leading-none">E-mailadres</label>
+            <input id="email" name="user[email]" type="email" required autocomplete="username" placeholder="naam@voorbeeld.nl"
+              class="flex h-10 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus:border-primary/60" />
+          </div>
+          <div class="space-y-2">
+            <label for="password" class="text-sm font-medium leading-none">Wachtwoord</label>
+            <input id="password" name="user[password]" type="password" required autocomplete="new-password" placeholder="••••••••"
+              class="flex h-10 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus:border-primary/60" />
+          </div>
+          <div class="space-y-2">
+            <label for="password_confirm" class="text-sm font-medium leading-none">Wachtwoord bevestigen</label>
+            <input id="password_confirm" name="user[password_confirm]" type="password" required autocomplete="new-password" placeholder="••••••••"
+              class="flex h-10 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus:border-primary/60" />
+          </div>
+          <button type="submit"
+            class="inline-flex items-center justify-center w-full py-5 rounded-md text-sm font-semibold bg-gradient-to-r from-primary to-accent text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]">
+            Registreren
+          </button>
+          <p class="text-center text-sm text-muted-foreground">
+            Al een account?
+            <a href={~p"/login"} class="text-primary underline-offset-4 hover:underline">Inloggen</a>
+          </p>
+        </form>
+      </div>
+    </div>
+  </main>
 </div>
-
-    <style>
-      .auth { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-      .auth-card { width: 100%; max-width: 400px; background: #1a1c20; border: 1px solid #333539; border-radius: 14px; padding: 32px; }
-      .auth-card h1 { font-size: 22px; margin: 0 0 4px; }
-      .auth-card .sub { color: #8c90a1; margin: 0 0 22px; font-size: 13px; }
-      .auth-card label { display:block; font-size: 12px; color:#8c90a1; margin: 14px 0 6px; }
-      .auth-card input { width:100%; padding:10px 12px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; font-size:14px; }
-      .auth-card input:focus { outline:none; border-color:#006af2; }
-      .auth-card button { width:100%; margin-top:22px; padding:11px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; font-size:14px; cursor:pointer; }
-      .auth-card button:hover { background:#0055c4; }
-      .auth-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; font-size:13px; margin-bottom:14px; }
-      .auth-alt { text-align:center; margin-top:18px; font-size:13px; color:#8c90a1; }
-      .brand { font-weight:800; font-size:20px; margin-bottom:18px; }
-      .brand .d { color:#006af2; }
-    </style>

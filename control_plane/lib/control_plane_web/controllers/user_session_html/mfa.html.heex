@@ -1,32 +1,41 @@
-<div class="auth">
-  <div class="auth-card">
-    <div class="brand">bunk<span class="d"> hosting</span></div>
-    <h1>Twee-factor</h1>
-    <p class="sub">Voer de 6-cijferige code uit je authenticator-app in.</p>
-
-    <%= if @error do %><div class="auth-err">{@error}</div><% end %>
-    <form action={~p"/login/mfa"} method="post">
-      <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-      <label for="code">Code</label>
-      <input id="code" type="text" name="totp[code]" inputmode="numeric" autocomplete="one-time-code"
-             maxlength="6" pattern="[0-9]*" required autofocus />
-      <button type="submit">Verifiëren</button>
-    </form>
-    <p class="auth-alt"><a href={~p"/login"}>Terug naar inloggen</a></p>
+<div class="min-h-screen flex flex-col bg-background bg-dot-grid">
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div class="absolute top-[-15%] right-[-12%] w-[55%] h-[55%] rounded-full bg-primary/15 blur-[120px] animate-glow"></div>
+    <div class="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] rounded-full bg-accent/10 blur-[100px] animate-glow-slow"></div>
   </div>
+  <header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10">
+    <div class="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
+      <a href="https://bunkhosting.nl" class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-accent" style="font-variation-settings:'FILL' 1">dns</span>
+        <span class="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
+      </a>
+    </div>
+  </header>
+  <main class="relative z-10 flex-1 flex items-center justify-center py-12 px-4 pt-28">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-display font-bold mb-2">Authenticator-code</h1>
+        <p class="text-muted-foreground">Voer de 6-cijferige code in uit je authenticator-app</p>
+      </div>
+      <div class="card-gradient-border rounded-xl p-6 bg-card">
+        <%= if @error do %>
+          <div class="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{@error}</div>
+        <% end %>
+        <form action={~p"/login/mfa"} method="post" class="space-y-5">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <div class="space-y-2">
+            <label for="code" class="text-sm font-medium leading-none">Authenticator-code</label>
+            <input id="code" name="totp[code]" type="text" inputmode="numeric" maxlength="6" autofocus autocomplete="one-time-code" pattern="[0-9]*" required placeholder="123456"
+              class="flex h-10 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-center tracking-widest text-lg text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus:border-primary/60" />
+            <p class="text-xs text-muted-foreground text-center">Open je authenticator-app en voer de huidige 6-cijferige code in.</p>
+          </div>
+          <button type="submit"
+            class="inline-flex items-center justify-center w-full py-5 rounded-md text-sm font-semibold bg-gradient-to-r from-primary to-accent text-primary-foreground transition-all hover:brightness-110 active:scale-[0.97]">
+            Verifiëren
+          </button>
+          <a href={~p"/login"} class="inline-flex items-center justify-center w-full py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors">← Terug naar inloggen</a>
+        </form>
+      </div>
+    </div>
+  </main>
 </div>
-
-<style>
-  .auth { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-  .auth-card { width: 100%; max-width: 400px; background: #1a1c20; border: 1px solid #333539; border-radius: 14px; padding: 32px; }
-  .auth-card h1 { font-size: 22px; margin: 0 0 4px; }
-  .auth-card .sub { color: #8c90a1; margin: 0 0 22px; font-size: 13px; }
-  .auth-card label { display:block; font-size: 12px; color:#8c90a1; margin: 14px 0 6px; }
-  .auth-card input { width:100%; padding:10px 12px; background:#0c0e12; border:1px solid #333539; border-radius:8px; color:#e2e2e8; font-size:18px; letter-spacing:4px; text-align:center; }
-  .auth-card input:focus { outline:none; border-color:#006af2; }
-  .auth-card button { width:100%; margin-top:22px; padding:11px; background:#006af2; border:none; border-radius:8px; color:#fff; font-weight:600; font-size:14px; cursor:pointer; }
-  .auth-err { background:#2d1417; border:1px solid #5c2228; color:#ff9b9b; padding:9px 12px; border-radius:8px; font-size:13px; margin-bottom:14px; }
-  .auth-alt { text-align:center; margin-top:18px; font-size:13px; color:#8c90a1; }
-  .brand { font-weight:800; font-size:20px; margin-bottom:18px; }
-  .brand .d { color:#006af2; }
-</style>
