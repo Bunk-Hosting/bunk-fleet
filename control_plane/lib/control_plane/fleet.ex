@@ -168,10 +168,18 @@ defmodule ControlPlane.Fleet do
       |> Map.put(:status, :online)
       |> maybe_init_available(node, totals)
 
+    # PERF: only a real status transition (offline/pending -> online) or the
+    # first heartbeat (which seeds available_*) is UI-relevant. A routine
+    # heartbeat just refreshes last_heartbeat_at/total_*, so it must NOT broadcast
+    # — otherwise every node's heartbeat forces every connected dashboard to a
+    # full reload (O(nodes x dashboards) per interval). Capacity changes are
+    # broadcast by the scheduler, and offline transitions by the reconciler.
+    transition? = node.status != :online or is_nil(node.available_vcpu)
+
     node
     |> Node.mark_online_changeset(attrs)
     |> Repo.update()
-    |> tap_ok(fn _node -> Events.broadcast_changed(:node) end)
+    |> tap_ok(fn _node -> if transition?, do: Events.broadcast_changed(:node) end)
   end
 
   # Runs `fun` only when `result` is `{:ok, value}`, then returns `result`

@@ -261,6 +261,13 @@ defmodule ControlPlane.Provisioning do
   end
 
   # True if a delete command for this VPS is still pending/delivered (in flight).
+  defp power_in_flight?(vps_id, kind) do
+    Repo.exists?(
+      from c in Command,
+        where: c.vps_id == ^vps_id and c.kind == ^kind and c.status in [:pending, :delivered]
+    )
+  end
+
   defp delete_in_flight?(vps_id) do
     Repo.exists?(
       from c in Command,
@@ -322,28 +329,35 @@ defmodule ControlPlane.Provisioning do
         {:error, :not_provisioned}
 
       %Vps{status: status} = vps ->
-        if status in allowed do
-          multi =
-            Multi.insert(Multi.new(), :command, fn _ ->
-              Command.changeset(%Command{}, %{
-                node_id: vps.node_id,
-                vps_id: vps.id,
-                kind: kind,
-                status: :pending,
-                payload: %{"vm_id" => vps.provider_vm_id}
-              })
-            end)
+        cond do
+          status not in allowed ->
+            {:error, {:invalid_status, status}}
 
-          case Repo.transaction(multi) do
-            {:ok, %{command: command}} ->
-              Events.broadcast_changed(:vps)
-              {:ok, %{vps: vps, command: command}}
+          # R5: an identical power command is already queued/delivered (e.g. a
+          # double-clicked Stop) — don't enqueue a duplicate. Idempotent no-op.
+          power_in_flight?(vps_id, kind) ->
+            {:ok, %{vps: vps, command: nil}}
 
-            {:error, _step, reason, _changes} ->
-              {:error, reason}
-          end
-        else
-          {:error, {:invalid_status, status}}
+          true ->
+            multi =
+              Multi.insert(Multi.new(), :command, fn _ ->
+                Command.changeset(%Command{}, %{
+                  node_id: vps.node_id,
+                  vps_id: vps.id,
+                  kind: kind,
+                  status: :pending,
+                  payload: %{"vm_id" => vps.provider_vm_id}
+                })
+              end)
+
+            case Repo.transaction(multi) do
+              {:ok, %{command: command}} ->
+                Events.broadcast_changed(:vps)
+                {:ok, %{vps: vps, command: command}}
+
+              {:error, _step, reason, _changes} ->
+                {:error, reason}
+            end
         end
     end
   end
