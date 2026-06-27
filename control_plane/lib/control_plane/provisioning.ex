@@ -243,11 +243,17 @@ defmodule ControlPlane.Provisioning do
       %Vps{status: :failed} = vps ->
         mark_vps_deleted(vps)
 
-      %Vps{node_id: nil} ->
-        {:error, :no_node}
+      # Not yet scheduled to a node — no VM and no held reservation, so it can be
+      # cleaned up directly. Lets a customer cancel a VPS still waiting for capacity.
+      %Vps{node_id: nil} = vps ->
+        mark_vps_deleted(vps)
 
-      %Vps{provider_vm_id: nil} ->
-        {:error, :no_node}
+      # Scheduled (capacity reserved) but provisioning never produced a live VM —
+      # e.g. the node's agent died mid-provision. Release the held reservation,
+      # restore the node's capacity and cancel any outstanding provision command,
+      # then mark the VPS deleted so it can never get permanently stuck undeletable.
+      %Vps{provider_vm_id: nil} = vps ->
+        cancel_and_release(vps)
 
       %Vps{} = vps ->
         dispatch_delete(vps)
@@ -638,6 +644,46 @@ defmodule ControlPlane.Provisioning do
   # Directly marks a VPS :deleted (no agent command), used to clean up a :failed
   # VPS. Mirrors the success shape of `delete_vps/1` (`command: nil`, no command
   # was issued) so callers can treat both uniformly.
+  # Releases a still-held reservation for a VPS that never reached a live VM,
+  # restores the node's advertised capacity, cancels any outstanding provision
+  # command and marks the VPS deleted — all atomically.
+  defp cancel_and_release(%Vps{} = vps) do
+    Multi.new()
+    |> Multi.run(:vps, fn repo, _changes ->
+      repo.get!(Vps, vps.id) |> Vps.changeset(%{status: :deleted}) |> repo.update()
+    end)
+    |> Multi.run(:reservation, fn repo, _changes ->
+      held_reservation!(vps.id) |> Reservation.changeset(%{status: :released}) |> repo.update()
+    end)
+    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
+      node = Repo.get!(Node, reservation.node_id)
+
+      Ecto.Changeset.change(node,
+        available_vcpu: node.available_vcpu + reservation.vcpu,
+        available_ram_mb: node.available_ram_mb + reservation.ram_mb,
+        available_disk_gb: node.available_disk_gb + reservation.disk_gb
+      )
+    end)
+    |> Multi.update_all(
+      :cancel_commands,
+      from(c in Command,
+        where:
+          c.vps_id == ^vps.id and c.kind == :provision and
+            c.status in [:pending, :delivered]
+      ),
+      set: [status: :failed]
+    )
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{vps: vps}} ->
+        Events.broadcast_changed(:vps)
+        {:ok, %{vps: vps, command: nil}}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
+    end
+  end
+
   defp mark_vps_deleted(%Vps{} = vps) do
     case vps |> Vps.changeset(%{status: :deleted}) |> Repo.update() do
       {:ok, vps} ->

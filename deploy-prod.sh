@@ -93,3 +93,11 @@ for i in $(seq 1 30); do
 done
 echo "=== container status ==="
 docker ps --filter name=bf-prod --format '{{.Names}}  {{.Status}}  {{.Ports}}'
+
+# 7. Reclaim disk — dangling images + build cache ONLY.
+#    NEVER prunes volumes or stops data containers, so customer/Postgres data is
+#    never touched. Keeps the 20G disk from filling up on repeated rebuilds.
+echo "=== reclaiming space (dangling images + build cache; volumes untouched) ==="
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
+echo "disk: $(df -h / | awk 'NR==2{print $3" / "$2" ("$5")"}')"

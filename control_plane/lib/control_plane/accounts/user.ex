@@ -42,7 +42,14 @@ defmodule ControlPlane.Accounts.User do
     |> cast(attrs, [:email, :password, :name])
     |> validate_email()
     |> validate_password()
+    |> validate_name()
     |> hash_password()
+  end
+
+  defp validate_name(changeset) do
+    changeset
+    |> update_change(:name, &String.trim/1)
+    |> validate_length(:name, max: 100)
   end
 
   defp validate_email(changeset) do
