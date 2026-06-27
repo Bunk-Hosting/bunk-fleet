@@ -1,5 +1,20 @@
 # Bunk Fleet
 
+## Repository layout (monorepo)
+
+This repository is the single home for the whole Bunk Fleet platform:
+
+| Path | Component | Stack |
+|------|-----------|-------|
+| `control_plane/` | Control plane (federated API + scheduler + billing) | Elixir / Phoenix |
+| `agent/` | Worker-node agent (provisions VMs, heartbeats, runs commands) | Go (Proxmox + ESXi) |
+| `frontend/` | Customer dashboard | Next.js / TypeScript |
+
+The frontend talks to the control plane via `/api/v1` (bearer auth); the agent
+dials out to the control plane (enroll → heartbeat → command long-poll → result).
+See each subdirectory's README for build/deploy details.
+
+
 Bunk Fleet is the orchestration monorepo for **Bunk Hosting**, a *federated* VPS
 hosting platform. A central **control plane** schedules and manages
 globally-distributed **worker nodes** — Proxmox/Incus machines contributed by
