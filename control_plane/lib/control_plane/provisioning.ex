@@ -74,11 +74,20 @@ defmodule ControlPlane.Provisioning do
     if count_live_vpses(owner_id) >= max_vpses_per_owner() do
       {:error, :quota_exceeded}
     else
-      attrs
-      |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
-      |> Map.put(:owner_id, owner_id)
-      |> Map.put(:owner_email, email)
-      |> create_vps()
+      full =
+        attrs
+        |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+        |> Map.put(:owner_id, owner_id)
+        |> Map.put(:owner_email, email)
+
+      case create_vps(full) do
+        {:ok, %{vps: vps}} = ok ->
+          ControlPlane.Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
+          ok
+
+        other ->
+          other
+      end
     end
   end
 
