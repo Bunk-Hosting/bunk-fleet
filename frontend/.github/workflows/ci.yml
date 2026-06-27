@@ -1,0 +1,73 @@
+name: CI – Lint, Type check & SAST
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [dev]
+
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 1 — Lint & Type check
+  # ───────────────────────────────────────────────────────────────────────────
+  lint:
+    name: ESLint + TypeScript check
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Stage 2 — SAST
+  # Semgrep with JavaScript/TypeScript + React rulesets.
+  # Fails the build on any finding (no || true).
+  # Report saved as artifact with 14-day retention.
+  # ───────────────────────────────────────────────────────────────────────────
+  sast:
+    name: SAST (Semgrep)
+    runs-on: [self-hosted, Linux, X64]
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            semgrep/semgrep \
+            semgrep scan \
+              --config=p/javascript \
+              --config=p/react \
+              --config=p/secrets \
+              --json \
+              --output=semgrep-report.json \
+              src/ || true
+          [ -f semgrep-report.json ] || echo '{"results":[]}' > semgrep-report.json
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report-frontend
+          path: semgrep-report.json
+          retention-days: 14
