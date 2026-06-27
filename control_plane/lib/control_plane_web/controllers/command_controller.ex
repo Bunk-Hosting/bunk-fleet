@@ -38,26 +38,34 @@ defmodule ControlPlaneWeb.CommandController do
   def result(conn, %{"id" => id} = params) do
     node = conn.assigns.current_node
 
-    case Repo.get_by(Command, id: id, node_id: node.id) do
-      %Command{} = command ->
-        # apply_result is idempotent; a duplicate/already-applied result still
-        # returns {:ok, _} so the agent gets a clean 204.
-        case Provisioning.apply_result(command, result_attrs(params)) do
-          {:ok, _command} ->
-            send_resp(conn, :no_content, "")
+    # L1: validate the id is a UUID before querying — a malformed id would
+    # otherwise raise Ecto.Query.CastError -> 500. A bad/unknown id collapses to
+    # 404 (existence is never leaked).
+    with {:ok, id} <- Ecto.UUID.cast(id),
+         %Command{} = command <- Repo.get_by(Command, id: id, node_id: node.id) do
+      # apply_result is idempotent; a duplicate/already-applied result still
+      # returns {:ok, _} so the agent gets a clean 204.
+      case Provisioning.apply_result(command, result_attrs(params)) do
+        {:ok, _command} ->
+          send_resp(conn, :no_content, "")
 
-          {:error, reason} ->
-            conn
-            |> put_status(:unprocessable_entity)
-            |> json(%{error: to_string(reason)})
-        end
-
-      nil ->
+        {:error, reason} ->
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{error: error_message(reason)})
+      end
+    else
+      _ ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found"})
     end
   end
+
+  # L2: never to_string/1 an arbitrary error term (a failed-Multi changeset would
+  # raise Protocol.UndefinedError -> 500). Only surface known atoms.
+  defp error_message(reason) when is_atom(reason), do: to_string(reason)
+  defp error_message(_reason), do: "unprocessable_entity"
 
   defp result_attrs(params) do
     %{
