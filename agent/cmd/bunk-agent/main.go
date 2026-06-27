@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -242,7 +243,24 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 // handleCommand executes a single dispatched command and reports its outcome to
 // the control plane. All errors are turned into a "failed" result; they are
 // never propagated so a single bad command cannot take the agent down.
-func handleCommand(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmd transport.Command) {
+func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmd transport.Command) {
+	// R1: bound every command so a hung hypervisor task (e.g. a stuck PVE clone)
+	// can't make a provider call poll forever and wedge the consumer.
+	ctx, cancel := context.WithTimeout(parentCtx, 15*time.Minute)
+	defer cancel()
+
+	// R5: a panic in any provider/govmomi path must not crash the whole agent
+	// (which would kill heartbeats + the command stream). Recover, report the
+	// command failed on a DETACHED context, and keep the loop alive.
+	defer func() {
+		if r := recover(); r != nil {
+			rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer rcancel()
+			logger.Error("command handler panicked", "id", cmd.ID, "kind", string(cmd.Kind), "panic", r)
+			reportResult(rctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: fmt.Sprintf("agent panic: %v", r)})
+		}
+	}()
+
 	logger.Info("command received", "id", cmd.ID, "kind", string(cmd.Kind))
 
 	switch cmd.Kind {

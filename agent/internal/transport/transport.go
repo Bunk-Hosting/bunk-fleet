@@ -261,6 +261,7 @@ func (c *Client) Commands(ctx context.Context) (<-chan Command, error) {
 		defer close(out)
 		backoff := time.Second
 		const maxBackoff = 30 * time.Second
+		const pollFloor = 2 * time.Second
 
 		for {
 			if ctx.Err() != nil {
@@ -292,6 +293,16 @@ func (c *Client) Commands(ctx context.Context) (<-chan Command, error) {
 				case <-ctx.Done():
 					return
 				case out <- cmd:
+				}
+			}
+			// R3: the control plane answers command polls immediately (no
+			// server-side long-poll), so on an empty result floor-sleep before
+			// re-polling — otherwise this is a tight CPU loop hammering the CP.
+			if len(cmds) == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(pollFloor):
 				}
 			}
 		}
