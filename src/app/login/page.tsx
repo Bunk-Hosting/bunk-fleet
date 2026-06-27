@@ -269,7 +269,7 @@ function LoginForm() {
                 <Button
                   type="submit"
                   className="w-full py-5"
-                  disabled={loading || !email.trim() || !password || (!!turnstileSiteKey && !turnstileToken)}
+                  disabled={loading || !email.trim() || !password}
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Inloggen

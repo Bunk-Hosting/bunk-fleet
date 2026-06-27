@@ -1,5 +1,5 @@
 export interface User {
-  id: number;
+  id: string;
   email: string;
   name: string;
   role: "user" | "admin";
@@ -38,7 +38,7 @@ export interface VpsPackage {
 }
 
 export interface Vps {
-  id: number;
+  id: string;
   label: string;
   package: VpsPackage;
   os: OsChoice;
@@ -50,7 +50,7 @@ export interface Vps {
   vcenter_vm_id: string | null;
   created_at: string;
   updated_at: string;
-  owner: number;
+  owner: string;
   owner_email: string | null;
 }
 
