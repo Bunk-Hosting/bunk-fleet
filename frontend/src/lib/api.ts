@@ -53,6 +53,9 @@ function clearToken(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(TOKEN_KEY);
   document.cookie = "access_token=; path=/; max-age=0; SameSite=Lax";
+  // Drop cached catalog so a different user/session in the same tab refetches.
+  packageCache = [];
+  packagesPromise = null;
 }
 
 // Kept for API compatibility with pages that called it; bunk-fleet uses bearer
@@ -148,24 +151,40 @@ const STATUS_MAP: Record<string, VpsStatus> = {
 };
 
 let packageCache: VpsPackage[] = [];
+let packagesPromise: Promise<VpsPackage[]> | null = null;
 
+// Memoize the in-flight request (not just the result) so concurrent first
+// callers — e.g. /dashboard firing authApi.me() + vpsApi.list() together — share
+// ONE GET /packages instead of each firing their own. Reset on logout.
 async function ensurePackages(): Promise<VpsPackage[]> {
-  if (packageCache.length === 0) {
-    const res = await api.get<{ count: number; results: VpsPackage[] }>("/packages");
-    packageCache = res.data.results;
+  if (packageCache.length > 0) return packageCache;
+  if (!packagesPromise) {
+    packagesPromise = api
+      .get<{ count: number; results: VpsPackage[] }>("/packages")
+      .then((res) => {
+        packageCache = res.data.results;
+        return packageCache;
+      })
+      .catch((err) => {
+        packagesPromise = null; // allow a retry on the next call
+        throw err;
+      });
   }
-  return packageCache;
+  return packagesPromise;
 }
 
 function packageForSpecs(vcpu: number, ramMb: number, diskGb: number): VpsPackage {
-  const ramGb = Math.round(ramMb / 1024);
-  const match = packageCache.find((p) => p.cpu_cores === vcpu && p.ram_gb === ramGb);
+  // Exact match on all three dimensions — rounding RAM or ignoring disk could
+  // surface the wrong package (and wrong price) for non-catalog specs.
+  const match = packageCache.find(
+    (p) => p.cpu_cores === vcpu && p.ram_gb * 1024 === ramMb && p.disk_gb === diskGb,
+  );
   if (match) return match;
   return {
     id: 0,
     name: "Custom",
     cpu_cores: vcpu,
-    ram_gb: ramGb,
+    ram_gb: Math.round(ramMb / 1024),
     disk_gb: diskGb,
     bandwidth_tb: 1,
     price_monthly: "0.00",
@@ -379,7 +398,7 @@ export const billingApi = {
   overview: async (): Promise<{ data: BillingOverview }> => {
     const res = await vpsApi.list();
     const active = res.data.results.filter(
-      (v) => v.status !== "DELETED" && v.status !== "ERROR"
+      (v) => v.status === "ACTIVE" || v.status === "STOPPED"
     );
     const monthly = active.reduce(
       (sum, v) => sum + parseFloat(v.package?.price_monthly ?? "0"),

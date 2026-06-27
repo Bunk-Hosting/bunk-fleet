@@ -17,7 +17,9 @@ function safeNext(raw: string | null): string {
   if (!raw) return "/dashboard";
   // Sta alleen relatieve paden toe die beginnen met één slash.
   // Dit blokkeert open redirects naar externe URLs (//, https://, etc.).
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  // Reject protocol-relative (//), backslash tricks (some browsers normalize
+  // "/\\" to "//"), and anything not starting with a single slash.
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/dashboard";
   return raw;
 }
 
