@@ -6,7 +6,8 @@ defmodule ControlPlane.Fleet do
   import Ecto.Query, warn: false
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Events, Node, Package, Region, Vps}
+  alias Ecto.Multi
+  alias ControlPlane.Fleet.{Events, Node, Package, Region, Reservation, Vps}
 
   # A node is considered "online" for scheduling purposes only if it has reported
   # a heartbeat within this window.
@@ -272,5 +273,49 @@ defmodule ControlPlane.Fleet do
     end)
   rescue
     ArgumentError -> attrs
+  end
+
+  @doc """
+  Reclaims capacity reservations that are still `:held` but no longer back a live
+  VPS — the VPS was deleted/failed, or the reservation was orphaned (null `vps_id`)
+  by a rolled-back placement. Each reclaimed reservation is marked `:released` and
+  its vcpu/ram/disk are added back to its node's advertised capacity, so a leaked
+  reservation can never keep a node wrongly reported as "full".
+
+  Reservations backing a VPS that is still `:queued`/`:provisioning`/`:active`
+  (or `:stopped`/`:paused`/`:deleting`) are left untouched — those hold capacity
+  for a real workload. Returns the number of reservations reclaimed.
+  """
+  def release_orphaned_reservations do
+    orphaned =
+      Repo.all(
+        from r in Reservation,
+          left_join: v in Vps,
+          on: v.id == r.vps_id,
+          where: r.status == :held and (is_nil(r.vps_id) or v.status in [:deleted, :failed])
+      )
+
+    Enum.reduce(orphaned, 0, fn reservation, reclaimed ->
+      case release_reservation(reservation) do
+        {:ok, _} -> reclaimed + 1
+        {:error, _} -> reclaimed
+      end
+    end)
+  end
+
+  # Atomically marks a held reservation released and returns its capacity to the node.
+  defp release_reservation(%Reservation{} = reservation) do
+    Multi.new()
+    |> Multi.update(:reservation, Reservation.changeset(reservation, %{status: :released}))
+    |> Multi.update(:restore_capacity, fn _changes ->
+      node = Repo.get!(Node, reservation.node_id)
+
+      Ecto.Changeset.change(node,
+        available_vcpu: node.available_vcpu + reservation.vcpu,
+        available_ram_mb: node.available_ram_mb + reservation.ram_mb,
+        available_disk_gb: node.available_disk_gb + reservation.disk_gb
+      )
+    end)
+    |> Repo.transaction()
   end
 end

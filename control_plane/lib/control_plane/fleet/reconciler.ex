@@ -57,6 +57,7 @@ defmodule ControlPlane.Fleet.Reconciler do
   def handle_info(:reconcile, %{interval_ms: interval_ms} = state) do
     # Each sub-step is isolated so a failure in one still lets the other run.
     reconcile_nodes()
+    reclaim_reservations()
     meter_usage()
     schedule_tick(interval_ms)
     {:noreply, state}
@@ -72,6 +73,20 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler node tick failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  defp reclaim_reservations do
+    count = Fleet.release_orphaned_reservations()
+
+    if count > 0 do
+      Logger.info("fleet reconciler reclaimed orphaned reservations", reclaimed: count)
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler reservation reclaim failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end
