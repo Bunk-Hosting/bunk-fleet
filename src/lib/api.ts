@@ -38,15 +38,66 @@ function getToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
 }
 function setToken(token: string): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, token);
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOKEN_KEY, token);
+  // Mirror into a cookie so the server-side middleware can gate /dashboard
+  // without a flash of protected UI. This cookie is NOT the auth boundary — the
+  // API validates the bearer header on every request; it only signals presence.
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `access_token=${token}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax${secure}`;
 }
 function clearToken(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(TOKEN_KEY);
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TOKEN_KEY);
+  document.cookie = "access_token=; path=/; max-age=0; SameSite=Lax";
 }
 
 // Kept for API compatibility with pages that called it; bunk-fleet uses bearer
 // tokens, so there is no CSRF cookie to fetch.
 export async function ensureCsrfCookie(): Promise<void> {}
+
+// Known bunk-fleet error codes -> friendly Dutch messages. Unknown codes fall
+// back to the caller-supplied contextual message (never a raw code in the UI).
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_code: "De ingevoerde code klopt niet.",
+  invalid_credentials: "Ongeldig e-mailadres of wachtwoord.",
+  invalid_email_or_password: "Ongeldig e-mailadres of wachtwoord.",
+  email_taken: "Dit e-mailadres is al in gebruik.",
+  unauthorized: "Je bent niet (meer) ingelogd.",
+  forbidden: "Je hebt geen toegang tot deze actie.",
+  not_found: "Niet gevonden.",
+  invalid_status_active: "De VPS draait al.",
+  invalid_status_stopped: "De VPS is al gestopt.",
+  invalid_status_queued: "De VPS wordt nog voorbereid.",
+  invalid_status_provisioning: "De VPS wordt nog aangemaakt.",
+};
+
+/**
+ * Turns an unknown thrown value (usually an Axios error) into a human-readable
+ * Dutch message. Recognises bunk-fleet's error shapes — { error: "code" },
+ * { detail: "..." }, and changeset-style { errors: { field: [msg] } } — and
+ * otherwise returns the caller's contextual fallback. Never surfaces raw codes.
+ */
+export function parseApiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as Record<string, unknown> | string | undefined;
+    if (typeof data === "string" && data.trim()) return data;
+    if (data && typeof data === "object") {
+      if (typeof data.detail === "string") return data.detail;
+      if (typeof data.error === "string") return ERROR_MESSAGES[data.error] ?? fallback;
+      const errors = data.errors;
+      if (errors && typeof errors === "object") {
+        const first = Object.values(errors as Record<string, unknown>)[0];
+        if (Array.isArray(first) && typeof first[0] === "string") return first[0];
+        if (typeof first === "string") return first;
+      }
+    }
+    if (err.code === "ERR_NETWORK") {
+      return "Geen verbinding met de server. Probeer het later opnieuw.";
+    }
+  }
+  return fallback;
+}
 
 const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
@@ -309,19 +360,53 @@ export const adminApi = {
   },
 };
 
+// Billing — adapted to bunk-fleet. The overview is derived live from the
+// customer's active VPSes and the package catalog (bunk-fleet bills per running
+// VPS). bunk-fleet has no invoicing engine yet, so the invoice list is honestly
+// empty rather than fabricated; the UI then shows its "no invoices" state.
 export const billingApi = {
-  overview: () => api.get<BillingOverview>("/billing/overview"),
+  overview: async (): Promise<{ data: BillingOverview }> => {
+    const res = await vpsApi.list();
+    const active = res.data.results.filter(
+      (v) => v.status !== "DELETED" && v.status !== "ERROR"
+    );
+    const monthly = active.reduce(
+      (sum, v) => sum + parseFloat(v.package?.price_monthly ?? "0"),
+      0
+    );
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return {
+      data: {
+        open_amount: "0.00",
+        open_invoice_count: 0,
+        monthly_cost: monthly.toFixed(2),
+        active_subscriptions: active.length,
+        next_invoice_date: next.toISOString().slice(0, 10),
+      },
+    };
+  },
   settings: {
-    get: () => api.get<BillingSettings>("/billing/settings"),
-    update: (data: Partial<BillingSettings>) => api.post<BillingSettings>("/billing/settings", data),
+    get: async (): Promise<{ data: BillingSettings }> => ({
+      data: { billing_cycle: "monthly", billing_email: "" },
+    }),
+    update: async (
+      data: Partial<BillingSettings>
+    ): Promise<{ data: BillingSettings }> => ({
+      data: { billing_cycle: "monthly", billing_email: "", ...data },
+    }),
   },
   invoices: {
-    list: (params?: { status?: string }) =>
-      api.get<{ count: number; results: Invoice[] }>("/invoices", { params }),
-    get: (id: string) => api.get<Invoice>(`/invoices/${id}`),
-    pay: (id: string) =>
-      api.post<{ detail: string; invoice_status: string; paid_at: string }>(`/invoices/${id}/pay`),
-    downloadUrl: (id: string) => `${API_URL}/api/v1/invoices/${id}/download`,
+    list: async (): Promise<{ data: { count: number; results: Invoice[] } }> => ({
+      data: { count: 0, results: [] },
+    }),
+    get: async (_id: string): Promise<{ data: Invoice }> => {
+      throw new Error("Facturen zijn nog niet beschikbaar.");
+    },
+    pay: async (_id: string) => {
+      throw new Error("Facturen zijn nog niet beschikbaar.");
+    },
+    downloadUrl: (_id: string) => "#",
   },
 };
 
