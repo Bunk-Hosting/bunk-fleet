@@ -1,0 +1,19 @@
+[Unit]
+Description=Bunk Fleet worker agent
+Documentation=https://github.com/Bunk-Hosting/bunk-fleet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Secrets + node config live here (chmod 600); see agent.env.example.
+EnvironmentFile=/etc/bunk-agent/agent.env
+ExecStart=/usr/local/bin/bunk-agent
+Restart=always
+RestartSec=5
+# systemd creates/owns /var/lib/bunk-agent for persisted enrollment state, so the
+# agent keeps the SAME node identity across restarts instead of re-enrolling.
+StateDirectory=bunk-agent
+
+[Install]
+WantedBy=multi-user.target
