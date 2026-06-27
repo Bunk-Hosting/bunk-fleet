@@ -168,7 +168,7 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.loginTotp(email, code);
+      await authApi.login(email, password, undefined, code);
       setCode("");
       const next = safeNext(searchParams.get("next"));
       router.push(next);

@@ -256,9 +256,17 @@ export const authApi = {
 
   // bunk-fleet login is single-step (password → token); the frontend's optional
   // OTP/TOTP steps simply never trigger because no *_required flag is returned.
-  login: async (email: string, password: string, _captcha?: string) => {
-    const res = await api.post<{ user: BunkUser; token: string }>("/auth/login", { email, password });
-    setToken(res.data.token);
+  login: async (email: string, password: string, _captcha?: string, code?: string) => {
+    const res = await api.post<{ user?: BunkUser; token?: string; totp_required?: boolean }>(
+      "/auth/login",
+      { email, password, ...(code ? { code } : {}) },
+    );
+    // 2FA gate: the backend returns { totp_required: true } and NO token until a
+    // valid TOTP code is supplied — never store a missing token in that case.
+    if (res.data.totp_required) {
+      return { data: { totp_required: true } as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
+    }
+    if (res.data.token) setToken(res.data.token);
     return { data: {} as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
   },
 
