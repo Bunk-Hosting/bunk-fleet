@@ -6,7 +6,7 @@ defmodule ControlPlane.Fleet do
   import Ecto.Query, warn: false
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Events, Node, Region, Vps}
+  alias ControlPlane.Fleet.{Events, Node, Package, Region, Vps}
 
   # A node is considered "online" for scheduling purposes only if it has reported
   # a heartbeat within this window.
@@ -67,6 +67,18 @@ defmodule ControlPlane.Fleet do
   """
   def list_vpses do
     Repo.all(from v in Vps, order_by: [desc: v.inserted_at], preload: [:region])
+  end
+
+  @doc "Available VPS packages, ordered like the catalog (sort_order, price)."
+  def list_available_packages do
+    Repo.all(from p in Package, where: p.is_available == true, order_by: [asc: p.sort_order, asc: p.price_monthly])
+  end
+
+  def get_package(id), do: Repo.get(Package, id)
+
+  @doc "The default region for self-service create (the old app is single-region)."
+  def default_region do
+    Repo.one(from r in Region, order_by: [asc: r.code], limit: 1)
   end
 
   @doc """

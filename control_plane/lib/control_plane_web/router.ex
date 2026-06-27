@@ -57,6 +57,10 @@ defmodule ControlPlaneWeb.Router do
       ],
       layout: {ControlPlaneWeb.Layouts, :dashboard} do
       live "/dashboard", CustomerDashboardLive, :index
+      live "/dashboard/vps", VpsListLive, :index
+      live "/dashboard/vps/new", VpsNewLive, :index
+      live "/dashboard/vps/:id", VpsDetailLive, :index
+      live "/dashboard/vps/:id/console", ConsoleLive, :index
     end
 
     live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
