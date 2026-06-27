@@ -107,7 +107,7 @@ defmodule ControlPlaneWeb.PortalLive do
           <p class="muted">Ingelogd als {@current_user.email}</p>
         </div>
         <.link navigate={~p"/app/topup"} class="badge">Tegoed: {eur(@balance_cents)} +</.link>
-        <.link navigate={~p"/app/security"} class="badge">Beveiliging</.link>
+        <.link navigate={~p"/dashboard/beveiliging"} class="badge">Beveiliging</.link>
         <.link navigate={~p"/app/host"} class="badge">Word host</.link>
         <.link href={~p"/logout"} method="delete" class="badge">Uitloggen</.link>
       </div>

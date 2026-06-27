@@ -61,12 +61,12 @@ defmodule ControlPlaneWeb.Router do
       live "/dashboard/vps/new", VpsNewLive, :index
       live "/dashboard/vps/:id", VpsDetailLive, :index
       live "/dashboard/vps/:id/console", ConsoleLive, :index
+      live "/dashboard/beveiliging", SecurityLive, :index
     end
 
     live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
       live "/app", PortalLive, :index
       live "/app/host", HostLive, :index
-      live "/app/security", SecurityLive, :index
       live "/app/topup", TopupLive, :index
       live "/app/vps/:id/console", ConsoleLive, :index
     end
