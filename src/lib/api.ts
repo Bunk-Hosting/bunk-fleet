@@ -43,8 +43,11 @@ function setToken(token: string): void {
   // Mirror into a cookie so the server-side middleware can gate /dashboard
   // without a flash of protected UI. This cookie is NOT the auth boundary — the
   // API validates the bearer header on every request; it only signals presence.
+  // Only a presence MARKER goes in the cookie (never the live token): the
+  // middleware needs to know "is there a session?", and the API authenticates
+  // via the Authorization header, so the cookie never has to carry the secret.
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `access_token=${token}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax${secure}`;
+  document.cookie = `access_token=1; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secure}`;
 }
 function clearToken(): void {
   if (typeof window === "undefined") return;
@@ -81,9 +84,16 @@ const ERROR_MESSAGES: Record<string, string> = {
 export function parseApiError(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data as Record<string, unknown> | string | undefined;
-    if (typeof data === "string" && data.trim()) return data;
     if (data && typeof data === "object") {
-      if (typeof data.detail === "string") return data.detail;
+      // Only surface a short, plain-text detail — never an HTML error page body.
+      if (
+        typeof data.detail === "string" &&
+        data.detail.length > 0 &&
+        data.detail.length < 200 &&
+        !data.detail.includes("<")
+      ) {
+        return data.detail;
+      }
       if (typeof data.error === "string") return ERROR_MESSAGES[data.error] ?? fallback;
       const errors = data.errors;
       if (errors && typeof errors === "object") {
@@ -201,7 +211,8 @@ interface BunkUser {
   name: string | null;
   role: "user" | "admin" | "operator";
   inserted_at?: string;
-  totp_confirmed_at?: string | null;
+  totp_enabled?: boolean;
+  confirmed_at?: string | null;
 }
 
 function transformUser(u: BunkUser): User {
@@ -212,7 +223,7 @@ function transformUser(u: BunkUser): User {
     role: u.role === "operator" ? "user" : u.role,
     date_joined: u.inserted_at || "",
     is_active: true,
-    totp_enabled: Boolean(u.totp_confirmed_at),
+    totp_enabled: Boolean(u.totp_enabled),
   };
 }
 
