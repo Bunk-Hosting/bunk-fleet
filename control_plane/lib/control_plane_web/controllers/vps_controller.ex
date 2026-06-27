@@ -67,6 +67,24 @@ defmodule ControlPlaneWeb.VpsController do
     end
   end
 
+  @doc "Starts an owned, stopped VPS. 404 if not owned (existence is never leaked)."
+  def start(conn, params), do: power(conn, params, &Provisioning.start_vps/1)
+
+  @doc "Stops an owned, running VPS. 404 if not owned."
+  def stop(conn, params), do: power(conn, params, &Provisioning.stop_vps/1)
+
+  defp power(conn, %{"id" => id}, transition) do
+    with {:ok, id} <- valid_id(id),
+         %Vps{} <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, id),
+         {:ok, _} <- transition.(id) do
+      json(conn, %{detail: "ok"})
+    else
+      {:error, {:invalid_status, status}} -> error(conn, :conflict, "invalid_status_#{status}")
+      {:error, reason} -> error(conn, :unprocessable_entity, to_string(reason))
+      _ -> not_found(conn)
+    end
+  end
+
   # --- helpers --------------------------------------------------------------
 
   # Ownership is deliberately omitted here: `Provisioning.create_vps_for_owner/2`

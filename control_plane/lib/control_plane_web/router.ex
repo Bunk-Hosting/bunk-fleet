@@ -122,6 +122,9 @@ defmodule ControlPlaneWeb.Router do
 
     post "/auth/register", AuthController, :register
     post "/auth/login", AuthController, :login
+
+    # Public, read-only VPS package catalog.
+    get "/packages", PackageController, :index
   end
 
   scope "/api/v1", ControlPlaneWeb do
@@ -133,6 +136,8 @@ defmodule ControlPlaneWeb.Router do
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
+    post "/vpses/:id/start", VpsController, :start
+    post "/vpses/:id/stop", VpsController, :stop
 
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
