@@ -31,7 +31,6 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :browser
 
     live "/", DashboardLive, :index
-    live "/dashboard", DashboardLive, :index
   end
 
   # Customer portal: public auth pages.
@@ -50,6 +49,15 @@ defmodule ControlPlaneWeb.Router do
   # Customer portal: authenticated area.
   scope "/", ControlPlaneWeb do
     pipe_through [:browser, :require_authenticated]
+
+    live_session :dashboard,
+      on_mount: [
+        {ControlPlaneWeb.UserAuth, :ensure_authenticated},
+        {ControlPlaneWeb.UserAuth, :current_path}
+      ],
+      layout: {ControlPlaneWeb.Layouts, :dashboard} do
+      live "/dashboard", CustomerDashboardLive, :index
+    end
 
     live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
       live "/app", PortalLive, :index

@@ -39,11 +39,6 @@ defmodule ControlPlaneWeb.DashboardLiveTest do
     assert html =~ "nl-1"
   end
 
-  test "is reachable at /dashboard too", %{conn: conn} do
-    {:ok, _view, html} = live(conn, "/dashboard")
-    assert html =~ "Nodes"
-  end
-
   test "re-renders new node data when a fleet event is received", %{conn: conn, region: region} do
     {:ok, view, html} = live(conn, "/")
 

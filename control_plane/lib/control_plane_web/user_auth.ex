@@ -66,6 +66,15 @@ defmodule ControlPlaneWeb.UserAuth do
     {:cont, mount_current_user(socket, session)}
   end
 
+  def on_mount(:current_path, _params, _session, socket) do
+    socket =
+      Phoenix.LiveView.attach_hook(socket, :save_current_path, :handle_params, fn _params, uri, socket ->
+        {:cont, Phoenix.Component.assign(socket, :current_path, URI.parse(uri).path)}
+      end)
+
+    {:cont, socket}
+  end
+
   def on_mount(:ensure_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 
