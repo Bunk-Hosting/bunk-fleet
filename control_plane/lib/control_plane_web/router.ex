@@ -134,6 +134,11 @@ defmodule ControlPlaneWeb.Router do
     delete "/auth/logout", AuthController, :logout
     delete "/auth/logout/all", AuthController, :logout_all
 
+    # Two-factor (TOTP) — bunk-fleet's own Accounts feature, exposed for the UI.
+    get "/auth/totp/setup", AuthController, :totp_setup
+    post "/auth/totp/setup", AuthController, :totp_confirm
+    delete "/auth/totp/disable", AuthController, :totp_disable
+
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
     post "/vpses/:id/start", VpsController, :start

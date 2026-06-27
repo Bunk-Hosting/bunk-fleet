@@ -94,8 +94,52 @@ defmodule ControlPlaneWeb.AuthController do
       name: user.name,
       role: user.role,
       confirmed_at: user.confirmed_at,
+      totp_enabled: not is_nil(user.totp_confirmed_at),
       inserted_at: user.inserted_at
     }
+  end
+
+  # --- TOTP (two-factor) — exposes bunk-fleet's own Accounts TOTP feature -----
+
+  @doc "Starts TOTP setup: persists a fresh secret and returns it + a QR data URL."
+  def totp_setup(conn, _params) do
+    user = Accounts.start_totp_setup(conn.assigns.current_user)
+
+    json(conn, %{
+      secret: Accounts.totp_secret_base32(user),
+      qr_data_url: qr_data_url(Accounts.totp_uri(user))
+    })
+  end
+
+  @doc "Confirms TOTP setup with a code from the authenticator app."
+  def totp_confirm(conn, %{"code" => code}) when is_binary(code) do
+    case Accounts.confirm_totp(conn.assigns.current_user, code) do
+      {:ok, _user} -> json(conn, %{detail: "ok"})
+      {:error, _} -> conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_code"})
+    end
+  end
+
+  def totp_confirm(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "code is required"})
+
+  @doc "Disables TOTP — requires a valid current code (defence in depth)."
+  def totp_disable(conn, %{"code" => code}) when is_binary(code) do
+    user = conn.assigns.current_user
+
+    if Accounts.valid_totp?(user, code) do
+      {:ok, _} = Accounts.disable_totp(user)
+      json(conn, %{detail: "ok"})
+    else
+      conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_code"})
+    end
+  end
+
+  def totp_disable(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "code is required"})
+
+  defp qr_data_url(uri) do
+    svg = uri |> EQRCode.encode() |> EQRCode.svg(width: 200)
+    "data:image/svg+xml;base64," <> Base.encode64(svg)
   end
 
   defp changeset_errors(changeset) do
