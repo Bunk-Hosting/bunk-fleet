@@ -386,8 +386,7 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 		cfgForm.Set("memory", strconv.Itoa(spec.RAMMB))
 	}
 	if len(spec.SSHKeys) > 0 {
-		// PVE expects URL-encoded, newline-separated keys.
-		cfgForm.Set("sshkeys", url.QueryEscape(strings.Join(spec.SSHKeys, "\n")))
+		cfgForm.Set("sshkeys", encodeProxmoxSSHKeys(spec.SSHKeys))
 	}
 	if spec.IPConfig != "" {
 		cfgForm.Set("ipconfig0", spec.IPConfig)
@@ -656,4 +655,16 @@ func firstIPv4(ifaces vmAgentIfaces) string {
 		}
 	}
 	return ""
+}
+
+// encodeProxmoxSSHKeys renders SSH public keys for Proxmox's `sshkeys` config
+// parameter. PVE expects the value RFC3986 percent-encoded and rejects the
+// form-style '+' that url.QueryEscape emits for spaces, so spaces are rewritten
+// to %20. The HTTP form encoder then double-encodes this, which PVE unwinds (it
+// form-decodes the body once, then percent-decodes the sshkeys value once),
+// recovering the original keys. Trailing whitespace is trimmed so a stray
+// newline can't trip PVE's "Parameter verification failed" check.
+func encodeProxmoxSSHKeys(keys []string) string {
+	joined := strings.TrimSpace(strings.Join(keys, "\n"))
+	return strings.ReplaceAll(url.QueryEscape(joined), "+", "%20")
 }
