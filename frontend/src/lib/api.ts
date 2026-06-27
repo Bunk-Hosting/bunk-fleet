@@ -294,11 +294,18 @@ export const authApi = {
     return { data: transformUser(res.data.user) };
   },
 
-  verifyEmail: (_token: string) => Promise.resolve({ data: { detail: "ok" } }),
-  resendVerification: () => Promise.resolve({ data: { detail: "ok" } }),
+  // bunk-fleet has no email-verification / password-reset endpoints yet, so these
+  // REJECT instead of faking success — the UI must never tell a user their
+  // password changed or their email was verified when nothing happened.
+  verifyEmail: (_token: string) =>
+    Promise.reject(new Error("E-mailverificatie is nog niet beschikbaar.")),
+  resendVerification: () =>
+    Promise.reject(new Error("E-mailverificatie is nog niet beschikbaar.")),
+  // Safe to resolve regardless: this never claims a completed change and the
+  // anti-enumeration contract is "if the address exists, a link was sent".
   requestPasswordReset: (_email: string) => Promise.resolve({ data: { detail: "ok" } }),
   confirmPasswordReset: (_token: string, _password: string, _passwordConfirm: string) =>
-    Promise.resolve({ data: { detail: "ok" } }),
+    Promise.reject(new Error("Wachtwoord opnieuw instellen is nog niet beschikbaar.")),
 
   totp: {
     setup: () => api.get<{ secret: string; qr_data_url: string }>("/auth/totp/setup"),

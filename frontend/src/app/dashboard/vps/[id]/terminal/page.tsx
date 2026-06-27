@@ -25,6 +25,7 @@ export default function VpsTerminalPage() {
   const xtermRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   const [vps, setVps] = useState<Vps | null>(null);
   const [connState, setConnState] = useState<ConnectionState>("connecting");
@@ -176,6 +177,7 @@ export default function VpsTerminalPage() {
         sendResize(term.cols, term.rows);
       });
       if (terminalRef.current) resizeObserver.observe(terminalRef.current);
+      resizeObserverRef.current = resizeObserver;
 
       return () => {
         resizeObserver.disconnect();
@@ -184,6 +186,8 @@ export default function VpsTerminalPage() {
 
     return () => {
       destroyed = true;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       wsRef.current?.close();
       xtermRef.current?.dispose();
       xtermRef.current = null;
