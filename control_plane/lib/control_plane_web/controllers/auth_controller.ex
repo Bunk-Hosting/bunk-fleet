@@ -31,21 +31,41 @@ defmodule ControlPlaneWeb.AuthController do
     end
   end
 
-  def login(conn, %{"email" => email, "password" => password})
+  def login(conn, %{"email" => email, "password" => password} = params)
       when is_binary(email) and is_binary(password) do
     case Accounts.get_user_by_email_and_password(email, password) do
       %Accounts.User{} = user ->
-        token = Accounts.generate_user_session_token(user)
+        # SECURITY: when 2FA is active, never issue a session token on password
+        # alone — require a valid TOTP code (matches the browser MFA flow). The
+        # client first calls without a code, gets {totp_required: true}, then
+        # retries with the code.
+        cond do
+          not Accounts.totp_active?(user) ->
+            issue_session(conn, user)
 
-        conn
-        |> put_status(:ok)
-        |> json(%{user: user_json(user), token: encode_token(token)})
+          is_binary(params["code"]) and Accounts.valid_totp?(user, params["code"]) ->
+            issue_session(conn, user)
+
+          is_binary(params["code"]) ->
+            conn |> put_status(:unauthorized) |> json(%{totp_required: true, error: "invalid_code"})
+
+          true ->
+            conn |> put_status(:ok) |> json(%{totp_required: true})
+        end
 
       nil ->
         conn
         |> put_status(:unauthorized)
         |> json(%{error: "invalid email or password"})
     end
+  end
+
+  defp issue_session(conn, user) do
+    token = Accounts.generate_user_session_token(user)
+
+    conn
+    |> put_status(:ok)
+    |> json(%{user: user_json(user), token: encode_token(token)})
   end
 
   def login(conn, _params) do

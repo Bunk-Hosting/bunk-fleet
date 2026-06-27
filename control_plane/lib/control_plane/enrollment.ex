@@ -122,12 +122,17 @@ defmodule ControlPlane.Enrollment do
     token_hash = hash(token_plaintext)
     now = now()
 
+    # FOR UPDATE so concurrent enrollments with the same token serialize: the
+    # first locks + consumes it, the second then sees used_at set and gets nil
+    # (-> :invalid_token). Without the lock both could pass the used_at check and
+    # mint two nodes from one single-use token (TOCTOU).
     query =
       from t in EnrollToken,
         where:
           t.token_hash == ^token_hash and
             is_nil(t.used_at) and
-            (is_nil(t.expires_at) or t.expires_at >= ^now)
+            (is_nil(t.expires_at) or t.expires_at >= ^now),
+        lock: "FOR UPDATE"
 
     Repo.one(query)
   end
