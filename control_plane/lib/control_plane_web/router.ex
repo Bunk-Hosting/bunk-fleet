@@ -27,10 +27,16 @@ defmodule ControlPlaneWeb.Router do
   end
 
   # Operator/admin LiveView dashboard.
+  # Operator/admin fleet dashboard — shows EVERY node + EVERY customer's VPS, so
+  # it must never be reachable unauthenticated or by a regular customer. Gated to
+  # staff (operator/admin), mirroring RequireOperator.
   scope "/", ControlPlaneWeb do
-    pipe_through :browser
+    pipe_through [:browser, :require_authenticated]
 
-    live "/", DashboardLive, :index
+    live_session :operator_dashboard,
+      on_mount: [{ControlPlaneWeb.UserAuth, :ensure_staff}] do
+      live "/", DashboardLive, :index
+    end
   end
 
   # Customer portal: public auth pages.

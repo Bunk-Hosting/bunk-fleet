@@ -58,6 +58,10 @@ defmodule ControlPlane.Credits do
 
   def charge(user_id, amount_cents, kind, description) do
     Repo.transaction(fn ->
+      # Serialize per-user so two concurrent charges can't both observe the full
+      # balance and overspend the wallet (mark_topup_paid/cancel already lock).
+      Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:wallet, user_id})])
+
       if balance_cents(user_id) >= amount_cents do
         {:ok, entry} = add_entry(user_id, -amount_cents, kind, description)
         entry

@@ -90,6 +90,22 @@ defmodule ControlPlaneWeb.UserAuth do
     end
   end
 
+  def on_mount(:ensure_staff, _params, session, socket) do
+    socket = mount_current_user(socket, session)
+    user = socket.assigns.current_user
+
+    if user && user.role in [:operator, :admin] do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "Geen toegang.")
+        |> Phoenix.LiveView.redirect(to: ~p"/login")
+
+      {:halt, socket}
+    end
+  end
+
   def on_mount(:redirect_if_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 
