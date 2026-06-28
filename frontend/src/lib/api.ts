@@ -436,10 +436,12 @@ export const billingApi = {
       data: { billing_cycle: "monthly", billing_email: "" },
     }),
     update: async (
-      data: Partial<BillingSettings>
-    ): Promise<{ data: BillingSettings }> => ({
-      data: { billing_cycle: "monthly", billing_email: "", ...data },
-    }),
+      _data: Partial<BillingSettings>
+    ): Promise<{ data: BillingSettings }> => {
+      // bunk-fleet has no billing-settings endpoint yet — don't echo the input
+      // back as if it persisted (the UI would claim a save that never happened).
+      throw new Error("Factuurinstellingen zijn nog niet beschikbaar.");
+    },
   },
   invoices: {
     list: async (

@@ -168,7 +168,19 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      await authApi.login(email, password, undefined, code);
+      const res = await authApi.login(email, password, undefined, code);
+      // A wrong/expired TOTP code comes back as { totp_required: true } with NO
+      // token (HTTP 200, no throw). Pushing on would land tokenless on /dashboard
+      // and bounce straight back to /login — an endless loop with no feedback.
+      if (res.data?.totp_required) {
+        toast({
+          variant: "destructive",
+          title: "Inloggen mislukt",
+          description: "Ongeldige authenticator-code.",
+        });
+        setCode("");
+        return;
+      }
       setCode("");
       const next = safeNext(searchParams.get("next"));
       router.push(next);

@@ -11,7 +11,7 @@ export function middleware(request: NextRequest) {
   const isLoggedIn = Boolean(request.cookies.get("access_token")?.value);
 
   // Send logged-in users away from the auth-only pages.
-  const authOnlyPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
+  const authOnlyPaths = ["/login", "/register", "/forgot-password"];
   if (authOnlyPaths.includes(pathname) && isLoggedIn) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
@@ -36,5 +36,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register", "/forgot-password", "/reset-password", "/verify-email"],
+  matcher: ["/dashboard/:path*", "/login", "/register", "/forgot-password"],
 };

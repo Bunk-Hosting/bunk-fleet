@@ -87,7 +87,7 @@ function RegisterForm() {
             </h1>
             <p className="text-muted-foreground">
               {done
-                ? "Controleer je e-mail voor een bevestigingslink"
+                ? "Je account is aangemaakt en je bent ingelogd"
                 : "Registreer je bij Bunk Hosting"}
             </p>
           </div>
@@ -99,10 +99,10 @@ function RegisterForm() {
                   <MailCheck className="h-12 w-12 text-primary" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Als je e-mailadres is goedgekeurd ontvang je een bevestigingslink. Klik op de link om je account te activeren.
+                  Welkom bij Bunk Hosting. Je bent automatisch ingelogd en kunt direct aan de slag.
                 </p>
-                <a href="/login">
-                  <Button className="w-full py-5">Naar inloggen</Button>
+                <a href="/dashboard">
+                  <Button className="w-full py-5">Naar dashboard</Button>
                 </a>
               </div>
             ) : (

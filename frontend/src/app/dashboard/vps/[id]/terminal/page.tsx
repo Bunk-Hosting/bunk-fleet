@@ -10,9 +10,19 @@ import { Button } from "@/components/ui/button";
 import { vpsApi } from "@/lib/api";
 import type { Vps } from "@/lib/types";
 
-const WS_BASE =
-  process.env.NEXT_PUBLIC_WS_URL ||
-  (process.env.NEXT_PUBLIC_API_URL || "").replace(/^http/, "ws");
+function resolveWsBase(): string {
+  const explicit =
+    process.env.NEXT_PUBLIC_WS_URL ||
+    (process.env.NEXT_PUBLIC_API_URL || "").replace(/^http/, "ws");
+  if (explicit) return explicit.replace(/\/+$/, "");
+  // No env configured: derive a same-origin ws(s) base from the page so we never
+  // construct a relative WebSocket URL (which throws SyntaxError at runtime).
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}`;
+  }
+  return "";
+}
 
 type ConnectionState = "connecting" | "open" | "closed" | "error";
 
@@ -114,8 +124,15 @@ export default function VpsTerminalPage() {
       xtermRef.current = term;
       fitRef.current = fit;
 
-      // WebSocket connection
-      const wsUrl = `${WS_BASE}/ws/console/${id}/`;
+      // WebSocket connection — bail cleanly if we can't form an absolute URL
+      // (new WebSocket("/...") throws and the UI would hang on "Verbinden…").
+      const wsBase = resolveWsBase();
+      if (!wsBase) {
+        term.writeln("\x1b[31mConsole niet beschikbaar: geen server geconfigureerd.\x1b[0m");
+        setConnState("error");
+        return;
+      }
+      const wsUrl = `${wsBase}/ws/console/${id}/`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
