@@ -60,8 +60,25 @@ defmodule ControlPlane.Accounts do
     |> Repo.update()
   end
 
-  @doc "Validates a login TOTP code for an MFA-active user."
-  def valid_totp?(%User{totp_secret: secret}, code) when is_binary(secret), do: valid_totp_code?(secret, code)
+  @doc """
+  Validates a login TOTP code for an MFA-active user, single-use per time-step:
+  on success the accepted step is recorded (`since:`) so the same 6-digit code
+  can't be replayed within its ~30s window (a stolen-then-reused code is dead).
+  """
+  def valid_totp?(%User{totp_secret: secret} = user, code) when is_binary(secret) do
+    trimmed = String.trim(to_string(code))
+
+    if byte_size(trimmed) == 6 and NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
+      user
+      |> Ecto.Changeset.change(totp_last_used_at: DateTime.truncate(DateTime.utc_now(), :second))
+      |> Repo.update()
+
+      true
+    else
+      false
+    end
+  end
+
   def valid_totp?(_user, _code), do: false
 
   @doc "The otpauth:// URI to encode into a QR code for authenticator apps."

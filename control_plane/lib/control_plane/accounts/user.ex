@@ -22,6 +22,7 @@ defmodule ControlPlane.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :totp_secret, :binary, redact: true
     field :totp_confirmed_at, :utc_datetime
+    field :totp_last_used_at, :utc_datetime
 
     timestamps(type: :utc_datetime)
   end
