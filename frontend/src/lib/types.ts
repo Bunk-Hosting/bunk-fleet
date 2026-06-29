@@ -128,14 +128,6 @@ export interface ReconcileStatusResponse {
   last_result: ReconcileResult | null;
 }
 
-export interface JwtPayload {
-  user_id: number;
-  email: string;
-  name: string;
-  role: "user" | "admin";
-  exp: number;
-}
-
 // ─── Billing ──────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus = "draft" | "open" | "paid" | "void";

@@ -11,7 +11,7 @@ import axios from "axios";
 import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
-type Step = "credentials" | "otp" | "totp" | "verify_required";
+type Step = "credentials" | "totp" | "verify_required";
 
 function safeNext(raw: string | null): string {
   if (!raw) return "/dashboard";
@@ -33,8 +33,6 @@ function LoginForm() {
   const [password, setPassword] = React.useState("");
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [secondsLeft, setSecondsLeft] = React.useState(0);
-  const [resendCooldown, setResendCooldown] = React.useState(0);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
@@ -43,35 +41,6 @@ function LoginForm() {
     ensureCsrfCookie();
   }, []);
 
-  // 15-minuten countdown start zodra e-mail OTP-stap actief wordt
-  React.useEffect(() => {
-    if (step !== "otp") return;
-    setSecondsLeft(900);
-    const interval = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [step]);
-
-  // Cooldown-timer voor "Nieuwe code aanvragen"
-  React.useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [resendCooldown]);
-
-  function formatTime(s: number) {
-    const m = Math.floor(s / 60).toString().padStart(2, "0");
-    const sec = (s % 60).toString().padStart(2, "0");
-    return `${m}:${sec}`;
-  }
-
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -79,8 +48,6 @@ function LoginForm() {
       const res = await authApi.login(email, password, turnstileToken || undefined);
       if (res.data.totp_required) {
         setStep("totp");
-      } else if (res.data.otp_required) {
-        setStep("otp");
       } else if (res.data.verification_required) {
         setStep("verify_required");
       } else {
@@ -112,53 +79,6 @@ function LoginForm() {
         title: "Inloggen mislukt",
         description: parseApiError(err, "Ongeldig e-mailadres of wachtwoord."),
       });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleResend() {
-    setLoading(true);
-    try {
-      await authApi.login(email, password);
-      setCode("");
-      setSecondsLeft(900);
-      setResendCooldown(60);
-      toast({
-        title: "Nieuwe code verstuurd",
-        description: "Check je e-mail voor de nieuwe inlogcode.",
-      });
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Mislukt",
-        description: "Kon geen nieuwe code versturen. Probeer opnieuw in te loggen.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleOtp(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await authApi.loginOtp(email, code);
-      setCode("");
-      // Stuur nieuwe gebruikers (zonder TOTP) direct naar de MFA-setup
-      if (!res.data?.user?.totp_enabled) {
-        router.push("/dashboard/beveiliging?mfa_setup=1");
-      } else {
-        const next = safeNext(searchParams.get("next"));
-        router.push(next);
-      }
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Inloggen mislukt",
-        description: "Ongeldige of verlopen code.",
-      });
-      setCode("");
     } finally {
       setLoading(false);
     }
@@ -221,13 +141,11 @@ function LoginForm() {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-display font-bold mb-2">
               {step === "credentials" && "Welkom terug"}
-              {step === "otp" && "Controleer je e-mail"}
               {step === "totp" && "Authenticator-code"}
               {step === "verify_required" && "Bevestig je e-mailadres"}
             </h1>
             <p className="text-muted-foreground">
               {step === "credentials" && "Log in op je Bunk Hosting account"}
-              {step === "otp" && `We hebben een code gestuurd naar ${email}`}
               {step === "totp" && "Voer de 6-cijferige code in uit je authenticator-app"}
               {step === "verify_required" && `Er is een bevestigingslink verstuurd naar ${email}`}
             </p>
@@ -294,69 +212,6 @@ function LoginForm() {
                   <a href="/register" className="text-primary underline-offset-4 hover:underline">
                     Registreren
                   </a>
-                </p>
-              </form>
-            )}
-
-            {step === "otp" && (
-              <form onSubmit={handleOtp} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="otp">Inlogcode</Label>
-                  <Input
-                    id="otp"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    placeholder="123456"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                    required
-                    disabled={loading}
-                    autoFocus
-                    className="bg-background/60 border-border/60 focus:border-primary/60 text-center tracking-widest text-lg"
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    {secondsLeft > 0
-                      ? `Code geldig nog: ${formatTime(secondsLeft)}`
-                      : "Code is verlopen. Ga terug en log opnieuw in."}
-                  </p>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full py-5"
-                  disabled={loading || code.length !== 6 || secondsLeft === 0}
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Bevestig code
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => {
-                    setStep("credentials");
-                    setCode("");
-                  }}
-                  disabled={loading}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Terug
-                </Button>
-
-                <p className="text-center text-sm text-muted-foreground">
-                  Geen code ontvangen?{" "}
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    disabled={loading || resendCooldown > 0}
-                    className="text-primary underline-offset-4 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
-                  >
-                    {resendCooldown > 0
-                      ? `Nieuwe code aanvragen (${resendCooldown}s)`
-                      : "Nieuwe code aanvragen"}
-                  </button>
                 </p>
               </form>
             )}

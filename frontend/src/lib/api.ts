@@ -270,15 +270,7 @@ export const authApi = {
     return { data: {} as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
   },
 
-  loginOtp: async (email: string, _code: string) => {
-    const res = await api.get<{ user: BunkUser }>("/auth/me");
-    return { data: { user: transformUser(res.data.user), message: "ok" } };
-  },
 
-  loginTotp: async (email: string, _code: string) => {
-    const res = await api.get<{ user: BunkUser }>("/auth/me");
-    return { data: { user: transformUser(res.data.user), message: "ok" } };
-  },
 
   logout: async () => {
     try {
@@ -298,8 +290,6 @@ export const authApi = {
   // REJECT instead of faking success — the UI must never tell a user their
   // password changed or their email was verified when nothing happened.
   verifyEmail: (_token: string) =>
-    Promise.reject(new Error("E-mailverificatie is nog niet beschikbaar.")),
-  resendVerification: () =>
     Promise.reject(new Error("E-mailverificatie is nog niet beschikbaar.")),
   // Safe to resolve regardless: this never claims a completed change and the
   // anti-enumeration contract is "if the address exists, a link was sent".
