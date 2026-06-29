@@ -126,11 +126,9 @@ defmodule ControlPlaneWeb.OperatorController do
 
   defp resolve_region(_params), do: {:error, :region_not_found}
 
-  defp parse_tier(%{"tier" => tier}) when tier in ["datacenter", "community"] do
-    {:ok, String.to_existing_atom(tier)}
-  end
-
-  defp parse_tier(%{"tier" => _}), do: {:error, :invalid_tier}
+  # Operators may only run community-tier nodes; datacenter tier is reserved for
+  # admin-minted tokens (it is the higher-trust label future scheduling will key
+  # on), so an operator-supplied tier is never honoured.
   defp parse_tier(_params), do: {:ok, :community}
 
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0 and ttl <= @max_ttl_seconds, do: {:ok, ttl}
@@ -167,15 +165,10 @@ defmodule ControlPlaneWeb.OperatorController do
   defp install_command(conn, token) do
     cp_url = control_plane_url(conn)
 
-    "docker run -d --name bunk-agent --restart unless-stopped " <>
-      "-e BUNK_CONTROL_PLANE_URL=#{cp_url} " <>
-      "-e BUNK_ENROLL_TOKEN=#{token} " <>
-      "-e BUNK_HYPERVISOR=proxmox " <>
-      "-e BUNK_PROXMOX_HOST=https://YOUR-PROXMOX:8006 " <>
-      "-e BUNK_PROXMOX_NODE=YOUR-NODE " <>
-      "-e BUNK_PROXMOX_TOKEN_ID=... " <>
-      "-e BUNK_PROXMOX_TOKEN_SECRET=... " <>
-      "ghcr.io/bunk-hosting/bunk-agent:latest"
+    # The interactive wizard handles both Proxmox and ESXi and runs on any Linux
+    # VM that can reach the hypervisor API — far friendlier than a hand-built
+    # docker one-liner, and it works for either hypervisor.
+    "curl -fsSL #{cp_url}/install.sh | sudo bash -s -- --token #{token}"
   end
 
   defp control_plane_url(conn) do

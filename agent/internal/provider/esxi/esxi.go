@@ -303,6 +303,8 @@ func (c *Client) power(ctx context.Context, id, op string) error {
 			return nil
 		}
 		task, err = vm.Suspend(ctx)
+	default:
+		return fmt.Errorf("esxi: unknown power op %q", op)
 	}
 	if err != nil {
 		return fmt.Errorf("esxi: power %s: %w", op, err)

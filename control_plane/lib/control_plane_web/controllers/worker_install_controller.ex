@@ -1,5 +1,11 @@
 defmodule ControlPlaneWeb.WorkerInstallController do
-  @moduledoc "Serves the interactive bunk-worker install wizard (curl | bash)."
+  @moduledoc """
+  Serves the interactive bunk-worker install wizard (`curl … | bash`).
+
+  The wizard runs on any Linux machine (a small VM is ideal) that can reach the
+  operator's Proxmox or ESXi API over the network — it does NOT run on, or need
+  root on, the hypervisor host itself.
+  """
   use ControlPlaneWeb, :controller
 
   def script(conn, _params) do
@@ -18,7 +24,9 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   defp wizard(cp) do
     """
     #!/usr/bin/env bash
-    # bunk-worker installer — run as root on your Proxmox host to offer VPS capacity.
+    # bunk-worker installer. Run on a Linux machine (a small VM is ideal) that can
+    # reach your Proxmox OR ESXi API over the network. It does NOT run on, and
+    # does not need root on, the hypervisor host itself — it talks to the API.
     set -euo pipefail
     CP="#{cp}"
     TOKEN=""
@@ -33,6 +41,8 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     bold() { printf "\\033[1m%s\\033[0m\\n" "$1"; }
     bold "== Bunk Worker installatie =="
     echo "Control plane: $CP"
+    echo "Deze worker draait op DEZE Linux-machine en praat met je Proxmox- of"
+    echo "ESXi-API over het netwerk — niet op de hypervisor zelf."
     echo
 
     [ -z "$TOKEN" ] && read -rp "Enroll-token (uit de portal): " TOKEN

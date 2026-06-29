@@ -182,7 +182,7 @@ export default function HardwarePage() {
           <CardHeader>
             <CardTitle>Word host</CardTitle>
             <CardDescription>
-              Sluit je eigen Proxmox-server aan op het Bunk-netwerk. Bunk plaatst er VPS&apos;en op
+              Sluit je eigen Proxmox- of ESXi-capaciteit aan op het Bunk-netwerk. Bunk plaatst er VPS&apos;en op
               en je verdient mee aan het verbruik dat jouw node draait.
             </CardDescription>
           </CardHeader>
@@ -190,7 +190,7 @@ export default function HardwarePage() {
             <ol className="space-y-2 text-sm text-muted-foreground">
               <li>1. Klik op <span className="font-medium text-foreground">Word host</span> om je account te activeren.</li>
               <li>2. Kies een regio en genereer je install-commando.</li>
-              <li>3. Draai dat commando als root op je Proxmox-host.</li>
+              <li>3. Draai dat commando op een Linux-VM die je Proxmox of ESXi kan bereiken.</li>
               <li>4. Je node verschijnt online en krijgt automatisch VPS&apos;en toegewezen.</li>
             </ol>
             <Button onClick={handleActivate} disabled={activating} className="gap-2">
@@ -229,7 +229,7 @@ export default function HardwarePage() {
               {token && (
                 <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">Draai dit als root op je Proxmox-host:</p>
+                    <p className="text-sm font-medium">Draai dit op een Linux-VM (met sudo) die je hypervisor kan bereiken:</p>
                     <Button variant="outline" size="sm" className="gap-2" onClick={copyInstall}>
                       {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
                       {copied ? "Gekopieerd" : "Kopieer"}
@@ -239,7 +239,7 @@ export default function HardwarePage() {
 {token.install}
                   </pre>
                   <p className="text-xs text-muted-foreground">
-                    Vul je Proxmox-host, node en API-token in. Token verloopt op{" "}
+                    De wizard vraagt je hypervisor (Proxmox of ESXi) en API-gegevens. Token verloopt op{" "}
                     {new Date(token.expires_at).toLocaleString("nl-NL")}.
                   </p>
                 </div>

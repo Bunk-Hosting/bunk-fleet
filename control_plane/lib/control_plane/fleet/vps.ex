@@ -64,6 +64,7 @@ defmodule ControlPlane.Fleet.Vps do
       :last_metered_at
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
+    |> validate_length(:name, max: 100)
     |> validate_spec()
     |> assoc_constraint(:region)
     |> assoc_constraint(:node)
