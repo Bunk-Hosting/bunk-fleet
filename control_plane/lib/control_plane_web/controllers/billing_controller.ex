@@ -18,13 +18,10 @@ defmodule ControlPlaneWeb.BillingController do
   use ControlPlaneWeb, :controller
 
   alias ControlPlane.Billing
-
-  @default_window_days 30
+  alias ControlPlaneWeb.TimeWindow
 
   def usage(conn, params) do
-    with {:ok, to} <- parse_datetime(params["to"], default_to()),
-         {:ok, from} <- parse_datetime(params["from"], default_from(to)),
-         :ok <- validate_window(from, to) do
+    with {:ok, {from, to}} <- TimeWindow.parse(params) do
       usage = Billing.customer_usage(conn.assigns.current_user.id, {from, to})
 
       json(conn, %{
@@ -47,26 +44,6 @@ defmodule ControlPlaneWeb.BillingController do
 
   defp vps_json(%{vps_id: vps_id, name: name, seconds: seconds, cost: cost}) do
     %{vps_id: vps_id, name: name, seconds: seconds, cost: Decimal.to_string(cost)}
-  end
-
-  defp default_to, do: DateTime.utc_now() |> DateTime.truncate(:second)
-
-  defp default_from(to), do: DateTime.add(to, -@default_window_days * 24 * 3600, :second)
-
-  # Parses an ISO8601 datetime, falling back to `default` when the param is absent.
-  defp parse_datetime(nil, default), do: {:ok, default}
-
-  defp parse_datetime(value, _default) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, datetime, _offset} -> {:ok, DateTime.truncate(datetime, :second)}
-      {:error, _reason} -> {:error, :invalid_datetime}
-    end
-  end
-
-  defp parse_datetime(_value, _default), do: {:error, :invalid_datetime}
-
-  defp validate_window(from, to) do
-    if DateTime.compare(from, to) == :lt, do: :ok, else: {:error, :invalid_window}
   end
 
   defp bad_request(conn, code, detail) do

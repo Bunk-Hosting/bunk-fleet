@@ -16,10 +16,10 @@ defmodule ControlPlaneWeb.Admin.BillingController do
   use ControlPlaneWeb, :controller
 
   alias ControlPlane.Billing
+  alias ControlPlaneWeb.TimeWindow
 
   def usage(conn, params) do
-    with {:ok, from} <- parse_datetime(params["from"]),
-         {:ok, to} <- parse_datetime(params["to"]) do
+    with {:ok, {from, to}} <- TimeWindow.parse(params, require: true) do
       summary = Enum.map(Billing.payout_summary({from, to}), &payout_json/1)
 
       json(conn, %{
@@ -31,7 +31,12 @@ defmodule ControlPlaneWeb.Admin.BillingController do
       {:error, :invalid_datetime} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "invalid_window", detail: "from and to must be ISO8601 datetimes"})
+        |> json(%{error: "invalid_datetime", detail: "from and to must be ISO8601 datetimes"})
+
+      {:error, :invalid_window} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "invalid_window", detail: "from must be earlier than to"})
     end
   end
 
@@ -43,13 +48,4 @@ defmodule ControlPlaneWeb.Admin.BillingController do
       records: records
     }
   end
-
-  defp parse_datetime(value) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, datetime, _offset} -> {:ok, DateTime.truncate(datetime, :second)}
-      {:error, _reason} -> {:error, :invalid_datetime}
-    end
-  end
-
-  defp parse_datetime(_value), do: {:error, :invalid_datetime}
 end

@@ -14,6 +14,8 @@ defmodule ControlPlaneWeb.OperatorController do
   Behind `ApiAuth` + `RequireOperator` (see the router's `operator_api` pipeline).
   """
   use ControlPlaneWeb, :controller
+
+  alias ControlPlaneWeb.TimeWindow
   import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Billing, Enrollment, Fleet}
@@ -21,7 +23,6 @@ defmodule ControlPlaneWeb.OperatorController do
 
   @default_ttl_seconds 3600
   @max_ttl_seconds 86_400
-  @default_window_days 30
 
   def create_enroll_token(conn, params) do
     with {:ok, %Region{} = region} <- resolve_region(params),
@@ -60,9 +61,7 @@ defmodule ControlPlaneWeb.OperatorController do
   end
 
   def earnings(conn, params) do
-    with {:ok, to} <- parse_datetime(params["to"], default_to()),
-         {:ok, from} <- parse_datetime(params["from"], default_from(to)),
-         :ok <- validate_window(from, to) do
+    with {:ok, {from, to}} <- TimeWindow.parse(params) do
       email = conn.assigns.current_user.email
       amount = Billing.compute_payout(email, {from, to})
       usage = Billing.usage_for_owner(email, {from, to})
@@ -144,24 +143,6 @@ defmodule ControlPlaneWeb.OperatorController do
 
   defp parse_ttl(%{"ttl_seconds" => _}), do: {:error, :invalid_ttl}
   defp parse_ttl(_params), do: {:ok, @default_ttl_seconds}
-
-  defp default_to, do: DateTime.utc_now() |> DateTime.truncate(:second)
-  defp default_from(to), do: DateTime.add(to, -@default_window_days * 24 * 3600, :second)
-
-  defp parse_datetime(nil, default), do: {:ok, default}
-
-  defp parse_datetime(value, _default) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, datetime, _offset} -> {:ok, DateTime.truncate(datetime, :second)}
-      {:error, _reason} -> {:error, :invalid_datetime}
-    end
-  end
-
-  defp parse_datetime(_value, _default), do: {:error, :invalid_datetime}
-
-  defp validate_window(from, to) do
-    if DateTime.compare(from, to) == :lt, do: :ok, else: {:error, :invalid_window}
-  end
 
   defp install_command(conn, token) do
     cp_url = control_plane_url(conn)
