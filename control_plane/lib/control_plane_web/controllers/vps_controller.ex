@@ -12,6 +12,7 @@ defmodule ControlPlaneWeb.VpsController do
   `region_id` or a human `region_code`.
   """
   use ControlPlaneWeb, :controller
+  import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Credits, Fleet, Provisioning}
   alias ControlPlane.Fleet.{Package, Region, Vps}
@@ -196,10 +197,4 @@ defmodule ControlPlaneWeb.VpsController do
   defp region_code(%Vps{}), do: nil
 
   defp not_found(conn), do: error(conn, :not_found, "not_found")
-
-  defp error(conn, status, message) do
-    conn
-    |> put_status(status)
-    |> json(%{error: message})
-  end
 end

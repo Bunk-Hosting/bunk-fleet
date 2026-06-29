@@ -11,6 +11,7 @@ defmodule ControlPlaneWeb.MollieController do
       retrying; the credit work is safe to repeat.
   """
   use ControlPlaneWeb, :controller
+  import ControlPlaneWeb.ApiResponse
   require Logger
 
   alias ControlPlane.{Credits, Mollie}
@@ -96,6 +97,4 @@ defmodule ControlPlaneWeb.MollieController do
   defp parse_amount(_), do: {:error, :invalid_amount}
 
   defp public_url, do: Application.get_env(:control_plane, :public_url) || ""
-
-  defp error(conn, status, msg), do: conn |> put_status(status) |> json(%{error: msg})
 end

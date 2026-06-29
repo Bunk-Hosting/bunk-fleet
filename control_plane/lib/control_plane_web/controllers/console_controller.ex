@@ -8,6 +8,7 @@ defmodule ControlPlaneWeb.ConsoleController do
       this VPS) and upgrades to `ConsoleSocket`, which SSHes into the VPS.
   """
   use ControlPlaneWeb, :controller
+  import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Console, Fleet}
   alias ControlPlane.Fleet.Vps
@@ -43,6 +44,4 @@ defmodule ControlPlaneWeb.ConsoleController do
   end
 
   defp console_user, do: (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "ubuntu"
-
-  defp error(conn, status, msg), do: conn |> put_status(status) |> json(%{error: msg})
 end

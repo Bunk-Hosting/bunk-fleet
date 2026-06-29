@@ -14,6 +14,7 @@ defmodule ControlPlaneWeb.OperatorController do
   Behind `ApiAuth` + `RequireOperator` (see the router's `operator_api` pipeline).
   """
   use ControlPlaneWeb, :controller
+  import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Billing, Enrollment, Fleet}
   alias ControlPlane.Fleet.{Node, Region}
@@ -181,10 +182,4 @@ defmodule ControlPlaneWeb.OperatorController do
   defp port_suffix(%{scheme: :http, port: 80}), do: ""
   defp port_suffix(%{scheme: :https, port: 443}), do: ""
   defp port_suffix(%{port: port}), do: ":#{port}"
-
-  defp error(conn, status, message) do
-    conn
-    |> put_status(status)
-    |> json(%{error: message})
-  end
 end
