@@ -32,7 +32,7 @@ defmodule ControlPlaneWeb.ConsoleLive do
       true ->
         user = (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "root"
 
-        case Session.start_link(%{host: vps.ip_address, port: 22, user: user, owner: self(), user_id: uid}) do
+        case Session.start_link(%{host: vps.ip_address, port: 22, user: user, owner: self(), user_id: uid, vps_id: vps.id}) do
           {:ok, pid} -> assign(socket, status: :connected, session_pid: pid)
           _ -> assign(socket, status: :error)
         end

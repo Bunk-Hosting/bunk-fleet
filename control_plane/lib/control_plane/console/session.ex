@@ -25,7 +25,16 @@ defmodule ControlPlane.Console.Session do
       Registry.register(ControlPlane.Console.Registry, {:user, uid}, nil)
     end
 
-    state = %{conn: nil, chan: nil, owner: owner, host: host, port: port, user: user}
+    state = %{
+      conn: nil,
+      chan: nil,
+      owner: owner,
+      host: host,
+      port: port,
+      user: user,
+      vps_id: opts[:vps_id]
+    }
+
     {:ok, state, {:continue, :connect}}
   end
 
@@ -40,8 +49,13 @@ defmodule ControlPlane.Console.Session do
     else
       opts = [
         user: String.to_charlist(st.user),
-        silently_accept_hosts: true,
-        key_cb: {ControlPlane.Console.KeyCb, [pem: key]},
+        # TOFU host-key pinning is enforced in KeyCb.is_host_key/5 (it pins on first
+        # sight and returns false on a mismatch). When it returns false OTP would
+        # otherwise PROMPT on stdin for [y/n] — which hangs a headless daemon — so
+        # this fun is the non-interactive fallback: refuse the unknown/changed key
+        # outright (fail closed) instead of prompting.
+        silently_accept_hosts: fn _peer, _fingerprint -> false end,
+        key_cb: {ControlPlane.Console.KeyCb, [pem: key, vps_id: st.vps_id]},
         auth_methods: ~c"publickey",
         connect_timeout: 10_000
       ]

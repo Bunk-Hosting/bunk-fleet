@@ -35,6 +35,11 @@ defmodule ControlPlane.Fleet.Vps do
     field :ip_address, :string
     field :package_id, :integer
 
+    # TOFU-pinned SSH host-key fingerprint (SHA256:...), recorded on the first
+    # browser-console connection and verified on every later one to detect a
+    # hypervisor-operator MITM of the console (see Console.HostKeys, O-33).
+    field :ssh_host_key, :string
+
     # Accrual-metering watermark: the timestamp through which this VPS has
     # already been metered into `usage_records` (see `ControlPlane.Billing`).
     field :last_metered_at, :utc_datetime

@@ -33,7 +33,7 @@ defmodule ControlPlaneWeb.ConsoleController do
          true <- vps_id == id,
          %Vps{status: :active, ip_address: ip} <- Fleet.get_vps_for_owner(user_id, vps_id),
          true <- is_binary(ip) and ip != "" do
-      state = %{host: ip, port: 22, user: console_user(), user_id: user_id}
+      state = %{host: ip, port: 22, user: console_user(), user_id: user_id, vps_id: vps_id}
 
       conn
       |> WebSockAdapter.upgrade(ControlPlaneWeb.ConsoleSocket, state, timeout: 60_000)

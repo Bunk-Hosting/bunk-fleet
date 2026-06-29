@@ -17,7 +17,8 @@ defmodule ControlPlaneWeb.ConsoleSocket do
            port: state.port,
            user: state.user,
            owner: self(),
-           user_id: state.user_id
+           user_id: state.user_id,
+           vps_id: state.vps_id
          }) do
       {:ok, pid} ->
         {:ok, Map.put(state, :session, pid)}
