@@ -150,6 +150,11 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/start", VpsController, :start
     post "/vpses/:id/stop", VpsController, :stop
 
+    # Self-service host onboarding (opt-in path; promotes :user -> :operator).
+    get "/host/status", HostController, :status
+    post "/host/activate", HostController, :activate
+    get "/host/regions", HostController, :regions
+
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
   end

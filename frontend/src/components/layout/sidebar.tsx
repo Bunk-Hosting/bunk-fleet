@@ -12,6 +12,7 @@ import {
   Users,
   Server,
   ServerCog,
+  HardDrive,
   FileText,
   LogOut,
   Menu,
@@ -46,6 +47,7 @@ const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Mijn VPS'en", href: "/dashboard/vps", icon: Server },
   { label: "Nieuwe VPS", href: "/dashboard/vps/new", icon: PlusCircle },
+  { label: "Mijn hardware", href: "/dashboard/hardware", icon: HardDrive },
   { label: "Beveiliging", href: "/dashboard/beveiliging", icon: ShieldCheck },
 ];
 

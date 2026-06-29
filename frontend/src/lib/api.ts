@@ -459,6 +459,79 @@ export const billingApi = {
   },
 };
 
+// ── Host onboarding (federation: "bring your own hardware") ──────────────
+// A plain user opts in via hostApi.activate() (promotes them to operator on the
+// control plane); thereafter they mint enroll tokens and see their own nodes +
+// earnings. The node/token/earnings endpoints live under /operator/* and are
+// role-gated, so they only work AFTER activation.
+export interface HostNode {
+  id: string;
+  name: string;
+  status: string;
+  tier: string;
+  hypervisor: string;
+  region: string | null;
+  total_vcpu: number;
+  total_ram_mb: number;
+  total_disk_gb: number;
+  available_vcpu: number;
+  available_ram_mb: number;
+  available_disk_gb: number;
+  last_heartbeat_at: string | null;
+}
+export interface HostRegion {
+  id: string;
+  code: string;
+  name: string;
+}
+export interface EnrollTokenResult {
+  enroll_token: string;
+  expires_at: string;
+  region: string;
+  tier: string;
+  install: string;
+}
+export interface HostEarnings {
+  from: string;
+  to: string;
+  amount: string;
+  seconds: number;
+  records: number;
+}
+
+export const hostApi = {
+  status: async (): Promise<{ is_host: boolean; role: string }> => {
+    const res = await api.get<{ is_host: boolean; role: string }>("/host/status");
+    return res.data;
+  },
+  activate: async (): Promise<{ is_host: boolean; role: string }> => {
+    const res = await api.post<{ is_host: boolean; role: string }>("/host/activate", {});
+    return res.data;
+  },
+  regions: async (): Promise<HostRegion[]> => {
+    const res = await api.get<{ regions: HostRegion[] }>("/host/regions");
+    return res.data.regions;
+  },
+  createEnrollToken: async (
+    regionCode: string,
+    tier: "community" | "datacenter" = "community",
+  ): Promise<EnrollTokenResult> => {
+    const res = await api.post<EnrollTokenResult>("/operator/enroll-tokens", {
+      region_code: regionCode,
+      tier,
+    });
+    return res.data;
+  },
+  nodes: async (): Promise<HostNode[]> => {
+    const res = await api.get<{ nodes: HostNode[] }>("/operator/nodes");
+    return res.data.nodes;
+  },
+  earnings: async (): Promise<HostEarnings> => {
+    const res = await api.get<HostEarnings>("/operator/earnings");
+    return res.data;
+  },
+};
+
 export const adminBillingApi = {
   overview: () => api.get<AdminBillingOverview>("/beheer/billing/overview"),
   company: {
