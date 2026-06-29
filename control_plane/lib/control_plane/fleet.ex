@@ -46,8 +46,13 @@ defmodule ControlPlane.Fleet do
   @doc """
   Returns all nodes, with their region preloaded, newest first.
   """
-  def list_nodes do
-    Repo.all(from n in Node, order_by: [desc: n.inserted_at], preload: [:region])
+  def list_nodes(opts \\ []) do
+    Repo.all(
+      from n in Node,
+        order_by: [desc: n.inserted_at],
+        limit: ^Keyword.get(opts, :limit, 500),
+        preload: [:region]
+    )
   end
 
   @doc """
@@ -66,8 +71,13 @@ defmodule ControlPlane.Fleet do
   @doc """
   Returns all VPSes, with their region preloaded, newest first.
   """
-  def list_vpses do
-    Repo.all(from v in Vps, order_by: [desc: v.inserted_at], preload: [:region])
+  def list_vpses(opts \\ []) do
+    Repo.all(
+      from v in Vps,
+        order_by: [desc: v.inserted_at],
+        limit: ^Keyword.get(opts, :limit, 500),
+        preload: [:region]
+    )
   end
 
   @doc "Available VPS packages, ordered like the catalog (sort_order, price)."
@@ -157,21 +167,6 @@ defmodule ControlPlane.Fleet do
     |> Map.put_new(:available_vcpu, attrs[:total_vcpu])
     |> Map.put_new(:available_ram_mb, attrs[:total_ram_mb])
     |> Map.put_new(:available_disk_gb, attrs[:total_disk_gb])
-  end
-
-  @doc """
-  Records a heartbeat for the given node, refreshing its live available capacity,
-  heartbeat timestamp and status.
-
-  The caller's `attrs` are merged with a freshly stamped `last_heartbeat_at` (unless
-  one was explicitly supplied).
-  """
-  def record_heartbeat(%Node{} = node, attrs) do
-    attrs = Map.put_new(normalize_keys(attrs), :last_heartbeat_at, now())
-
-    node
-    |> Node.heartbeat_changeset(attrs)
-    |> Repo.update()
   end
 
   @doc """

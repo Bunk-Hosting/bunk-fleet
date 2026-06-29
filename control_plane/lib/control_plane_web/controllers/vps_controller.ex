@@ -39,6 +39,7 @@ defmodule ControlPlaneWeb.VpsController do
 
     with {:ok, region_id} <- resolve_region_id(params),
          attrs = build_attrs(params, region_id),
+         :ok <- validate_provision_input(attrs),
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
          price = package_price_cents(pkg),
          {:ok, _charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
@@ -48,6 +49,7 @@ defmodule ControlPlaneWeb.VpsController do
       |> json(%{vps: vps_json(vps)})
     else
       nil -> error(conn, :unprocessable_entity, "no_matching_package")
+      {:error, :input_too_large} -> error(conn, :unprocessable_entity, "input_too_large")
       {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
       {:error, :insufficient_credits} -> error(conn, :payment_required, "insufficient_credits")
       {:error, :quota_exceeded} -> error(conn, :too_many_requests, "quota_exceeded")
@@ -112,6 +114,26 @@ defmodule ControlPlaneWeb.VpsController do
   # Ownership is deliberately omitted here: `Provisioning.create_vps_for_owner/2`
   # stamps `owner_id`/`owner_email` from the authenticated session and drops any
   # owner fields a caller might try to smuggle in, so spoofing is impossible.
+  # Bound caller-supplied provision input so a request can't carry an absurd
+  # number/size of SSH keys or a giant cloud-init blob (targets the user's own VM,
+  # but unbounded input is unbounded work). Limits are generous for real use.
+  defp validate_provision_input(%{ssh_keys: ssh, cloud_init: ci}) do
+    cond do
+      not is_list(ssh) -> {:error, :input_too_large}
+      length(ssh) > 20 -> {:error, :input_too_large}
+      Enum.any?(ssh, &(not is_binary(&1) or byte_size(&1) > 4096)) -> {:error, :input_too_large}
+      encoded_size(ci) > 16_384 -> {:error, :input_too_large}
+      true -> :ok
+    end
+  end
+
+  defp encoded_size(term) do
+    case Jason.encode(term) do
+      {:ok, json} -> byte_size(json)
+      _ -> 1_000_000
+    end
+  end
+
   defp build_attrs(params, region_id) do
     %{
       region_id: region_id,

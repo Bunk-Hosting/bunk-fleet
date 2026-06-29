@@ -372,17 +372,6 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
-  Lists the `:pending` commands awaiting delivery for `node`, oldest first.
-  """
-  def pending_commands_for_node(%Node{id: node_id}) do
-    Repo.all(
-      from c in Command,
-        where: c.node_id == ^node_id and c.status == :pending,
-        order_by: [asc: c.inserted_at]
-    )
-  end
-
-  @doc """
   Lists the commands that should be (re)delivered to `node` now, oldest first.
 
   A command is deliverable when it is either:
