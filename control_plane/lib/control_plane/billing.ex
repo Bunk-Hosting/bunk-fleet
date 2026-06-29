@@ -262,13 +262,17 @@ defmodule ControlPlane.Billing do
   def compute_payout(owner_email, {from, to}) do
     rates = resource_hour_rates()
 
-    Repo.all(
+    Repo.one(
       from u in UsageRecord,
         where:
           u.owner_email == ^owner_email and u.metered_at >= ^from and u.metered_at < ^to,
-        select: {u.seconds, u.vcpu, u.ram_mb, u.disk_gb}
+        select: %{
+          sv: sum(fragment("?::bigint * ?::bigint", u.seconds, u.vcpu)),
+          sr: sum(fragment("?::bigint * ?::bigint", u.seconds, u.ram_mb)),
+          sd: sum(fragment("?::bigint * ?::bigint", u.seconds, u.disk_gb))
+        }
     )
-    |> sum_numerators(rates)
+    |> aggregate_numerator(rates)
     |> finalize_amount()
   end
 
@@ -288,28 +292,31 @@ defmodule ControlPlane.Billing do
   def payout_summary({from, to}) do
     rates = resource_hour_rates()
 
-    # Pull every billable record in the window once and fold per operator in
-    # Elixir; this keeps the Decimal money math identical to compute_payout/2
-    # (DB-side Decimal arithmetic across drivers is comparatively fiddly).
+    # Aggregate per operator in SQL: the exact integer sums Σ(seconds*resource)
+    # come back grouped, and only the (exact) Decimal money math runs in Elixir.
+    # This reconciles bit-for-bit with compute_payout/2 because the per-record
+    # numerator distributes — Σ s*(v*Rv*1024 + r*Rg + d*Rd*1024) equals
+    # Rv*1024*Σ(s*v) + Rg*Σ(s*r) + Rd*1024*Σ(s*d) — and the rates/divide-once are
+    # applied identically (see aggregate_numerator/2).
     Repo.all(
       from u in UsageRecord,
         where: u.metered_at >= ^from and u.metered_at < ^to,
-        select: {u.owner_email, u.seconds, u.vcpu, u.ram_mb, u.disk_gb}
+        group_by: u.owner_email,
+        select: %{
+          owner_email: u.owner_email,
+          sv: sum(fragment("?::bigint * ?::bigint", u.seconds, u.vcpu)),
+          sr: sum(fragment("?::bigint * ?::bigint", u.seconds, u.ram_mb)),
+          sd: sum(fragment("?::bigint * ?::bigint", u.seconds, u.disk_gb)),
+          seconds: sum(u.seconds),
+          records: count(u.id)
+        }
     )
-    |> Enum.group_by(fn {owner_email, _s, _v, _r, _d} -> owner_email end)
-    |> Enum.map(fn {owner_email, records} ->
-      numerator =
-        records
-        |> Enum.map(fn {_owner, s, v, r, d} -> {s, v, r, d} end)
-        |> sum_numerators(rates)
-
-      seconds = Enum.reduce(records, 0, fn {_owner, s, _v, _r, _d}, acc -> acc + s end)
-
+    |> Enum.map(fn row ->
       %{
-        owner_email: owner_email,
-        amount: finalize_amount(numerator),
-        seconds: seconds,
-        records: length(records)
+        owner_email: row.owner_email,
+        amount: row |> aggregate_numerator(rates) |> finalize_amount(),
+        seconds: row.seconds,
+        records: row.records
       }
     end)
     |> Enum.sort(&payout_order/2)
@@ -337,33 +344,56 @@ defmodule ControlPlane.Billing do
   def customer_usage(owner_id, {from, to}) do
     rates = resource_hour_rates()
 
-    records =
+    # One grouped row per VPS, summed in SQL. `name` is functionally dependent on
+    # vps_id (one live `vpses` row per join), so grouping by both is equivalent to
+    # the old group-by-vps_id-alone.
+    rows =
       Repo.all(
         from u in UsageRecord,
           join: v in Vps,
           on: v.id == u.vps_id,
           where: v.owner_id == ^owner_id and u.metered_at >= ^from and u.metered_at < ^to,
-          select: {u.vps_id, v.name, u.seconds, u.vcpu, u.ram_mb, u.disk_gb}
+          group_by: [u.vps_id, v.name],
+          select: %{
+            vps_id: u.vps_id,
+            name: v.name,
+            sv: sum(fragment("?::bigint * ?::bigint", u.seconds, u.vcpu)),
+            sr: sum(fragment("?::bigint * ?::bigint", u.seconds, u.ram_mb)),
+            sd: sum(fragment("?::bigint * ?::bigint", u.seconds, u.disk_gb)),
+            seconds: sum(u.seconds)
+          }
       )
 
     vpses =
-      records
-      # Group by vps_id alone so it's structurally "one line per VPS"; the name is
-      # the same for every row of a given vps_id (one live `vpses` row per join).
-      |> Enum.group_by(fn {vps_id, _name, _s, _v, _r, _d} -> vps_id end)
-      |> Enum.map(fn {vps_id, [{_id, name, _s, _v, _r, _d} | _] = group} ->
-        numerator = group |> Enum.map(fn {_id, _n, s, v, r, d} -> {s, v, r, d} end) |> sum_numerators(rates)
-        seconds = Enum.reduce(group, 0, fn {_id, _n, s, _v, _r, _d}, acc -> acc + s end)
-        %{vps_id: vps_id, name: name, seconds: seconds, cost: finalize_amount(numerator)}
+      rows
+      |> Enum.map(fn row ->
+        %{
+          vps_id: row.vps_id,
+          name: row.name,
+          seconds: row.seconds,
+          cost: row |> aggregate_numerator(rates) |> finalize_amount()
+        }
       end)
       |> Enum.sort(&vps_cost_order/2)
 
-    total_numerator =
-      records |> Enum.map(fn {_id, _n, s, v, r, d} -> {s, v, r, d} end) |> sum_numerators(rates)
+    # Total over ALL records via one division: sum the per-VPS integer sums (exact)
+    # then finalize once, so the total never drifts from the per-VPS figures by
+    # more than each VPS's own display rounding — identical to the old behaviour.
+    totals =
+      Enum.reduce(rows, %{sv: 0, sr: 0, sd: 0, seconds: 0}, fn r, acc ->
+        %{
+          sv: Decimal.add(to_dec(acc.sv), to_dec(r.sv)),
+          sr: Decimal.add(to_dec(acc.sr), to_dec(r.sr)),
+          sd: Decimal.add(to_dec(acc.sd), to_dec(r.sd)),
+          seconds: acc.seconds + (r.seconds || 0)
+        }
+      end)
 
-    total_seconds = Enum.reduce(records, 0, fn {_id, _n, s, _v, _r, _d}, acc -> acc + s end)
-
-    %{total_seconds: total_seconds, total_cost: finalize_amount(total_numerator), vpses: vpses}
+    %{
+      total_seconds: totals.seconds,
+      total_cost: totals |> aggregate_numerator(rates) |> finalize_amount(),
+      vpses: vpses
+    }
   end
 
   # Stable ordering for the customer breakdown: priciest VPS first, ties by name.
@@ -386,28 +416,30 @@ defmodule ControlPlane.Billing do
 
   # --- internal helpers -----------------------------------------------------
 
-  # Sums the EXACT per-record numerators (no division, so no intermediate
-  # rounding) for a list of `{seconds, vcpu, ram_mb, disk_gb}` tuples. Division
-  # by `@money_divisor` and rounding happen once, in `finalize_amount/1`.
-  defp sum_numerators(records, rates) do
-    Enum.reduce(records, Decimal.new(0), fn record, acc ->
-      Decimal.add(acc, record_numerator(record, rates))
-    end)
+  # Exact numerator from the SQL-aggregated integer sums (see moduledoc "Why we
+  # divide once"). Given sv=Σ(seconds*vcpu), sr=Σ(seconds*ram_mb),
+  # sd=Σ(seconds*disk_gb), the total numerator is the distributed form of the
+  # per-record sum:
+  #   Rv*1024*sv + Rg*sr + Rd*1024*sd
+  # so the only division is the final one by 3600*1024. Decimal mult/add are exact
+  # (no rounding for realistic magnitudes), so this reconciles bit-for-bit with the
+  # old per-record fold. A `nil` map (no rows for an aggregate query) and nil sums
+  # (a group with no matching rows) both fold to 0 via `to_dec/1`.
+  defp aggregate_numerator(nil, _rates), do: Decimal.new(0)
+
+  defp aggregate_numerator(%{sv: sv, sr: sr, sd: sd}, rates) do
+    vcpu_term = Decimal.mult(Decimal.mult(to_dec(sv), rates.vcpu), @mb_per_gb)
+    ram_term = Decimal.mult(to_dec(sr), rates.ram_gb)
+    disk_term = Decimal.mult(Decimal.mult(to_dec(sd), rates.disk_gb), @mb_per_gb)
+
+    Decimal.add(Decimal.add(vcpu_term, ram_term), disk_term)
   end
 
-  # Exact numerator for one record (see moduledoc "Why we divide once"):
-  #   seconds * (vcpu*rate.vcpu*1024 + ram_mb*rate.ram_gb + disk_gb*rate.disk_gb*1024)
-  # The *1024 on vcpu/disk folds the MB→GB factor into the numerator so the only
-  # division is the final one by 3600*1024.
-  defp record_numerator({seconds, vcpu, ram_mb, disk_gb}, rates) do
-    vcpu_term = Decimal.mult(Decimal.mult(Decimal.new(vcpu), rates.vcpu), @mb_per_gb)
-    ram_term = Decimal.mult(Decimal.new(ram_mb), rates.ram_gb)
-    disk_term = Decimal.mult(Decimal.mult(Decimal.new(disk_gb), rates.disk_gb), @mb_per_gb)
-
-    per_hour_scaled = Decimal.add(Decimal.add(vcpu_term, ram_term), disk_term)
-
-    Decimal.mult(Decimal.new(seconds), per_hour_scaled)
-  end
+  # SUM over a bigint expression comes back as a Decimal (Postgres numeric); a
+  # group/window with no rows yields nil. Normalise both to a Decimal.
+  defp to_dec(nil), do: Decimal.new(0)
+  defp to_dec(%Decimal{} = d), do: d
+  defp to_dec(i) when is_integer(i), do: Decimal.new(i)
 
   # Single division + rounding step shared by both payout paths so they reconcile
   # bit-for-bit.
