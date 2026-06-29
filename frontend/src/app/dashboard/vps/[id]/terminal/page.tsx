@@ -132,7 +132,20 @@ export default function VpsTerminalPage() {
         setConnState("error");
         return;
       }
-      const wsUrl = `${wsBase}/ws/console/${id}/`;
+      // Owner-checked console ticket — the WS handshake can't send the bearer
+      // header, so the server authorises this connection via a single-use ticket.
+      let ticket: string;
+      try {
+        ({ ticket } = await vpsApi.consoleTicket(id));
+      } catch {
+        if (destroyed) return;
+        term.writeln("\r\n\x1b[31mGeen console-toegang (is de VPS actief?).\x1b[0m");
+        setConnState("error");
+        return;
+      }
+      if (destroyed) return;
+
+      const wsUrl = `${wsBase}/ws/console/${id}/?ticket=${encodeURIComponent(ticket)}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;

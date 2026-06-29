@@ -163,6 +163,7 @@ defmodule ControlPlaneWeb.Router do
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
     post "/vpses/:id/start", VpsController, :start
     post "/vpses/:id/stop", VpsController, :stop
+    post "/vpses/:id/console-ticket", ConsoleController, :create_ticket
 
     # Self-service host onboarding (opt-in path; promotes :user -> :operator).
     get "/host/status", HostController, :status
@@ -183,6 +184,12 @@ defmodule ControlPlaneWeb.Router do
     post "/enroll-tokens", OperatorController, :create_enroll_token
     get "/nodes", OperatorController, :nodes
     get "/earnings", OperatorController, :earnings
+  end
+
+  # Browser console WebSocket. No router pipeline (a WS upgrade isn't JSON); the
+  # single-use ticket in the query string is the credential, redeemed here.
+  scope "/ws", ControlPlaneWeb do
+    get "/console/:id", ConsoleController, :ws
   end
 
   # bunk-agent onboarding / heartbeat / command API.

@@ -366,6 +366,11 @@ export const vpsApi = {
   delete: (id: string) => api.delete(`/vpses/${id}`),
   start: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/start`),
   stop: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/stop`),
+  // Mint a single-use console ticket (the WS handshake can't carry the bearer).
+  consoleTicket: async (id: string): Promise<{ ticket: string }> => {
+    const res = await api.post<{ ticket: string }>(`/vpses/${id}/console-ticket`);
+    return res.data;
+  },
 };
 
 

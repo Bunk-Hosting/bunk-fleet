@@ -15,7 +15,8 @@ defmodule ControlPlane.Application do
         {Phoenix.PubSub, name: ControlPlane.PubSub},
         ControlPlane.RateLimiter,
         # Tracks live console SSH sessions per user (duplicate keys = {:user, id}).
-        {Registry, keys: :duplicate, name: ControlPlane.Console.Registry}
+        {Registry, keys: :duplicate, name: ControlPlane.Console.Registry},
+        ControlPlane.Console.Tickets
       ] ++
         reconciler_child() ++
         [
