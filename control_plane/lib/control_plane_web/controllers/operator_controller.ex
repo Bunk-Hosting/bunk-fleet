@@ -19,6 +19,7 @@ defmodule ControlPlaneWeb.OperatorController do
   alias ControlPlane.Fleet.{Node, Region}
 
   @default_ttl_seconds 3600
+  @max_ttl_seconds 86_400
   @default_window_days 30
 
   def create_enroll_token(conn, params) do
@@ -132,12 +133,12 @@ defmodule ControlPlaneWeb.OperatorController do
   defp parse_tier(%{"tier" => _}), do: {:error, :invalid_tier}
   defp parse_tier(_params), do: {:ok, :community}
 
-  defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0, do: {:ok, ttl}
+  defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0 and ttl <= @max_ttl_seconds, do: {:ok, ttl}
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl), do: {:error, :invalid_ttl}
 
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_binary(ttl) do
     case Integer.parse(ttl) do
-      {n, ""} when n > 0 -> {:ok, n}
+      {n, ""} when n > 0 and n <= @max_ttl_seconds -> {:ok, n}
       _ -> {:error, :invalid_ttl}
     end
   end

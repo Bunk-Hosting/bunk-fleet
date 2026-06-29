@@ -7,13 +7,12 @@ defmodule ControlPlaneWeb.Plugs.RateLimit do
 
       plug ControlPlaneWeb.Plugs.RateLimit, bucket: "auth", max: 30, window_ms: 60_000
 
-  The client is identified by the first `X-Forwarded-For` hop when present (the
-  control plane runs behind a trusted proxy / Cloudflare), falling back to
-  `conn.remote_ip`. On exceeding `max` requests within `window_ms`, the connection
-  is halted with `429` + a `Retry-After` header and `{"error": "rate_limited"}`.
-
-  NOTE: trusting `X-Forwarded-For` is only safe behind a proxy that overwrites it;
-  exposed directly to the internet a client could spoof it to dodge the limit.
+  The client is identified by `CF-Connecting-IP` (set by Cloudflare, which the
+  client cannot forge), falling back to `conn.remote_ip`. We deliberately do NOT
+  trust the left-most `X-Forwarded-For` hop, which is client-supplied and would
+  let an attacker rotate a fake hop to get unlimited buckets. On exceeding `max`
+  requests within `window_ms` the connection is halted with `429` + `Retry-After`
+  and `{"error": "rate_limited"}`.
   """
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
@@ -49,9 +48,9 @@ defmodule ControlPlaneWeb.Plugs.RateLimit do
   end
 
   defp client_ip(conn) do
-    case get_req_header(conn, "x-forwarded-for") do
-      [forwarded | _] when is_binary(forwarded) ->
-        forwarded |> String.split(",") |> List.first() |> String.trim()
+    case get_req_header(conn, "cf-connecting-ip") do
+      [ip | _] when is_binary(ip) and ip != "" ->
+        ip
 
       _ ->
         conn.remote_ip |> :inet.ntoa() |> to_string()

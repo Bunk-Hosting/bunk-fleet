@@ -26,6 +26,12 @@ defmodule ControlPlaneWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Throttle the public browser auth pages (login/register/MFA) per-client to
+  # blunt password + 6-digit-TOTP brute force. Keyed on CF-Connecting-IP.
+  pipeline :auth_throttle do
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "browser_auth", max: 20, window_ms: 60_000
+  end
+
   # Operator/admin LiveView dashboard.
   # Operator/admin fleet dashboard — shows EVERY node + EVERY customer's VPS, so
   # it must never be reachable unauthenticated or by a regular customer. Gated to
@@ -41,7 +47,7 @@ defmodule ControlPlaneWeb.Router do
 
   # Customer portal: public auth pages.
   scope "/", ControlPlaneWeb do
-    pipe_through :browser
+    pipe_through [:browser, :auth_throttle]
 
     get "/login", UserSessionController, :new
     post "/login", UserSessionController, :create
