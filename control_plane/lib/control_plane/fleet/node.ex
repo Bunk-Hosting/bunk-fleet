@@ -8,6 +8,7 @@ defmodule ControlPlane.Fleet.Node do
   import Ecto.Changeset
 
   alias ControlPlane.Fleet.Region
+  alias ControlPlane.Net
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -108,40 +109,22 @@ defmodule ControlPlane.Fleet.Node do
 
   defp validate_ipv4(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->
-      if valid_ipv4?(value), do: [], else: [{field, "is not a valid IPv4 address"}]
+      if Net.valid?(value), do: [], else: [{field, "is not a valid IPv4 address"}]
     end)
   end
-
-  defp valid_ipv4?(value) when is_binary(value) do
-    case String.split(value, ".") do
-      [_, _, _, _] = parts ->
-        Enum.all?(parts, fn p ->
-          match?({n, ""} when n >= 0 and n <= 255, Integer.parse(p))
-        end)
-
-      _ ->
-        false
-    end
-  end
-
-  defp valid_ipv4?(_), do: false
 
   defp validate_range_order(changeset) do
     s = get_field(changeset, :vps_range_start)
     e = get_field(changeset, :vps_range_end)
 
-    if is_binary(s) and is_binary(e) and valid_ipv4?(s) and valid_ipv4?(e) and
-         ipv4_to_int(s) > ipv4_to_int(e) do
+    if is_binary(s) and is_binary(e) and Net.valid?(s) and Net.valid?(e) and
+         Net.to_int(s) > Net.to_int(e) do
       add_error(changeset, :vps_range_end, "must be >= vps_range_start")
     else
       changeset
     end
   end
 
-  defp ipv4_to_int(ip) do
-    [a, b, c, d] = ip |> String.split(".") |> Enum.map(&String.to_integer/1)
-    a * 16_777_216 + b * 65_536 + c * 256 + d
-  end
 
   @doc """
   Changeset applied when a node reports a heartbeat.

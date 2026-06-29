@@ -14,6 +14,7 @@ defmodule ControlPlane.Fleet.IpPool do
 
   alias ControlPlane.Repo
   alias ControlPlane.Fleet.{Node, Vps}
+  alias ControlPlane.Net
 
   @doc """
   Allocates the next free address. Returns `{:ok, %{ip: ip, config: ip_config}}`
@@ -22,8 +23,8 @@ defmodule ControlPlane.Fleet.IpPool do
   """
   def allocate(node \\ nil) do
     net = node_network(node)
-    start_n = ip_to_int(net.range_start)
-    end_n = ip_to_int(net.range_end)
+    start_n = Net.to_int(net.range_start)
+    end_n = Net.to_int(net.range_end)
 
     cond do
       start_n > end_n ->
@@ -42,7 +43,7 @@ defmodule ControlPlane.Fleet.IpPool do
         {:error, :pool_exhausted}
 
       n ->
-        ip = int_to_ip(n)
+        ip = Net.from_int(n)
         {:ok, %{ip: ip, config: "ip=#{ip}/#{net.prefix},gw=#{net.gateway}"}}
     end
   end
@@ -83,24 +84,9 @@ defmodule ControlPlane.Fleet.IpPool do
         where: not is_nil(v.ip_address) and v.status != :deleted,
         select: v.ip_address
     )
-    |> Enum.flat_map(fn ip -> if valid?(ip), do: [ip_to_int(ip)], else: [] end)
+    |> Enum.flat_map(fn ip -> if Net.valid?(ip), do: [Net.to_int(ip)], else: [] end)
     |> Enum.filter(fn n -> n >= start_n and n <= end_n end)
     |> MapSet.new()
   end
 
-  defp valid?(ip) do
-    case String.split(ip, ".") do
-      [_, _, _, _] = parts -> Enum.all?(parts, &match?({_, ""}, Integer.parse(&1)))
-      _ -> false
-    end
-  end
-
-  defp ip_to_int(ip) do
-    [a, b, c, d] = ip |> String.split(".") |> Enum.map(&String.to_integer/1)
-    a * 16_777_216 + b * 65_536 + c * 256 + d
-  end
-
-  defp int_to_ip(n) do
-    "#{div(n, 16_777_216)}.#{rem(div(n, 65_536), 256)}.#{rem(div(n, 256), 256)}.#{rem(n, 256)}"
-  end
 end
