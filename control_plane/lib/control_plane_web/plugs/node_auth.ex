@@ -8,7 +8,8 @@ defmodule ControlPlaneWeb.Plugs.NodeAuth do
   token) the connection is halted with a `401` JSON body `{"error": "..."}`.
   """
   import Plug.Conn
-  import Phoenix.Controller, only: [json: 2]
+
+  alias ControlPlaneWeb.Plugs.Bearer
 
   alias ControlPlane.Enrollment
 
@@ -19,25 +20,12 @@ defmodule ControlPlaneWeb.Plugs.NodeAuth do
 
   @impl true
   def call(conn, _opts) do
-    with {:ok, token} <- bearer_token(conn),
+    with {:ok, token} <- Bearer.token(conn),
          {:ok, node} <- Enrollment.authenticate_node(token) do
       assign(conn, :current_node, node)
     else
-      _ -> unauthorized(conn)
+      _ -> Bearer.unauthorized(conn)
     end
   end
 
-  defp bearer_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> {:ok, String.trim(token)}
-      _ -> :error
-    end
-  end
-
-  defp unauthorized(conn) do
-    conn
-    |> put_status(:unauthorized)
-    |> json(%{error: "unauthorized"})
-    |> halt()
-  end
 end

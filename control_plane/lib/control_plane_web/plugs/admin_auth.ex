@@ -12,8 +12,7 @@ defmodule ControlPlaneWeb.Plugs.AdminAuth do
   connection is halted with a `401` JSON body `{"error": "unauthorized"}`. The
   comparison is constant-time via `Plug.Crypto.secure_compare/2`.
   """
-  import Plug.Conn
-  import Phoenix.Controller, only: [json: 2]
+  alias ControlPlaneWeb.Plugs.Bearer
 
   @behaviour Plug
 
@@ -23,11 +22,11 @@ defmodule ControlPlaneWeb.Plugs.AdminAuth do
   @impl true
   def call(conn, _opts) do
     with {:ok, expected} <- configured_token(),
-         {:ok, presented} <- bearer_token(conn),
+         {:ok, presented} <- Bearer.token(conn),
          true <- Plug.Crypto.secure_compare(presented, expected) do
       conn
     else
-      _ -> unauthorized(conn)
+      _ -> Bearer.unauthorized(conn)
     end
   end
 
@@ -38,17 +37,4 @@ defmodule ControlPlaneWeb.Plugs.AdminAuth do
     end
   end
 
-  defp bearer_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> {:ok, String.trim(token)}
-      _ -> :error
-    end
-  end
-
-  defp unauthorized(conn) do
-    conn
-    |> put_status(:unauthorized)
-    |> json(%{error: "unauthorized"})
-    |> halt()
-  end
 end

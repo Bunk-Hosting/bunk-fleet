@@ -11,7 +11,8 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
   `{"error": "unauthorized"}`.
   """
   import Plug.Conn
-  import Phoenix.Controller, only: [json: 2]
+
+  alias ControlPlaneWeb.Plugs.Bearer
 
   alias ControlPlane.Accounts
 
@@ -22,29 +23,13 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
 
   @impl true
   def call(conn, _opts) do
-    with {:ok, encoded} <- bearer_token(conn),
+    with {:ok, encoded} <- Bearer.token(conn),
          {:ok, token} <- Base.url_decode64(encoded, padding: false),
          %Accounts.User{} = user <- Accounts.get_user_by_session_token(token) do
       assign(conn, :current_user, user)
     else
-      _ -> unauthorized(conn)
+      _ -> Bearer.unauthorized(conn)
     end
   end
 
-  # The token alphabet is URL-safe Base64 (no whitespace), so we match the header
-  # strictly rather than trimming — a malformed header is an auth failure, not
-  # something to silently repair. An empty token short-circuits to :error.
-  defp bearer_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] when token != "" -> {:ok, token}
-      _ -> :error
-    end
-  end
-
-  defp unauthorized(conn) do
-    conn
-    |> put_status(:unauthorized)
-    |> json(%{error: "unauthorized"})
-    |> halt()
-  end
 end
