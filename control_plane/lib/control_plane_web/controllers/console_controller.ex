@@ -42,7 +42,7 @@ defmodule ControlPlaneWeb.ConsoleController do
     end
   end
 
-  defp console_user, do: (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "root"
+  defp console_user, do: (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "ubuntu"
 
   defp error(conn, status, msg), do: conn |> put_status(status) |> json(%{error: msg})
 end

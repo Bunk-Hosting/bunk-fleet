@@ -88,7 +88,7 @@ if config_env() == :prod do
     console: [
       ssh_private_key: console_private_key,
       ssh_public_key: console_public_key,
-      ssh_user: System.get_env("CONSOLE_SSH_USER") || "root"
+      ssh_user: System.get_env("CONSOLE_SSH_USER") || "ubuntu"
     ]
 
   config :control_plane, :mollie, api_key: System.get_env("MOLLIE_API_KEY")

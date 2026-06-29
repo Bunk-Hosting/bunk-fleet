@@ -71,24 +71,33 @@ defmodule ControlPlane.Provisioning do
   live (non-`:deleted`/non-`:failed`) VPSes.
   """
   def create_vps_for_owner(%{id: owner_id, email: email}, attrs) do
-    if count_live_vpses(owner_id) >= max_vpses_per_owner() do
-      {:error, :quota_exceeded}
-    else
-      full =
-        attrs
-        |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
-        |> Map.put(:owner_id, owner_id)
-        |> Map.put(:owner_email, email)
+    Repo.transaction(fn ->
+      # Serialize per owner so two concurrent creates can't both pass the quota
+      # check and exceed the cap (TOCTOU). The lock is released at commit/rollback.
+      Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:owner_vps, owner_id})])
 
-      case create_vps(full) do
-        {:ok, %{vps: vps}} = ok ->
-          ControlPlane.Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
-          ok
+      if count_live_vpses(owner_id) >= max_vpses_per_owner() do
+        Repo.rollback(:quota_exceeded)
+      else
+        full =
+          attrs
+          |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+          |> Map.put(:owner_id, owner_id)
+          |> Map.put(:owner_email, email)
 
-        other ->
-          other
+        case create_vps(full) do
+          {:ok, %{vps: vps}} ->
+            ControlPlane.Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
+            %{vps: vps}
+
+          {:error, _op, reason, _changes} ->
+            Repo.rollback(reason)
+
+          {:error, reason} ->
+            Repo.rollback(reason)
+        end
       end
-    end
+    end)
   end
 
   @doc """
