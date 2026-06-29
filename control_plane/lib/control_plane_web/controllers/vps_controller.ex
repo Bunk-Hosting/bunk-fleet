@@ -13,9 +13,8 @@ defmodule ControlPlaneWeb.VpsController do
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Region, Vps}
-  alias ControlPlane.Provisioning
+  alias ControlPlane.{Credits, Fleet, Provisioning}
+  alias ControlPlane.Fleet.{Package, Region, Vps}
 
   def index(conn, _params) do
     vpses =
@@ -39,16 +38,39 @@ defmodule ControlPlaneWeb.VpsController do
     user = conn.assigns.current_user
 
     with {:ok, region_id} <- resolve_region_id(params),
-         {:ok, %{vps: vps}} <- Provisioning.create_vps_for_owner(user, build_attrs(params, region_id)) do
+         attrs = build_attrs(params, region_id),
+         %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
+         price = package_price_cents(pkg),
+         {:ok, _charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
+         {:ok, %{vps: vps}} <- charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price) do
       conn
       |> put_status(:created)
       |> json(%{vps: vps_json(vps)})
     else
+      nil -> error(conn, :unprocessable_entity, "no_matching_package")
       {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
+      {:error, :insufficient_credits} -> error(conn, :payment_required, "insufficient_credits")
       {:error, :quota_exceeded} -> error(conn, :too_many_requests, "quota_exceeded")
       {:error, :no_capacity} -> error(conn, :conflict, "no_capacity")
       {:error, _reason} -> error(conn, :unprocessable_entity, "invalid_vps")
     end
+  end
+
+  # Provision after the wallet was charged; refund if provisioning fails so a
+  # failed create never leaves the customer debited.
+  defp charge_safe_create(user, attrs, price_cents) do
+    case Provisioning.create_vps_for_owner(user, attrs) do
+      {:ok, _} = ok ->
+        ok
+
+      other ->
+        Credits.refund(user.id, price_cents, "vps_refund", "Terugbetaling: VPS-aanmaak mislukt")
+        other
+    end
+  end
+
+  defp package_price_cents(%Package{price_monthly: price}) do
+    price |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
   end
 
   def delete(conn, %{"id" => id}) do

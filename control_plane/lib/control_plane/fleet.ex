@@ -77,6 +77,37 @@ defmodule ControlPlane.Fleet do
 
   def get_package(id), do: Repo.get(Package, id)
 
+  @doc """
+  The available package whose specs exactly match `vcpu`/`ram_mb`/`disk_gb`, or
+  `nil`. Lets a self-service VPS be priced from the catalogue server-side rather
+  than trusting any client-supplied price — an unmatched spec is simply rejected.
+  """
+  def package_for_specs(vcpu, ram_mb, disk_gb) do
+    with v when is_integer(v) <- coerce_int(vcpu),
+         m when is_integer(m) <- coerce_int(ram_mb),
+         d when is_integer(d) <- coerce_int(disk_gb) do
+      Repo.one(
+        from p in Package,
+          where:
+            p.is_available == true and p.cpu_cores == ^v and
+              p.ram_gb == ^div(m, 1024) and p.disk_gb == ^d,
+          limit: 1
+      )
+    else
+      _ -> nil
+    end
+  end
+
+  defp coerce_int(v) when is_integer(v), do: v
+  defp coerce_int(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> nil
+    end
+  end
+
+  defp coerce_int(_), do: nil
+
   @doc "The default region for self-service create (the old app is single-region)."
   def default_region do
     Repo.one(from r in Region, order_by: [asc: r.code], limit: 1)
