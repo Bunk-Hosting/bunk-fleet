@@ -205,10 +205,8 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:reservation, fn repo, _changes ->
       held_reservation!(vps_id) |> Reservation.changeset(%{status: :released}) |> repo.update()
     end)
-    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
-      node = Repo.get!(Node, reservation.node_id)
-
-      Node.add_capacity_changeset(node, reservation)
+    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
+      Node.add_capacity(repo, reservation)
     end)
     |> Repo.transaction()
   end
@@ -518,10 +516,8 @@ defmodule ControlPlane.Provisioning do
       |> Reservation.changeset(%{status: :released})
       |> repo.update()
     end)
-    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
-      node = Repo.get!(Node, reservation.node_id)
-
-      Node.add_capacity_changeset(node, reservation)
+    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
+      Node.add_capacity(repo, reservation)
     end)
   end
 
@@ -544,10 +540,8 @@ defmodule ControlPlane.Provisioning do
       |> Reservation.changeset(%{status: :released})
       |> repo.update()
     end)
-    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
-      node = Repo.get!(Node, reservation.node_id)
-
-      Node.add_capacity_changeset(node, reservation)
+    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
+      Node.add_capacity(repo, reservation)
     end)
   end
 
@@ -664,10 +658,8 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:reservation, fn repo, _changes ->
       held_reservation!(vps.id) |> Reservation.changeset(%{status: :released}) |> repo.update()
     end)
-    |> Multi.update(:restore_capacity, fn %{reservation: reservation} ->
-      node = Repo.get!(Node, reservation.node_id)
-
-      Node.add_capacity_changeset(node, reservation)
+    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
+      Node.add_capacity(repo, reservation)
     end)
     |> Multi.update_all(
       :cancel_commands,

@@ -6,6 +6,7 @@ defmodule ControlPlane.Fleet.Node do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import Ecto.Query
 
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Net
@@ -89,15 +90,19 @@ defmodule ControlPlane.Fleet.Node do
   # If a worker declares ANY VPS-network field, require a complete, valid tuple so
   # the allocator can never crash on bad input or hand out a wrong-subnet address.
   @doc """
-  Returns a changeset that adds a reservation's (or request's) vcpu/ram/disk back
-  onto the node's available capacity — the one home for capacity-release math.
+  Atomically adds a reservation's vcpu/ram/disk back onto its node's available
+  capacity with a single SQL increment — no read-modify-write, so a capacity
+  release can't clobber a concurrent scheduler decrement (lost update). Shaped
+  for `Ecto.Multi.run/3`: returns `{:ok, rows_updated}`.
   """
-  def add_capacity_changeset(%__MODULE__{} = node, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
-    change(node,
-      available_vcpu: node.available_vcpu + vcpu,
-      available_ram_mb: node.available_ram_mb + ram_mb,
-      available_disk_gb: node.available_disk_gb + disk_gb
-    )
+  def add_capacity(repo, %{node_id: node_id, vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
+    {count, _} =
+      repo.update_all(
+        from(n in __MODULE__, where: n.id == ^node_id),
+        inc: [available_vcpu: vcpu, available_ram_mb: ram_mb, available_disk_gb: disk_gb]
+      )
+
+    {:ok, count}
   end
 
   @doc "Returns a changeset that subtracts vcpu/ram/disk from the node's available capacity."

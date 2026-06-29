@@ -341,10 +341,8 @@ defmodule ControlPlane.Fleet do
   defp release_reservation(%Reservation{} = reservation) do
     Multi.new()
     |> Multi.update(:reservation, Reservation.changeset(reservation, %{status: :released}))
-    |> Multi.update(:restore_capacity, fn _changes ->
-      node = Repo.get!(Node, reservation.node_id)
-
-      Node.add_capacity_changeset(node, reservation)
+    |> Multi.run(:restore_capacity, fn repo, _changes ->
+      Node.add_capacity(repo, reservation)
     end)
     |> Repo.transaction()
   end
