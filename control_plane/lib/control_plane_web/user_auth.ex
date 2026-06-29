@@ -94,7 +94,12 @@ defmodule ControlPlaneWeb.UserAuth do
     socket = mount_current_user(socket, session)
     user = socket.assigns.current_user
 
-    if user && user.role in [:operator, :admin] do
+    # ADMIN ONLY. :operator is a SELF-SERVICE role (any user can take it via
+    # POST /api/v1/host/activate to onboard their own node), so it must NOT
+    # unlock the global fleet dashboard, which renders every tenant's VPS + node
+    # unscoped. Operators get their OWN, owner-scoped view via the operator REST
+    # API (RequireOperator). Admitting :operator here would be cross-tenant leak.
+    if user && user.role == :admin do
       {:cont, socket}
     else
       socket =
