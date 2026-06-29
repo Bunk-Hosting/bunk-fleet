@@ -70,7 +70,7 @@ defmodule ControlPlane.Billing do
 
   alias ControlPlane.Repo
   alias ControlPlane.Billing.UsageRecord
-  alias ControlPlane.Fleet.{Node, Vps}
+  alias ControlPlane.Fleet.{Command, Node, Vps}
 
   # Exact divisor folded into every per-record numerator: seconds→hours (3600)
   # times MB→GB (1024). Kept as an integer Decimal so the single final division
@@ -136,12 +136,21 @@ defmodule ControlPlane.Billing do
     # Candidate ids only: select active, placed VPSes whose node has an operator.
     # We don't trust this snapshot's watermark — it's re-read under a row lock
     # inside the transaction below.
+    # VPS ids whose teardown the operator is sitting on: once a stop/suspend/delete
+    # command is in flight, metering pauses — removing the incentive to withhold
+    # the result to keep earning on a VPS the customer believes is stopped.
+    teardown_in_flight =
+      from c in Command,
+        where: c.kind in [:stop, :pause, :delete] and c.status in [:pending, :delivered],
+        select: c.vps_id
+
     candidates =
       Repo.all(
         from v in Vps,
           join: n in Node,
           on: n.id == v.node_id,
           where: v.status == :active and not is_nil(v.node_id) and not is_nil(n.owner_email),
+          where: v.id not in subquery(teardown_in_flight),
           select: {v.id, n.owner_email}
       )
 
