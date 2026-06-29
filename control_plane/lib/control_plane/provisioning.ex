@@ -482,11 +482,20 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:vps, fn repo, _changes ->
       vps = repo.get!(Vps, vps_id)
 
+      # Keep the IP the control plane allocated + injected via cloud-init. Only
+      # take the agent-reported IP when it actually has one (e.g. DHCP); a nil/
+      # empty report must NOT wipe the address we already assigned, or the VPS
+      # becomes unreachable (no console, no SSH).
+      ip = case result["ip"] do
+        v when is_binary(v) and v != "" -> v
+        _ -> vps.ip_address
+      end
+
       vps
       |> Vps.changeset(%{
         status: :active,
         provider_vm_id: result["vm_id"],
-        ip_address: result["ip"]
+        ip_address: ip
       })
       |> repo.update()
     end)
