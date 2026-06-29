@@ -6,12 +6,45 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/curve25519"
 )
+
+// validateOverlay rejects control-plane-supplied overlay parameters that could
+// break out of the wg-quick config (C1): a newline in any field would inject a
+// PostUp= directive that wg-quick runs as root. Validate strictly before render.
+func validateOverlay(privKey, overlayIP, hubPubKey, hubEndpoint string) error {
+	for _, s := range []string{privKey, overlayIP, hubPubKey, hubEndpoint} {
+		if strings.ContainsAny(s, "\n\r\t\x00") {
+			return fmt.Errorf("overlay: control character in parameter")
+		}
+	}
+	if net.ParseIP(overlayIP) == nil {
+		return fmt.Errorf("overlay: invalid overlay IP %q", overlayIP)
+	}
+	if k, err := base64.StdEncoding.DecodeString(hubPubKey); err != nil || len(k) != 32 {
+		return fmt.Errorf("overlay: hub public key is not a 32-byte base64 key")
+	}
+	if k, err := base64.StdEncoding.DecodeString(privKey); err != nil || len(k) != 32 {
+		return fmt.Errorf("overlay: private key is not a 32-byte base64 key")
+	}
+	host, port, err := net.SplitHostPort(hubEndpoint)
+	if err != nil {
+		return fmt.Errorf("overlay: invalid endpoint %q: %w", hubEndpoint, err)
+	}
+	if p, err := strconv.Atoi(port); err != nil || p < 1 || p > 65535 {
+		return fmt.Errorf("overlay: invalid endpoint port %q", port)
+	}
+	if host == "" {
+		return fmt.Errorf("overlay: empty endpoint host")
+	}
+	return nil
+}
 
 // generateWGKey creates a WireGuard (Curve25519) keypair, base64-encoded.
 func generateWGKey() (priv, pub string, err error) {
@@ -51,6 +84,11 @@ PersistentKeepalive = 25
 // config is on disk for the operator to apply).
 func applyOverlay(logger *slog.Logger, st persistedState) {
 	if st.WGPrivateKey == "" || st.OverlayIP == "" || st.HubPublicKey == "" {
+		return
+	}
+
+	if err := validateOverlay(st.WGPrivateKey, st.OverlayIP, st.HubPublicKey, st.Endpoint); err != nil {
+		logger.Warn("overlay: rejecting malformed parameters from control plane", "err", err)
 		return
 	}
 

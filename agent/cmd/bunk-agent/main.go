@@ -225,6 +225,13 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 // cancellation or a fatal poll error) and dispatches each command. A panic or
 // failure handling one command must not stop the loop.
 func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command) {
+	// H4: replay protection. A MITM on a cleartext channel (or a buggy CP) could
+	// re-deliver a previously-seen command — e.g. replay a delete{vm_id} after
+	// that VMID has been reassigned to another tenant. Process each Command.ID at
+	// most once (bounded FIFO so the set can't grow without limit).
+	const maxSeen = 1024
+	seen := make(map[string]struct{}, maxSeen)
+	order := make([]string, 0, maxSeen)
 	for {
 		select {
 		case <-ctx.Done():
@@ -234,6 +241,18 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 			if !ok {
 				logger.Info("command stream closed")
 				return
+			}
+			if cmd.ID != "" {
+				if _, dup := seen[cmd.ID]; dup {
+					logger.Warn("ignoring duplicate command (replay protection)", "id", cmd.ID, "kind", string(cmd.Kind))
+					continue
+				}
+				seen[cmd.ID] = struct{}{}
+				order = append(order, cmd.ID)
+				if len(order) > maxSeen {
+					delete(seen, order[0])
+					order = order[1:]
+				}
 			}
 			handleCommand(ctx, logger, prov, cp, cmd)
 		}

@@ -7,8 +7,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -219,6 +222,9 @@ func (c Config) validate() error {
 	if c.ControlPlaneURL == "" {
 		return errors.New("config: control-plane-url is required")
 	}
+	if err := validateControlPlaneURL(c.ControlPlaneURL); err != nil {
+		return err
+	}
 	switch c.Hypervisor {
 	case "proxmox":
 		if c.Proxmox.Host == "" || c.Proxmox.Node == "" {
@@ -241,4 +247,40 @@ func (c Config) validate() error {
 		return errors.New("config: heartbeat-interval must be positive")
 	}
 	return nil
+}
+
+// validateControlPlaneURL enforces https for any non-internal control-plane host
+// (H3): plain http would let a MITM on the operator's hostile LAN steal the
+// agent token and inject/replay commands. http is allowed ONLY for loopback,
+// RFC1918 private IPs, or single-label hostnames (e.g. a docker service name).
+func validateControlPlaneURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("config: invalid control-plane-url: %w", err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isInternalHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("config: control-plane-url must use https for remote host %q (plain http is only allowed for loopback/private)", u.Hostname())
+	default:
+		return fmt.Errorf("config: control-plane-url must be http or https, got %q", u.Scheme)
+	}
+}
+
+func isInternalHost(host string) bool {
+	switch {
+	case host == "":
+		return false
+	case host == "localhost":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+	// single-label hostname (no dot), e.g. a docker service name like bf-prod-cp
+	return !strings.Contains(host, ".")
 }
