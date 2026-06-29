@@ -141,6 +141,27 @@ defmodule ControlPlane.Credits do
     end)
   end
 
+  @doc "Creates a pending top-up backed by a Mollie payment, keyed on its id."
+  def create_mollie_topup(user_id, amount_cents, mollie_payment_id) do
+    %TopupRequest{}
+    |> TopupRequest.changeset(%{
+      user_id: user_id,
+      amount_cents: amount_cents,
+      reference: mollie_payment_id,
+      mollie_payment_id: mollie_payment_id,
+      status: :pending
+    })
+    |> Repo.insert()
+  end
+
+  @doc "Credits the wallet for a paid Mollie payment (idempotent via mark_topup_paid)."
+  def mark_topup_paid_by_mollie_id(mollie_payment_id) do
+    case Repo.get_by(TopupRequest, mollie_payment_id: mollie_payment_id) do
+      nil -> {:error, :not_found}
+      %TopupRequest{id: id} -> mark_topup_paid(id)
+    end
+  end
+
   defp generate_reference do
     rand = :crypto.strong_rand_bytes(5) |> Base.encode32(padding: false) |> binary_part(0, 8)
     "BUNK-" <> rand

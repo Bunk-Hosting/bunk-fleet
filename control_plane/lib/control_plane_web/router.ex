@@ -129,6 +129,14 @@ defmodule ControlPlaneWeb.Router do
   end
 
   # User accounts: open registration/login, then authenticated session routes.
+  # Public Mollie webhook (no auth, no rate-limit — Mollie calls it server-side;
+  # safety comes from fetch-to-verify + idempotent crediting, not from auth).
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :api
+
+    post "/billing/mollie/webhook", MollieController, :webhook
+  end
+
   scope "/api/v1", ControlPlaneWeb do
     pipe_through :auth_public
 
@@ -163,6 +171,9 @@ defmodule ControlPlaneWeb.Router do
 
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
+
+    # Mollie wallet top-up: create a payment, return its checkout URL.
+    post "/billing/topup", MollieController, :topup
   end
 
   # Operator self-service: onboard nodes + track earnings (role-gated).

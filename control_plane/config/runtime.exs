@@ -91,6 +91,8 @@ if config_env() == :prod do
       ssh_user: System.get_env("CONSOLE_SSH_USER") || "root"
     ]
 
+  config :control_plane, :mollie, api_key: System.get_env("MOLLIE_API_KEY")
+
   # Billing rates (money per resource-hour) as decimal strings — `ControlPlane.Billing`
   # coerces them to Decimal so money math stays exact. Non-zero defaults so a fresh
   # prod deploy meters something rather than billing everyone €0.

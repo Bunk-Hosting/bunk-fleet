@@ -16,6 +16,7 @@ defmodule ControlPlane.Credits.TopupRequest do
     field :reference, :string
     field :status, Ecto.Enum, values: [:pending, :paid, :cancelled], default: :pending
     field :paid_at, :utc_datetime
+    field :mollie_payment_id, :string
     belongs_to :user, ControlPlane.Accounts.User
 
     timestamps(type: :utc_datetime)
@@ -23,7 +24,7 @@ defmodule ControlPlane.Credits.TopupRequest do
 
   def changeset(req, attrs) do
     req
-    |> cast(attrs, [:user_id, :amount_cents, :reference, :status, :paid_at])
+    |> cast(attrs, [:user_id, :amount_cents, :reference, :status, :paid_at, :mollie_payment_id])
     |> validate_required([:user_id, :amount_cents, :reference, :status])
     |> validate_number(:amount_cents, greater_than_or_equal_to: 500, less_than_or_equal_to: 100_000)
     |> unique_constraint(:reference)
