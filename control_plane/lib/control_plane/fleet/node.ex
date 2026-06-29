@@ -88,6 +88,27 @@ defmodule ControlPlane.Fleet.Node do
 
   # If a worker declares ANY VPS-network field, require a complete, valid tuple so
   # the allocator can never crash on bad input or hand out a wrong-subnet address.
+  @doc """
+  Returns a changeset that adds a reservation's (or request's) vcpu/ram/disk back
+  onto the node's available capacity — the one home for capacity-release math.
+  """
+  def add_capacity_changeset(%__MODULE__{} = node, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
+    change(node,
+      available_vcpu: node.available_vcpu + vcpu,
+      available_ram_mb: node.available_ram_mb + ram_mb,
+      available_disk_gb: node.available_disk_gb + disk_gb
+    )
+  end
+
+  @doc "Returns a changeset that subtracts vcpu/ram/disk from the node's available capacity."
+  def subtract_capacity_changeset(%__MODULE__{} = node, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
+    change(node,
+      available_vcpu: node.available_vcpu - vcpu,
+      available_ram_mb: node.available_ram_mb - ram_mb,
+      available_disk_gb: node.available_disk_gb - disk_gb
+    )
+  end
+
   defp validate_vps_network(changeset) do
     declared? =
       Enum.any?([:vps_range_start, :vps_range_end, :vps_gateway, :vps_cidr_prefix], fn f ->

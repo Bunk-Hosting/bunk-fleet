@@ -115,11 +115,7 @@ defmodule ControlPlane.Fleet.Scheduler do
   defp frac(remaining, total), do: remaining / total
 
   defp decrement_changeset(%Node{} = node, request) do
-    Ecto.Changeset.change(node,
-      available_vcpu: node.available_vcpu - request.vcpu,
-      available_ram_mb: node.available_ram_mb - request.ram_mb,
-      available_disk_gb: node.available_disk_gb - request.disk_gb
-    )
+    Node.subtract_capacity_changeset(node, request)
   end
 
   defp reservation_changeset(%Node{} = node, request, opts) do

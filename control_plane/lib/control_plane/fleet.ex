@@ -344,11 +344,7 @@ defmodule ControlPlane.Fleet do
     |> Multi.update(:restore_capacity, fn _changes ->
       node = Repo.get!(Node, reservation.node_id)
 
-      Ecto.Changeset.change(node,
-        available_vcpu: node.available_vcpu + reservation.vcpu,
-        available_ram_mb: node.available_ram_mb + reservation.ram_mb,
-        available_disk_gb: node.available_disk_gb + reservation.disk_gb
-      )
+      Node.add_capacity_changeset(node, reservation)
     end)
     |> Repo.transaction()
   end
