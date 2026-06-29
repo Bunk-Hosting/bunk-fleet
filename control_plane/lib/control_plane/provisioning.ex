@@ -203,10 +203,10 @@ defmodule ControlPlane.Provisioning do
       repo.get!(Vps, vps_id) |> Vps.changeset(%{status: :failed}) |> repo.update()
     end)
     |> Multi.run(:reservation, fn repo, _changes ->
-      held_reservation!(vps_id) |> Reservation.changeset(%{status: :released}) |> repo.update()
+      release_reservation(repo, held_reservation(repo, vps_id))
     end)
     |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
-      Node.add_capacity(repo, reservation)
+      restore_if_present(repo, reservation)
     end)
     |> Repo.transaction()
   end
@@ -491,9 +491,15 @@ defmodule ControlPlane.Provisioning do
       })
       |> repo.update()
     end)
-    |> Multi.update(:reservation, fn _changes ->
-      reservation = held_reservation!(vps_id)
-      Reservation.changeset(reservation, %{status: :committed})
+    |> Multi.run(:reservation, fn repo, _changes ->
+      case held_reservation(repo, vps_id) do
+        nil ->
+          Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
+          {:ok, nil}
+
+        reservation ->
+          reservation |> Reservation.changeset(%{status: :committed}) |> repo.update()
+      end
     end)
   end
 
@@ -510,14 +516,10 @@ defmodule ControlPlane.Provisioning do
       |> repo.update()
     end)
     |> Multi.run(:reservation, fn repo, _changes ->
-      reservation = held_reservation!(vps_id)
-
-      reservation
-      |> Reservation.changeset(%{status: :released})
-      |> repo.update()
+      release_reservation(repo, held_reservation(repo, vps_id))
     end)
     |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
-      Node.add_capacity(repo, reservation)
+      restore_if_present(repo, reservation)
     end)
   end
 
@@ -534,14 +536,10 @@ defmodule ControlPlane.Provisioning do
       |> repo.update()
     end)
     |> Multi.run(:reservation, fn repo, _changes ->
-      reservation = committed_reservation!(vps_id)
-
-      reservation
-      |> Reservation.changeset(%{status: :released})
-      |> repo.update()
+      release_reservation(repo, committed_reservation(repo, vps_id))
     end)
     |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
-      Node.add_capacity(repo, reservation)
+      restore_if_present(repo, reservation)
     end)
   end
 
@@ -594,21 +592,36 @@ defmodule ControlPlane.Provisioning do
   # update the command itself.
   defp finalize_vps(multi, _command, _outcome, _result), do: multi
 
-  defp held_reservation!(vps_id) do
-    Repo.one!(
+  # Reservation lookups are intentionally non-bang (Repo.one, not Repo.one!).
+  # A finalisation can legitimately find no matching reservation — the reconciler
+  # may have already reclaimed a stale `:held` one, or a prior delivery already
+  # released it. Raising here would fail the whole `apply_result/2` transaction,
+  # the command would never reach a terminal state, and the agent would redeliver
+  # the result forever. Returning nil lets the caller skip the release/restore and
+  # still mark the command done. Run inside the locked txn via the passed `repo`.
+  defp held_reservation(repo, vps_id), do: reservation_in(repo, vps_id, :held)
+  defp committed_reservation(repo, vps_id), do: reservation_in(repo, vps_id, :committed)
+
+  defp reservation_in(repo, vps_id, status) do
+    repo.one(
       from r in Reservation,
-        where: r.vps_id == ^vps_id and r.status == :held,
+        where: r.vps_id == ^vps_id and r.status == ^status,
+        order_by: [asc: r.inserted_at],
         limit: 1
     )
   end
 
-  defp committed_reservation!(vps_id) do
-    Repo.one!(
-      from r in Reservation,
-        where: r.vps_id == ^vps_id and r.status == :committed,
-        limit: 1
-    )
-  end
+  # Releases a reservation if one was found, tolerating nil.
+  defp release_reservation(_repo, nil), do: {:ok, nil}
+
+  defp release_reservation(repo, %Reservation{} = reservation),
+    do: reservation |> Reservation.changeset(%{status: :released}) |> repo.update()
+
+  # Adds capacity back ONLY when this path released a reservation. Skipping a nil
+  # avoids double-restoring capacity the reconciler already reclaimed (which would
+  # inflate the node's advertised free capacity).
+  defp restore_if_present(_repo, nil), do: {:ok, 0}
+  defp restore_if_present(repo, %Reservation{} = reservation), do: Node.add_capacity(repo, reservation)
 
   defp vps_changeset(attrs) do
     Vps.changeset(%Vps{}, %{
@@ -656,10 +669,10 @@ defmodule ControlPlane.Provisioning do
       repo.get!(Vps, vps.id) |> Vps.changeset(%{status: :deleted}) |> repo.update()
     end)
     |> Multi.run(:reservation, fn repo, _changes ->
-      held_reservation!(vps.id) |> Reservation.changeset(%{status: :released}) |> repo.update()
+      release_reservation(repo, held_reservation(repo, vps.id))
     end)
     |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
-      Node.add_capacity(repo, reservation)
+      restore_if_present(repo, reservation)
     end)
     |> Multi.update_all(
       :cancel_commands,
