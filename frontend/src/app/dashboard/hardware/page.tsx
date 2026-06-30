@@ -12,6 +12,9 @@ import {
   HardDriveDownload,
   Coins,
   RefreshCw,
+  Terminal,
+  ShieldCheck,
+  Wifi,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -177,25 +180,126 @@ export default function HardwarePage() {
         </div>
       </div>
 
+      {/* Always-visible explainer: what this is, what you need, how it works. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Hoe werkt dit?</CardTitle>
+          <CardDescription>
+            Bunk Hosting draait niet op één groot datacenter, maar op een netwerk van servers van gebruikers
+            zoals jij. Stel je eigen hardware beschikbaar, dan draait Bunk daar VPS&apos;en op en verdien je
+            automatisch tegoed — per seconde dat een VPS op jouw machine draait. Dat tegoed gebruik je weer
+            voor je eigen VPS&apos;en, of je laat het uitbetalen.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div>
+            <p className="mb-3 text-sm font-semibold">Wat heb je nodig?</p>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              <li className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <Server className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Een server die altijd aan staat</p>
+                  <p className="text-xs text-muted-foreground">
+                    Met <span className="font-medium text-foreground">Proxmox</span> of{" "}
+                    <span className="font-medium text-foreground">VMware ESXi</span> erop — de software die
+                    virtuele machines draait. Een oude pc, thuisserver of NAS met genoeg kracht volstaat.
+                  </p>
+                </div>
+              </li>
+              <li className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <Terminal className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Eén Linux-VM voor de agent</p>
+                  <p className="text-xs text-muted-foreground">
+                    De Bunk-agent draait in een gewone Linux-VM (bijv. Ubuntu) op je hypervisor — dus
+                    niet als root op je Proxmox/ESXi zelf. Veilig en weg te gooien.
+                  </p>
+                </div>
+              </li>
+              <li className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <Cpu className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Wat vrije capaciteit</p>
+                  <p className="text-xs text-muted-foreground">
+                    Richtlijn: minimaal ~2 vCPU, 4 GB RAM en 40 GB vrije schijf om zinvol mee te draaien.
+                    Jij bepaalt hoeveel je deelt; de rest blijft van jou.
+                  </p>
+                </div>
+              </li>
+              <li className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                <Wifi className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Internet + hypervisor-toegang</p>
+                  <p className="text-xs text-muted-foreground">
+                    Een stabiele internetverbinding en de API-gegevens van je Proxmox/ESXi (een tokentje of
+                    login) zodat de agent VPS&apos;en kan aanmaken. De installer vraagt hier stap voor stap om.
+                  </p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="mb-3 text-sm font-semibold">In 4 stappen live</p>
+            <ol className="space-y-3">
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">1</span>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Activeer host-modus.</span> Eén klik op de
+                  knop hieronder — je account mag dan nodes aansluiten. Volledig gratis en vrijblijvend.
+                </p>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">2</span>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Genereer je install-commando.</span> Kies de
+                  regio waar je server staat; je krijgt één commando dat je kunt kopiëren.
+                </p>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">3</span>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Plak het in je Linux-VM</span> (met{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">sudo</code>). De installer downloadt de
+                  Bunk-agent, vraagt of je Proxmox of ESXi gebruikt + je API-gegevens, zet beveiligd netwerk op
+                  en registreert je node. Geen handmatige configuratie nodig.
+                </p>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">4</span>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Klaar.</span> Je node verschijnt hieronder als{" "}
+                  <span className="text-green-400">online</span>, krijgt automatisch VPS&apos;en toegewezen en je
+                  tegoed begint op te lopen. Je volgt alles live op deze pagina.
+                </p>
+              </li>
+            </ol>
+          </div>
+
+          <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Jij houdt de controle.</span> De agent draait
+              geïsoleerd in een VM, gebruikt alleen de capaciteit die je deelt, en je kunt een node op elk
+              moment laten leeglopen (draining) of loskoppelen.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {!isHost ? (
         <Card>
           <CardHeader>
-            <CardTitle>Word host</CardTitle>
+            <CardTitle>Klaar om te beginnen?</CardTitle>
             <CardDescription>
-              Sluit je eigen Proxmox- of ESXi-capaciteit aan op het Bunk-netwerk. Bunk plaatst er VPS&apos;en op
-              en je verdient mee aan het verbruik dat jouw node draait.
+              Activeer host-modus om nodes aan te kunnen sluiten. Gratis en vrijblijvend — je kunt later altijd
+              weer stoppen. Hierna verschijnen de stappen om je install-commando te genereren.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <ol className="space-y-2 text-sm text-muted-foreground">
-              <li>1. Klik op <span className="font-medium text-foreground">Word host</span> om je account te activeren.</li>
-              <li>2. Kies een regio en genereer je install-commando.</li>
-              <li>3. Draai dat commando op een Linux-VM die je Proxmox of ESXi kan bereiken.</li>
-              <li>4. Je node verschijnt online en krijgt automatisch VPS&apos;en toegewezen.</li>
-            </ol>
+          <CardContent>
             <Button onClick={handleActivate} disabled={activating} className="gap-2">
               {activating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Server className="h-4 w-4" />}
-              Word host
+              Activeer host-modus
             </Button>
           </CardContent>
         </Card>
