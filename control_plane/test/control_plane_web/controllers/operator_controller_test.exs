@@ -71,7 +71,7 @@ defmodule ControlPlaneWeb.OperatorControllerTest do
 
       assert is_binary(body["enroll_token"])
       assert body["region"] == ctx.region.code
-      assert body["install"] =~ "BUNK_ENROLL_TOKEN=#{body["enroll_token"]}"
+      assert body["install"] =~ "--token #{body["enroll_token"]}"
 
       # A node enrolling with this token inherits the operator as owner.
       {:ok, %{node: node}} = Enrollment.enroll(body["enroll_token"], %{hypervisor: :proxmox})

@@ -3,10 +3,25 @@ defmodule ControlPlaneWeb.DashboardLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias ControlPlane.Fleet
+  alias ControlPlane.{Accounts, Fleet}
   alias ControlPlane.Fleet.Events
 
-  setup do
+  # The fleet dashboard at "/" is admin-only (UserAuth :ensure_staff). Put an
+  # authenticated admin in the session so the LiveView mounts instead of
+  # redirecting to /login.
+  defp log_in_admin(conn) do
+    {:ok, admin} =
+      Accounts.register_user(%{email: "admin@bunk.test", password: "super-secret-pw-123", name: "Admin"})
+
+    {:ok, _admin} = Accounts.update_user_role(admin, :admin)
+    token = Accounts.generate_user_session_token(admin)
+
+    conn
+    |> Plug.Test.init_test_session(%{})
+    |> Plug.Conn.put_session(:user_token, token)
+  end
+
+  setup %{conn: conn} do
     {:ok, region} = Fleet.create_region(%{code: "nl-1", name: "Netherlands 1"})
 
     {:ok, node} =
@@ -25,7 +40,7 @@ defmodule ControlPlaneWeb.DashboardLiveTest do
         last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second)
       })
 
-    %{region: region, node: node}
+    %{conn: log_in_admin(conn), region: region, node: node}
   end
 
   test "mounts and renders the dashboard headers and node data", %{conn: conn, node: node} do

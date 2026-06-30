@@ -1,7 +1,10 @@
 defmodule ControlPlane.RateLimiterTest do
   # The RateLimiter's ETS table is owned by the app-supervised GenServer, which is
   # running in the test env. Each test uses a unique key so counters don't collide.
-  use ExUnit.Case, async: true
+  # async: false — ConnCase's per-test RateLimiter.reset() clears the shared ETS
+  # table, which would wipe this test's in-flight counters; running in the sync
+  # phase keeps it isolated from those resets.
+  use ExUnit.Case, async: false
 
   alias ControlPlane.RateLimiter
 

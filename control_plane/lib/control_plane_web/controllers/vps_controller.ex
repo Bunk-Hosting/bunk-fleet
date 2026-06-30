@@ -118,8 +118,14 @@ defmodule ControlPlaneWeb.VpsController do
   # Bound caller-supplied provision input so a request can't carry an absurd
   # number/size of SSH keys or a giant cloud-init blob (targets the user's own VM,
   # but unbounded input is unbounded work). Limits are generous for real use.
-  defp validate_provision_input(%{ssh_keys: ssh, cloud_init: ci}) do
+  defp validate_provision_input(%{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb, ssh_keys: ssh, cloud_init: ci}) do
     cond do
+      # Reject an out-of-bounds spec up front (matches Vps.validate_spec) so an
+      # invalid request fails with a clear `invalid_vps` rather than slipping
+      # through to package pricing and surfacing as `no_matching_package`.
+      not valid_spec_field?(vcpu, 64) -> {:error, :invalid_spec}
+      not valid_spec_field?(ram_mb, 262_144) -> {:error, :invalid_spec}
+      not valid_spec_field?(disk_gb, 8_192) -> {:error, :invalid_spec}
       not is_list(ssh) -> {:error, :input_too_large}
       length(ssh) > 20 -> {:error, :input_too_large}
       Enum.any?(ssh, &(not is_binary(&1) or byte_size(&1) > 4096)) -> {:error, :input_too_large}
@@ -127,6 +133,9 @@ defmodule ControlPlaneWeb.VpsController do
       true -> :ok
     end
   end
+
+  defp valid_spec_field?(v, max) when is_integer(v), do: v > 0 and v <= max
+  defp valid_spec_field?(_v, _max), do: false
 
   defp encoded_size(term) do
     case Jason.encode(term) do

@@ -233,7 +233,7 @@ defmodule ControlPlane.ProvisioningTest do
       assert {:error, :not_found} = Provisioning.delete_vps(Ecto.UUID.generate())
     end
 
-    test "returns :no_node for a VPS with no provider VM" do
+    test "cleans up directly (no agent round-trip) a VPS still queued for capacity" do
       region = insert_region()
 
       vps =
@@ -248,7 +248,11 @@ defmodule ControlPlane.ProvisioningTest do
         })
         |> Repo.insert!()
 
-      assert {:error, :no_node} = Provisioning.delete_vps(vps.id)
+      # No node was ever assigned (no VM, no held reservation), so a delete is a
+      # direct cancellation — the customer can cancel a VPS still waiting for
+      # capacity without an agent command (see Provisioning.delete_vps/1).
+      assert {:ok, %{command: nil, vps: %Vps{status: :deleted}}} =
+               Provisioning.delete_vps(vps.id)
     end
   end
 

@@ -22,6 +22,17 @@ defmodule ControlPlane.RateLimiter do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
+  Clears every rate-limit counter. Intended for test isolation — the table is a
+  single global keyed by client IP, so without a per-test reset counters from one
+  test bleed into the next (every test request comes from 127.0.0.1) and later
+  tests spuriously hit `429`.
+  """
+  def reset do
+    if :ets.whereis(@table) != :undefined, do: :ets.delete_all_objects(@table)
+    :ok
+  end
+
+  @doc """
   Records a hit for `key` in the current window and returns `:ok` if the caller is
   within `max`, or `{:error, :rate_limited}` once they exceed it.
   """

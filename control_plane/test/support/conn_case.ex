@@ -33,6 +33,12 @@ defmodule ControlPlaneWeb.ConnCase do
 
   setup tags do
     ControlPlane.DataCase.setup_sandbox(tags)
+    # The rate limiter is a single global ETS keyed by client IP; every test
+    # request comes from 127.0.0.1, so without a per-test reset counters bleed
+    # across tests and later ones spuriously hit 429. The two files that assert
+    # accumulated limiter state (auth_controller / rate_limiter) run async: false
+    # so this reset never races their request sequences.
+    ControlPlane.RateLimiter.reset()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

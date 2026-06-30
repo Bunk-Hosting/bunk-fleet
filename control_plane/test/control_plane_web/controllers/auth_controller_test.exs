@@ -1,5 +1,8 @@
 defmodule ControlPlaneWeb.AuthControllerTest do
-  use ControlPlaneWeb.ConnCase, async: true
+  # async: false — the "429 after too many auth attempts" test accumulates global
+  # rate-limiter state, so it must run in the sync phase where ConnCase's per-test
+  # RateLimiter.reset() can't race its request sequence.
+  use ControlPlaneWeb.ConnCase, async: false
 
   alias ControlPlane.Accounts
 
