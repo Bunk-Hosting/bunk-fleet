@@ -144,7 +144,9 @@ defmodule ControlPlane.Billing do
         where: c.kind in [:stop, :pause, :delete] and c.status in [:pending, :delivered],
         select: c.vps_id
 
-    candidates =
+    # Candidate {vps_id => owner_email}: the operator to pay lives on the node. We
+    # resolve it here unlocked, then re-validate each VPS under a row lock below.
+    owner_by_vps =
       Repo.all(
         from v in Vps,
           join: n in Node,
@@ -153,44 +155,56 @@ defmodule ControlPlane.Billing do
           where: v.id not in subquery(teardown_in_flight),
           select: {v.id, n.owner_email}
       )
+      |> Map.new()
 
     {:ok, metered} =
       Repo.transaction(fn ->
-        Enum.reduce(candidates, 0, fn {vps_id, owner_email}, count ->
-          # Re-load + lock the VPS row so concurrent meters serialize here and the
-          # watermark we read is the committed truth, not a stale snapshot.
-          vps = Repo.one(from v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE")
+        ids = Map.keys(owner_by_vps)
 
-          if meterable?(vps, now) do
-            seconds = elapsed_seconds(vps, now)
+        # Lock every candidate VPS row in one pass (ascending id for a deterministic
+        # lock order, deadlock-free), so the watermark we read is the committed
+        # truth and any concurrent meter serializes here — the same guarantee as
+        # the old per-row re-read, but without N round-trips.
+        locked = Repo.all(from v in Vps, where: v.id in ^ids, order_by: v.id, lock: "FOR UPDATE")
 
-            Repo.insert!(
-              UsageRecord.changeset(%UsageRecord{}, %{
-                vps_id: vps.id,
-                node_id: vps.node_id,
-                owner_email: owner_email,
-                seconds: seconds,
-                vcpu: vps.vcpu,
-                ram_mb: vps.ram_mb,
-                disk_gb: vps.disk_gb,
-                metered_at: now
-              })
-            )
-
-            # Advance the watermark on the locked row. A second meter at the same
-            # `now` then computes 0 seconds (and would also hit the unique index).
-            Repo.update_all(
-              from(v in Vps, where: v.id == ^vps.id),
-              set: [last_metered_at: now, updated_at: now]
-            )
-
-            count + 1
-          else
-            # The VPS changed state, lost its node, or was already metered at this
-            # exact `now` between the candidate scan and acquiring its lock — skip.
-            count
+        # Build one row per still-meterable VPS, computing seconds in Elixir exactly
+        # as before (elapsed_seconds + the meterable? re-check on the locked row).
+        # insert_all needs explicit timestamps since it bypasses the changeset.
+        rows =
+          for vps <- locked, meterable?(vps, now) do
+            %{
+              vps_id: vps.id,
+              node_id: vps.node_id,
+              owner_email: Map.fetch!(owner_by_vps, vps.id),
+              seconds: elapsed_seconds(vps, now),
+              vcpu: vps.vcpu,
+              ram_mb: vps.ram_mb,
+              disk_gb: vps.disk_gb,
+              metered_at: now,
+              inserted_at: now,
+              updated_at: now
+            }
           end
-        end)
+
+        metered_ids = Enum.map(rows, & &1.vps_id)
+
+        # One bulk insert + one bulk watermark advance instead of 3N statements.
+        # on_conflict :nothing turns the UNIQUE (vps_id, metered_at) backstop into a
+        # silent no-op for an accidental same-tick re-meter (rather than aborting the
+        # whole batch), so a duplicate slice can never double-bill.
+        unless rows == [] do
+          Repo.insert_all(UsageRecord, rows,
+            on_conflict: :nothing,
+            conflict_target: [:vps_id, :metered_at]
+          )
+
+          Repo.update_all(
+            from(v in Vps, where: v.id in ^metered_ids),
+            set: [last_metered_at: now, updated_at: now]
+          )
+        end
+
+        length(rows)
       end)
 
     metered
