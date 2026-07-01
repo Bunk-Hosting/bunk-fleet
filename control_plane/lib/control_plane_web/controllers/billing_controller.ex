@@ -17,8 +17,23 @@ defmodule ControlPlaneWeb.BillingController do
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.Billing
+  alias ControlPlane.{Billing, Credits}
   alias ControlPlaneWeb.TimeWindow
+
+  @doc """
+  `GET /api/v1/billing/wallet` — the authenticated customer's prepaid credit
+  wallet: current balance (in cents), the most recent ledger movements, and any
+  recent top-up requests. Read-only and owner-scoped via `current_user.id`.
+  """
+  def wallet(conn, _params) do
+    uid = conn.assigns.current_user.id
+
+    json(conn, %{
+      balance_cents: Credits.balance_cents(uid),
+      entries: Enum.map(Credits.list_entries(uid, 25), &entry_json/1),
+      topups: Enum.map(Credits.list_topup_requests(uid, 10), &topup_json/1)
+    })
+  end
 
   def usage(conn, params) do
     with {:ok, {from, to}} <- TimeWindow.parse(params) do
@@ -44,6 +59,24 @@ defmodule ControlPlaneWeb.BillingController do
 
   defp vps_json(%{vps_id: vps_id, name: name, seconds: seconds, cost: cost}) do
     %{vps_id: vps_id, name: name, seconds: seconds, cost: Decimal.to_string(cost)}
+  end
+
+  defp entry_json(e) do
+    %{
+      amount_cents: e.amount_cents,
+      kind: e.kind,
+      description: e.description,
+      inserted_at: DateTime.to_iso8601(e.inserted_at)
+    }
+  end
+
+  defp topup_json(t) do
+    %{
+      amount_cents: t.amount_cents,
+      status: t.status,
+      reference: t.reference,
+      inserted_at: DateTime.to_iso8601(t.inserted_at)
+    }
   end
 
   defp bad_request(conn, code, detail) do

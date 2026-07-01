@@ -400,7 +400,9 @@ export default function VpsDetailPage() {
               Inloggegevens
             </CardTitle>
             <CardDescription>
-              Gebruik het sudo-wachtwoord wanneer de server om een wachtwoord vraagt.
+              De snelste manier om in te loggen is de webterminal hierboven. Een
+              sudo-wachtwoord verschijnt hier alleen als de server er zelf één
+              instelt.
             </CardDescription>
           </CardHeader>
           <CardContent>

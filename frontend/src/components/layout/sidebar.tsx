@@ -17,8 +17,7 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
-  CreditCard,
-  Receipt,
+  Wallet,
   Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,8 +51,7 @@ const mainNavItems: NavItem[] = [
 ];
 
 const billingNavItems: NavItem[] = [
-  { label: "Finance", href: "/dashboard/billing", icon: CreditCard },
-  { label: "Facturen", href: "/dashboard/billing/invoices", icon: Receipt },
+  { label: "Tegoed", href: "/dashboard/billing", icon: Wallet },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -159,7 +157,7 @@ function SidebarContent({ user }: SidebarProps) {
 
         <Separator className="my-4" />
         <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Finance
+          Betalingen
         </p>
         {billingNavItems.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />

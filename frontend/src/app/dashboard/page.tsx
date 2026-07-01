@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Server, ServerOff, PlusCircle } from "lucide-react";
+import { Loader2, Server, ServerOff, PlusCircle, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { VpsCard } from "@/components/vps/vps-card";
-import { authApi, vpsApi } from "@/lib/api";
+import { authApi, vpsApi, billingApi } from "@/lib/api";
+import { formatEuro } from "@/lib/utils";
 import type { User, Vps } from "@/lib/types";
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [vpsList, setVpsList] = useState<Vps[]>([]);
+  const [balanceCents, setBalanceCents] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,6 +29,14 @@ export default function DashboardPage() {
         // errors handled by layout redirect
       } finally {
         setLoading(false);
+      }
+      // Wallet is non-critical for the dashboard; load it separately so a
+      // hiccup here never blanks the whole page.
+      try {
+        const walletRes = await billingApi.wallet();
+        setBalanceCents(walletRes.data.balance_cents);
+      } catch {
+        // leave balance unknown
       }
     }
     fetchData();
@@ -60,7 +70,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Totaal VPS&apos;en</CardTitle>
@@ -88,6 +98,20 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold">{stoppedVps}</div>
           </CardContent>
         </Card>
+        <Link href="/dashboard/billing" className="block">
+          <Card className="h-full transition-colors hover:border-primary/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tegoed</CardTitle>
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {balanceCents === null ? "—" : formatEuro(balanceCents / 100)}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Opwaarderen →</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Recent VPS list */}

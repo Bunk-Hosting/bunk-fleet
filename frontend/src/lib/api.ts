@@ -404,7 +404,64 @@ export const adminApi = {
 // customer's active VPSes and the package catalog (bunk-fleet bills per running
 // VPS). bunk-fleet has no invoicing engine yet, so the invoice list is honestly
 // empty rather than fabricated; the UI then shows its "no invoices" state.
+export interface WalletEntry {
+  amount_cents: number;
+  kind: string;
+  description: string | null;
+  inserted_at: string;
+}
+
+export interface WalletTopup {
+  amount_cents: number;
+  status: "pending" | "paid" | "cancelled";
+  reference: string;
+  inserted_at: string;
+}
+
+export interface Wallet {
+  balance_cents: number;
+  entries: WalletEntry[];
+  topups: WalletTopup[];
+}
+
+export interface UsageVps {
+  vps_id: string;
+  name: string;
+  seconds: number;
+  cost: string;
+}
+
+export interface UsageSummary {
+  from: string;
+  to: string;
+  total_seconds: number;
+  total_cost: string;
+  vpses: UsageVps[];
+}
+
 export const billingApi = {
+  // The real prepaid-wallet surface (bunk-fleet's actual customer billing model).
+  wallet: async (): Promise<{ data: Wallet }> => {
+    const res = await api.get<Wallet>("/billing/wallet");
+    return { data: res.data };
+  },
+
+  usage: async (): Promise<{ data: UsageSummary }> => {
+    const res = await api.get<UsageSummary>("/billing/usage");
+    return { data: res.data };
+  },
+
+  // Start a Mollie top-up; returns the hosted checkout URL to redirect the user to.
+  topup: async (
+    amountCents: number
+  ): Promise<{ checkout_url: string; payment_id: string }> => {
+    const res = await api.post<{ checkout_url: string; payment_id: string }>(
+      "/billing/topup",
+      { amount_cents: amountCents }
+    );
+    return res.data;
+  },
+
   overview: async (): Promise<{ data: BillingOverview }> => {
     const res = await vpsApi.list();
     const active = res.data.results.filter(

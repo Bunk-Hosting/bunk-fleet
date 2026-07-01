@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check, Wallet, AlertCircle } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -14,8 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { packagesApi, vpsApi, parseApiError } from "@/lib/api";
-import { cn, formatPrice } from "@/lib/utils";
+import { packagesApi, vpsApi, billingApi, parseApiError } from "@/lib/api";
+import { cn, formatPrice, formatEuro } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
 export default function NewVpsPage() {
@@ -28,6 +29,7 @@ export default function NewVpsPage() {
 
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [label, setLabel] = useState("");
+  const [balanceCents, setBalanceCents] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchPackages() {
@@ -42,6 +44,12 @@ export default function NewVpsPage() {
         });
       } finally {
         setLoading(false);
+      }
+      try {
+        const walletRes = await billingApi.wallet();
+        setBalanceCents(walletRes.data.balance_cents);
+      } catch {
+        // balance is a nice-to-have here; ignore failures
       }
     }
     fetchPackages();
@@ -153,6 +161,61 @@ export default function NewVpsPage() {
           </p>
         </div>
       </div>
+
+      {/* Betaling */}
+      {(() => {
+        const pkg = packages.find((p) => p.id === selectedPackageId);
+        const priceCents = pkg
+          ? Math.round(parseFloat(pkg.price_monthly) * 100)
+          : null;
+        const insufficient =
+          priceCents !== null &&
+          balanceCents !== null &&
+          balanceCents < priceCents;
+        return (
+          <Card className={insufficient ? "border-destructive/50" : ""}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Wallet className="h-5 w-5" />
+                Betaling
+              </CardTitle>
+              <CardDescription>
+                Het maandbedrag van je pakket wordt eenmalig van je tegoed
+                afgeschreven zodra de VPS wordt aangemaakt.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Kosten voor dit pakket</span>
+                <span className="font-medium">
+                  {pkg ? `${formatPrice(pkg.price_monthly)}` : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Huidig tegoed</span>
+                <span className="font-medium">
+                  {balanceCents === null ? "—" : formatEuro(balanceCents / 100)}
+                </span>
+              </div>
+              {insufficient && (
+                <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Je tegoed is niet toereikend.{" "}
+                    <Link
+                      href="/dashboard/billing"
+                      className="font-medium underline underline-offset-2"
+                    >
+                      Waardeer eerst je tegoed op
+                    </Link>{" "}
+                    om deze VPS aan te maken.
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Submit */}
       <div className="flex gap-4">

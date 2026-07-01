@@ -170,6 +170,9 @@ defmodule ControlPlaneWeb.Router do
     post "/host/activate", HostController, :activate
     get "/host/regions", HostController, :regions
 
+    # The caller's own prepaid wallet: balance, ledger movements, top-ups.
+    get "/billing/wallet", BillingController, :wallet
+
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
 

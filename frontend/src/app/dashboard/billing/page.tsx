@@ -1,43 +1,55 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { CreditCard, Receipt, ArrowRight, TrendingUp, Calendar, AlertCircle } from "lucide-react";
+import {
+  Wallet as WalletIcon,
+  Info,
+  ArrowUpRight,
+  ArrowDownRight,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
-import { billingApi } from "@/lib/api";
-import type { BillingOverview, Invoice } from "@/lib/types";
+import { billingApi, parseApiError, type Wallet } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
-import { formatEuro, formatDateLong as formatDate } from "@/lib/utils";
+import { formatEuro, formatDateLong } from "@/lib/utils";
 
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  open: { label: "Openstaand", variant: "destructive" },
-  paid: { label: "Betaald", variant: "default" },
-  draft: { label: "Concept", variant: "secondary" },
-  void: { label: "Vervallen", variant: "outline" },
+const PRESET_EUROS = [5, 10, 25, 50];
+const MIN_EUROS = 5;
+const MAX_EUROS = 1000;
+
+// Friendly Dutch labels for the ledger `kind` column.
+const KIND_LABELS: Record<string, string> = {
+  signup_bonus: "Welkomstkrediet",
+  topup: "Tegoed opgewaardeerd",
+  admin_topup: "Tegoed bijgeschreven",
+  vps_charge: "VPS aangemaakt",
+  vps_refund: "Terugbetaling",
 };
 
-export default function BillingOverviewPage() {
+function euroFromCents(cents: number): string {
+  return formatEuro(cents / 100);
+}
+
+export default function TegoedPage() {
   const { toast } = useToast();
-  const [overview, setOverview] = useState<BillingOverview | null>(null);
-  const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState<string>("10");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const [overviewRes, invoicesRes] = await Promise.all([
-          billingApi.overview(),
-          billingApi.invoices.list(),
-        ]);
-        setOverview(overviewRes.data);
-        setRecentInvoices(invoicesRes.data.results.slice(0, 5));
+        const res = await billingApi.wallet();
+        setWallet(res.data);
       } catch {
         toast({
           title: "Fout",
-          description: "Kon finance-overzicht niet laden.",
+          description: "Kon je tegoed niet laden.",
           variant: "destructive",
         });
       } finally {
@@ -47,6 +59,34 @@ export default function BillingOverviewPage() {
     load();
   }, [toast]);
 
+  const handleTopup = async () => {
+    const euros = Number(amount.replace(",", "."));
+    if (!Number.isFinite(euros) || euros < MIN_EUROS || euros > MAX_EUROS) {
+      toast({
+        title: "Ongeldig bedrag",
+        description: `Kies een bedrag tussen € ${MIN_EUROS} en € ${MAX_EUROS}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { checkout_url } = await billingApi.topup(Math.round(euros * 100));
+      // Hand off to Mollie's hosted checkout.
+      window.location.href = checkout_url;
+    } catch (error: unknown) {
+      toast({
+        title: "Opwaarderen mislukt",
+        description: parseApiError(
+          error,
+          "Kon de betaling niet starten. Probeer het later opnieuw."
+        ),
+        variant: "destructive",
+      });
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -55,144 +95,163 @@ export default function BillingOverviewPage() {
     );
   }
 
-  const hasOpenInvoices = overview && overview.open_invoice_count > 0;
+  const balance = wallet?.balance_cents ?? 0;
+  const lowBalance = balance < 500;
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Finance</h1>
-        <p className="text-muted-foreground">Overzicht van je kosten en facturen.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Tegoed</h1>
+        <p className="text-muted-foreground">
+          Je saldo, opwaarderen en een overzicht van je transacties.
+        </p>
       </div>
 
-      {/* Openstaand saldo alert */}
-      {hasOpenInvoices && (
-        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div className="text-sm">
-            <span className="font-semibold text-destructive">
-              {overview.open_invoice_count} openstaande{" "}
-              {overview.open_invoice_count === 1 ? "factuur" : "facturen"},{" "}
-              {formatEuro(overview.open_amount)} te betalen.
-            </span>{" "}
-            <Link href="/dashboard/billing/invoices" className="underline underline-offset-2">
-              Bekijk facturen
-            </Link>
-          </div>
+      {/* Hoe werkt betalen? */}
+      <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Zo werkt betalen bij Bunk.</span>{" "}
+          Je betaalt vooraf met tegoed. Wanneer je een VPS aanmaakt, wordt het
+          maandbedrag van het gekozen pakket eenmalig van je tegoed afgeschreven.
+          Is je tegoed te laag, dan kun je geen nieuwe VPS aanmaken — je bestaande
+          servers blijven gewoon draaien. Opwaarderen kan hieronder, veilig via
+          iDEAL of creditcard.
         </div>
-      )}
+      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      {/* Saldo + opwaarderen */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Saldo */}
+        <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Openstaand bedrag
+              Huidig tegoed
             </CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <WalletIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className={`text-2xl font-bold ${hasOpenInvoices ? "text-destructive" : ""}`}>
-              {formatEuro(overview?.open_amount ?? 0)}
+            <p
+              className={`text-4xl font-bold ${
+                lowBalance ? "text-destructive" : "text-primary"
+              }`}
+            >
+              {euroFromCents(balance)}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {overview?.open_invoice_count ?? 0} openstaande facturen
-            </p>
+            {lowBalance && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Je tegoed is laag. Waardeer op om een VPS te kunnen aanmaken.
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Maandelijkse kosten
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+        {/* Opwaarderen */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Tegoed opwaarderen</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {formatEuro(overview?.monthly_cost ?? 0)}
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {PRESET_EUROS.map((v) => (
+                <Button
+                  key={v}
+                  type="button"
+                  variant={Number(amount) === v ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAmount(String(v))}
+                  disabled={submitting}
+                >
+                  € {v}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="space-y-1">
+                <label
+                  htmlFor="topup-amount"
+                  className="text-xs text-muted-foreground"
+                >
+                  Bedrag (€ {MIN_EUROS} – € {MAX_EUROS})
+                </label>
+                <Input
+                  id="topup-amount"
+                  type="number"
+                  min={MIN_EUROS}
+                  max={MAX_EUROS}
+                  step="1"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={submitting}
+                  className="w-32"
+                />
+              </div>
+              <Button onClick={handleTopup} disabled={submitting}>
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Opwaarderen
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Je wordt doorgestuurd naar de beveiligde betaalpagina van Mollie.
+              Na een geslaagde betaling staat je tegoed er binnen enkele
+              seconden op.
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {overview?.active_subscriptions ?? 0} actieve VPS
-              {(overview?.active_subscriptions ?? 0) !== 1 ? "'en" : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Volgende factuur
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {overview?.next_invoice_date
-                ? formatDate(overview.next_invoice_date)
-                : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Geschatte volgende factuurdatum
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Actieve abonnementen
-            </CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {overview?.active_subscriptions ?? 0}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">Lopende VPS-abonnementen</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recente facturen */}
+      {/* Transacties */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recente facturen</CardTitle>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/billing/invoices">
-              Alle facturen
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+        <CardHeader>
+          <CardTitle>Transacties</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentInvoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">
-              Nog geen facturen beschikbaar.
+          {!wallet || wallet.entries.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Nog geen transacties. Je transacties verschijnen hier zodra je
+              tegoed opwaardeert of een VPS aanmaakt.
             </p>
           ) : (
-            <div className="space-y-3">
-              {recentInvoices.map((invoice) => {
-                const cfg = statusConfig[invoice.status] ?? { label: invoice.status, variant: "secondary" as const };
+            <div className="space-y-2">
+              {wallet.entries.map((e, i) => {
+                const credit = e.amount_cents >= 0;
                 return (
                   <div
-                    key={invoice.id}
+                    key={i}
                     className="flex items-center justify-between rounded-lg border px-4 py-3"
                   >
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{invoice.invoice_number}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(invoice.period_start)} t/m {formatDate(invoice.period_end)}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                          credit
+                            ? "bg-green-500/10 text-green-600"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {credit ? (
+                          <ArrowUpRight className="h-4 w-4" />
+                        ) : (
+                          <ArrowDownRight className="h-4 w-4" />
+                        )}
+                      </span>
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">
+                          {KIND_LABELS[e.kind] ?? e.description ?? e.kind}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDateLong(e.inserted_at)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <p className="text-sm font-semibold">{formatEuro(invoice.total)}</p>
-                      <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/billing/invoices/${invoice.id}`}>
-                          Bekijken
-                        </Link>
-                      </Button>
-                    </div>
+                    <p
+                      className={`text-sm font-semibold ${
+                        credit ? "text-green-600" : "text-foreground"
+                      }`}
+                    >
+                      {credit ? "+" : "−"}
+                      {euroFromCents(Math.abs(e.amount_cents))}
+                    </p>
                   </div>
                 );
               })}
@@ -201,20 +260,34 @@ export default function BillingOverviewPage() {
         </CardContent>
       </Card>
 
-      {/* Snelkoppelingen */}
-      <div className="flex gap-3">
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/billing/invoices">
-            <Receipt className="mr-2 h-4 w-4" />
-            Alle facturen
-          </Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/billing/settings">
-            Factuurinstellingen
-          </Link>
-        </Button>
-      </div>
+      {/* Openstaande top-ups */}
+      {wallet && wallet.topups.some((t) => t.status === "pending") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Lopende betalingen</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {wallet.topups
+              .filter((t) => t.status === "pending")
+              .map((t) => (
+                <div
+                  key={t.reference}
+                  className="flex items-center justify-between rounded-lg border px-4 py-3"
+                >
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">
+                      {euroFromCents(t.amount_cents)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateLong(t.inserted_at)}
+                    </p>
+                  </div>
+                  <Badge variant="secondary">In afwachting</Badge>
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
