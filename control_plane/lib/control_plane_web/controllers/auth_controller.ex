@@ -16,18 +16,34 @@ defmodule ControlPlaneWeb.AuthController do
   alias ControlPlane.Accounts
 
   def register(conn, params) do
-    case Accounts.register_user(params) do
-      {:ok, user} ->
-        token = Accounts.generate_user_session_token(user)
+    # Verify the CAPTCHA server-side BEFORE creating an account (and granting the
+    # signup bonus). Without this a bot skips the browser widget by calling the API
+    # directly and farms free wallets. No-op until TURNSTILE_SECRET_KEY is set.
+    with :ok <- ControlPlane.Turnstile.verify(params["turnstile_token"], client_ip(conn)),
+         {:ok, user} <- Accounts.register_user(params) do
+      token = Accounts.generate_user_session_token(user)
 
+      conn
+      |> put_status(:created)
+      |> json(%{user: user_json(user), token: encode_token(token)})
+    else
+      {:error, reason} when reason in [:captcha_required, :captcha_failed, :captcha_unavailable] ->
         conn
-        |> put_status(:created)
-        |> json(%{user: user_json(user), token: encode_token(token)})
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "captcha_failed", turnstile_required: true})
 
       {:error, %Ecto.Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{errors: changeset_errors(changeset)})
+    end
+  end
+
+  # Real client IP: Cloudflare sets CF-Connecting-IP; fall back to the peer.
+  defp client_ip(conn) do
+    case Plug.Conn.get_req_header(conn, "cf-connecting-ip") do
+      [ip | _] when is_binary(ip) and ip != "" -> ip
+      _ -> conn.remote_ip |> :inet.ntoa() |> to_string()
     end
   end
 

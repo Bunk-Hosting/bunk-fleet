@@ -154,12 +154,35 @@ defmodule ControlPlane.Credits do
     |> Repo.insert()
   end
 
-  @doc "Credits the wallet for a paid Mollie payment (idempotent via mark_topup_paid)."
-  def mark_topup_paid_by_mollie_id(mollie_payment_id) do
+  @doc """
+  Credits the wallet for a paid Mollie payment (idempotent via mark_topup_paid).
+  When `paid_amount` (Mollie's `%{"value","currency"}`) is given, the settled
+  amount must match the recorded request or it is rejected `:amount_mismatch`.
+  """
+  def mark_topup_paid_by_mollie_id(mollie_payment_id, paid_amount \\ nil) do
     case Repo.get_by(TopupRequest, mollie_payment_id: mollie_payment_id) do
-      nil -> {:error, :not_found}
-      %TopupRequest{id: id} -> mark_topup_paid(id)
+      nil ->
+        {:error, :not_found}
+
+      %TopupRequest{} = tr ->
+        if amount_matches?(tr, paid_amount),
+          do: mark_topup_paid(tr.id),
+          else: {:error, :amount_mismatch}
     end
+  end
+
+  # No amount to check against → accept (back-compat / admin flow).
+  defp amount_matches?(_tr, nil), do: true
+
+  defp amount_matches?(%TopupRequest{amount_cents: cents}, %{"value" => value, "currency" => currency}) do
+    currency == "EUR" and value == euro_string(cents)
+  end
+
+  defp amount_matches?(_tr, _), do: false
+
+  # Integer cents -> Mollie's 2-decimal string, matching ControlPlane.Mollie.
+  defp euro_string(cents) when is_integer(cents) and cents >= 0 do
+    "#{div(cents, 100)}." <> (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
   end
 
   defp generate_reference do

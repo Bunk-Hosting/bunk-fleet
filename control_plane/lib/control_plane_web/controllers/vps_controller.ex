@@ -153,8 +153,12 @@ defmodule ControlPlaneWeb.VpsController do
       disk_gb: params["disk_gb"],
       template_id: default_template_id(),
       ssh_keys: params["ssh_keys"] || [],
-      cloud_init: params["cloud_init"] || %{},
-      ip_config: params["ip_config"]
+      cloud_init: params["cloud_init"] || %{}
+      # SECURITY: never accept ip_config/ip_address from the self-service body. It
+      # is a staff-only override (admin controller sets it); letting a customer set
+      # it bypasses IpPool.allocate — they could pin a co-tenant's or the gateway's
+      # IP (conflict/MITM) and, because ip_address stays nil, slip past the
+      # vpses_active_ip_uidx uniqueness backstop. Force allocation via the pool.
     }
   end
 

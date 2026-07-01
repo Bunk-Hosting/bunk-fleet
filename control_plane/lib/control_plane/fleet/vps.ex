@@ -77,6 +77,9 @@ defmodule ControlPlane.Fleet.Vps do
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> validate_length(:name, max: 100)
+    # Reject control characters (newlines, etc.) so a name can't break out of the
+    # cloud-init/guestinfo YAML the agent renders for the VM (injection hardening).
+    |> validate_format(:name, ~r/\A[^\x00-\x1F\x7F]*\z/, message: "mag geen controltekens bevatten")
     |> validate_spec()
     |> assoc_constraint(:region)
     |> assoc_constraint(:node)

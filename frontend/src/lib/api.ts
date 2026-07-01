@@ -248,8 +248,15 @@ function transformUser(u: BunkUser): User {
 
 // ── Auth ──────────────────────────────────────────────────────────────
 export const authApi = {
-  register: async (name: string, email: string, password: string, _passwordConfirm: string, _captcha?: string) => {
-    const res = await api.post<{ user: BunkUser; token: string }>("/auth/register", { name, email, password });
+  register: async (name: string, email: string, password: string, _passwordConfirm: string, captcha?: string) => {
+    const res = await api.post<{ user: BunkUser; token: string }>("/auth/register", {
+      name,
+      email,
+      password,
+      // Sent to the server for server-side Turnstile verification (enforced when
+      // the backend has TURNSTILE_SECRET_KEY configured).
+      ...(captcha ? { turnstile_token: captcha } : {}),
+    });
     setToken(res.data.token);
     return { data: { detail: "ok" } };
   },

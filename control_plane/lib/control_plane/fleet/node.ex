@@ -17,9 +17,9 @@ defmodule ControlPlane.Fleet.Node do
   # placement, drawing other tenants' VPSes onto hardware whose operator has full
   # console/disk access. Generous enough for any real host — this only clamps
   # obviously-bogus values.
-  @max_total_vcpu 1024
-  @max_total_ram_mb 4_194_304
-  @max_total_disk_gb 524_288
+  @max_total_vcpu 256
+  @max_total_ram_mb 1_048_576
+  @max_total_disk_gb 65_536
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

@@ -128,11 +128,18 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.RateLimit, bucket: "auth", max: 30, window_ms: 60_000
   end
 
-  # User accounts: open registration/login, then authenticated session routes.
-  # Public Mollie webhook (no auth, no rate-limit — Mollie calls it server-side;
-  # safety comes from fetch-to-verify + idempotent crediting, not from auth).
+  # Public webhook: still no auth (Mollie can't authenticate), but rate-limited so
+  # it can't be flooded to amplify outbound get_payment fetches / hammer Mollie.
+  # 120/min/ip is far above Mollie's real callback rate for one merchant.
+  pipeline :webhook do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "webhook", max: 120, window_ms: 60_000
+  end
+
+  # Public Mollie webhook. Safety comes from fetch-to-verify + idempotent,
+  # amount-checked crediting; the rate limit only caps abuse volume.
   scope "/api/v1", ControlPlaneWeb do
-    pipe_through :api
+    pipe_through :webhook
 
     post "/billing/mollie/webhook", MollieController, :webhook
   end

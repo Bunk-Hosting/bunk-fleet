@@ -8,8 +8,10 @@ defmodule ControlPlane.Subscriptions do
   alias ControlPlane.{Credits, Fleet, Provisioning}
   alias ControlPlane.Fleet.Vps
 
-  # A VPS in one of these states is gone; its subscription must never be charged.
-  @dead_vps_statuses [:deleting, :deleted]
+  # A VPS in one of these states is gone (or never came up); its subscription must
+  # never be charged. `:failed` is included so a provision that never produced a VM
+  # is cancelled by the settle loop instead of billed monthly.
+  @dead_vps_statuses [:deleting, :deleted, :failed]
 
   @doc "Creates an active subscription for a VPS from its package (idempotent on vps_id)."
   def create_for_vps(vps, owner_id, package_id) when not is_nil(package_id) do
@@ -113,7 +115,16 @@ defmodule ControlPlane.Subscriptions do
       )
 
     Enum.reduce(due, %{charged: 0, suspended: 0, resumed: 0, cancelled: 0, errors: 0}, fn sub, acc ->
-      settle_one(sub, today, acc)
+      # Isolate each subscription: one that raises (e.g. a ledger constraint) must
+      # not abort the whole tick and starve the subscriptions behind it (the scan is
+      # ordered by date, so a permanently-failing oldest row would recur first).
+      try do
+        settle_one(sub, today, acc)
+      rescue
+        e ->
+          Logger.error("subscription settle crashed for #{sub.id}: #{Exception.message(e)}")
+          %{acc | errors: acc.errors + 1}
+      end
     end)
   end
 
@@ -136,6 +147,10 @@ defmodule ControlPlane.Subscriptions do
         mark_past_due(sub, Date.add(today, 1))
         %{acc | suspended: acc.suspended + suspended}
 
+      # Another settler already claimed this period (multi-instance race) — no-op.
+      {:error, :already_settled} ->
+        acc
+
       {:error, reason} ->
         Logger.error("subscription settle failed for #{sub.id}: #{inspect(reason)}")
         %{acc | errors: acc.errors + 1}
@@ -151,24 +166,38 @@ defmodule ControlPlane.Subscriptions do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:wallet, sub.owner_id})])
 
-      if Credits.balance_cents(sub.owner_id) >= cents do
-        {:ok, _} =
-          Credits.add_entry(
-            sub.owner_id,
-            -cents,
-            "vps_charge",
-            "Maandelijkse verlenging: #{sub.vps.name}"
-          )
+      # Atomically CLAIM this billing period: advance the date only while the row is
+      # still due. A second settler (e.g. a second control-plane instance) then sees
+      # 0 rows and can't re-charge — the advisory lock alone would not stop a
+      # double-charge when the balance still covers the price. A rollback below
+      # undoes this advance, so an unaffordable charge leaves the date untouched.
+      {claimed, _} =
+        Repo.update_all(
+          from(s in Subscription,
+            where:
+              s.id == ^sub.id and s.status in [:active, :past_due] and
+                s.next_billing_date <= ^today
+          ),
+          set: [status: :active, next_billing_date: next_month(today), updated_at: ts()]
+        )
 
-        {n, _} =
-          Repo.update_all(
-            from(s in Subscription, where: s.id == ^sub.id),
-            set: [status: :active, next_billing_date: next_month(today), updated_at: ts()]
-          )
+      cond do
+        claimed == 0 ->
+          Repo.rollback(:already_settled)
 
-        n
-      else
-        Repo.rollback(:insufficient_credits)
+        Credits.balance_cents(sub.owner_id) >= cents ->
+          {:ok, _} =
+            Credits.add_entry(
+              sub.owner_id,
+              -cents,
+              "vps_charge",
+              "Maandelijkse verlenging: #{sub.vps.name}"
+            )
+
+          claimed
+
+        true ->
+          Repo.rollback(:insufficient_credits)
       end
     end)
   end

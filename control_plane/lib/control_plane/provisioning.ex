@@ -500,18 +500,16 @@ defmodule ControlPlane.Provisioning do
       vps = repo.get!(Vps, vps_id)
 
       # Keep the IP the control plane allocated + injected via cloud-init. Only
-      # take the agent-reported IP when it actually has one (e.g. DHCP); a nil/
-      # empty report must NOT wipe the address we already assigned, or the VPS
-      # becomes unreachable (no console, no SSH).
-      ip = case result["ip"] do
-        v when is_binary(v) and v != "" -> v
-        _ -> vps.ip_address
-      end
+      # take the agent-reported IP when it is a valid IPv4 AND inside the reporting
+      # node's declared VPS range — an untrusted operator must not be able to point
+      # ip_address at a co-tenant/arbitrary host (the console SSHes to exactly this
+      # address). A nil/empty/invalid report keeps the address we already assigned.
+      ip = accept_reported_ip(result["ip"], vps, repo)
 
       vps
       |> Vps.changeset(%{
         status: :active,
-        provider_vm_id: result["vm_id"],
+        provider_vm_id: sane_vm_id(result["vm_id"]),
         ip_address: ip
       })
       |> repo.update()
@@ -546,6 +544,67 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
       restore_if_present(repo, reservation)
     end)
+    # A provision the customer already paid for at create just died. Refund the
+    # subscription's monthly price and cancel it so recurring billing never charges
+    # for a VM that never existed. Idempotent: refund/cancel run once, since the
+    # subscription is only :cancelled here.
+    |> Multi.run(:refund, fn repo, _changes -> refund_failed_provision(repo, vps_id) end)
+  end
+
+  # Accept an agent-reported IP only if it is a valid IPv4 and (when the node
+  # declares a VPS range) falls inside it; otherwise keep the allocated address.
+  defp accept_reported_ip(reported, %Vps{} = vps, repo) when is_binary(reported) and reported != "" do
+    node = vps.node_id && repo.get(Node, vps.node_id)
+
+    if ControlPlane.Net.valid?(reported) and ip_in_node_range?(reported, node) do
+      reported
+    else
+      Logger.warning("ignoring out-of-range/invalid reported ip #{inspect(reported)} for vps #{vps.id}")
+      vps.ip_address
+    end
+  end
+
+  defp accept_reported_ip(_reported, %Vps{} = vps, _repo), do: vps.ip_address
+
+  # No range on the node → can't bound it, accept any valid IPv4. With a range,
+  # require start <= ip <= end.
+  defp ip_in_node_range?(_ip, %Node{vps_range_start: s, vps_range_end: e})
+       when not (is_binary(s) and is_binary(e)),
+       do: true
+
+  defp ip_in_node_range?(ip, %Node{vps_range_start: s, vps_range_end: e}) do
+    if ControlPlane.Net.valid?(s) and ControlPlane.Net.valid?(e) do
+      i = ControlPlane.Net.to_int(ip)
+      i >= ControlPlane.Net.to_int(s) and i <= ControlPlane.Net.to_int(e)
+    else
+      true
+    end
+  end
+
+  defp ip_in_node_range?(_ip, _node), do: true
+
+  # Bound the agent-supplied VM id to a sane length/charset so it can't smuggle
+  # control characters or absurd values into the DB / later command payloads.
+  defp sane_vm_id(v) when is_binary(v) do
+    if v != "" and String.length(v) <= 64 and String.match?(v, ~r/\A[A-Za-z0-9._:-]+\z/), do: v, else: nil
+  end
+
+  defp sane_vm_id(_), do: nil
+
+  defp refund_failed_provision(repo, vps_id) do
+    case repo.one(
+           from s in ControlPlane.Subscriptions.Subscription,
+             where: s.vps_id == ^vps_id and s.status != :cancelled
+         ) do
+      nil ->
+        {:ok, :no_subscription}
+
+      sub ->
+        cents = sub.price_monthly |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
+        {:ok, _} = ControlPlane.Credits.refund(sub.owner_id, cents, "vps_refund", "Terugbetaling: provisioning mislukt")
+        {:ok, _} = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
+        {:ok, :refunded}
+    end
   end
 
   # Delete succeeded: the VM is gone, so mark the VPS :deleted, release its

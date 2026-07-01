@@ -93,6 +93,11 @@ if config_env() == :prod do
 
   config :control_plane, :mollie, api_key: System.get_env("MOLLIE_API_KEY")
 
+  # Cloudflare Turnstile server-side secret. When set, registration verifies the
+  # CAPTCHA token server-side (blocks API-direct signup-bonus farming); when unset,
+  # verification is skipped.
+  config :control_plane, :turnstile, secret_key: System.get_env("TURNSTILE_SECRET_KEY")
+
   # Billing rates (money per resource-hour) as decimal strings — `ControlPlane.Billing`
   # coerces them to Decimal so money math stays exact. Non-zero defaults so a fresh
   # prod deploy meters something rather than billing everyone €0.

@@ -56,19 +56,31 @@ defmodule ControlPlaneWeb.MollieController do
   end
 
   def webhook(conn, %{"id" => payment_id}) when is_binary(payment_id) do
-    case Mollie.get_payment(payment_id) do
-      {:ok, %{status: "paid"}} ->
-        case Credits.mark_topup_paid_by_mollie_id(payment_id) do
-          {:ok, _} -> :ok
-          {:error, :not_pending} -> :ok
-          other -> Logger.warning("mollie webhook credit: #{inspect(other)}")
-        end
+    # Validate the id shape BEFORE any outbound fetch: rejects malformed ids (path
+    # smuggling into the Mollie API) and cheap garbage that would otherwise fan out
+    # one authenticated HTTPS call to Mollie per request.
+    if valid_mollie_id?(payment_id) do
+      case Mollie.get_payment(payment_id) do
+        {:ok, %{status: "paid", amount: amount}} ->
+          # Credit only after verifying the amount Mollie actually settled matches
+          # the amount we recorded — defence-in-depth against adjustable-amount
+          # payment types ever being enabled.
+          case Credits.mark_topup_paid_by_mollie_id(payment_id, amount) do
+            {:ok, _} -> :ok
+            {:error, :not_pending} -> :ok
+            {:error, :not_found} -> :ok
+            {:error, :amount_mismatch} -> Logger.error("mollie webhook amount mismatch for #{payment_id}")
+            other -> Logger.warning("mollie webhook credit: #{inspect(other)}")
+          end
 
-      {:ok, %{status: status}} ->
-        Logger.info("mollie webhook #{payment_id} status=#{status} (no credit)")
+        {:ok, %{status: status}} ->
+          Logger.info("mollie webhook #{payment_id} status=#{status} (no credit)")
 
-      {:error, reason} ->
-        Logger.warning("mollie webhook fetch failed for #{payment_id}: #{inspect(reason)}")
+        {:error, reason} ->
+          Logger.warning("mollie webhook fetch failed for #{payment_id}: #{inspect(reason)}")
+      end
+    else
+      Logger.info("mollie webhook: ignoring malformed payment id")
     end
 
     # Always 200: the work is idempotent and we don't want Mollie to retry on our
@@ -77,6 +89,9 @@ defmodule ControlPlaneWeb.MollieController do
   end
 
   def webhook(conn, _params), do: send_resp(conn, 200, "")
+
+  # Mollie payment ids look like `tr_<alnum>`.
+  defp valid_mollie_id?(id), do: String.match?(id, ~r/\Atr_[A-Za-z0-9]+\z/)
 
   defp parse_amount(%{"amount_cents" => v}) do
     cents =
