@@ -162,27 +162,16 @@ function SidebarContent({ user }: SidebarProps) {
         {billingNavItems.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
-
-        {user.role === "admin" && (
-          <>
-            <Separator className="my-4" />
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Beheer
-            </p>
-            {adminNavItems.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-          </>
-        )}
+        {/* The old /dashboard/beheer/* admin pages target endpoints that don't
+            exist on bunk-fleet (middleware redirects them), so they're not shown.
+            Admin-only actions that DO work — e.g. adding a datacenter host — live
+            on the "Mijn hardware" page. */}
       </nav>
 
       <Separator />
 
-      {/* Bodem: instellingen (admin) + uitloggen */}
+      {/* Bodem: gebruiker + uitloggen */}
       <div className="px-3 py-4 space-y-1">
-        {user.role === "admin" && (
-          <NavLink item={adminSettingsItem} pathname={pathname} />
-        )}
         <div className="px-3 pt-2">
           <p className="text-sm font-medium">{user.name}</p>
           <p className="text-xs text-muted-foreground">{user.email}</p>
