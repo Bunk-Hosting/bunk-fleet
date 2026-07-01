@@ -228,6 +228,11 @@ defmodule ControlPlane.Provisioning do
   for an agent to delete.
   """
   def delete_vps(vps_id) do
+    # Deleting a VPS ends its subscription — do it up front so recurring billing
+    # stops immediately, even while an async teardown is still in flight.
+    # Idempotent: a no-op if it's already cancelled or the VPS doesn't exist.
+    _ = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
+
     case Repo.get(Vps, vps_id) do
       nil ->
         {:error, :not_found}

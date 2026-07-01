@@ -1,10 +1,15 @@
 defmodule ControlPlane.Subscriptions do
   @moduledoc "Customer subscriptions — one per VPS, charged at the package price."
   import Ecto.Query
+  require Logger
 
   alias ControlPlane.Repo
   alias ControlPlane.Subscriptions.Subscription
-  alias ControlPlane.Fleet
+  alias ControlPlane.{Credits, Fleet, Provisioning}
+  alias ControlPlane.Fleet.Vps
+
+  # A VPS in one of these states is gone; its subscription must never be charged.
+  @dead_vps_statuses [:deleting, :deleted]
 
   @doc "Creates an active subscription for a VPS from its package (idempotent on vps_id)."
   def create_for_vps(vps, owner_id, package_id) when not is_nil(package_id) do
@@ -62,6 +67,143 @@ defmodule ControlPlane.Subscriptions do
         select: min(s.next_billing_date)
     )
   end
+
+  @doc """
+  Cancels the subscription for a (soft-)deleted VPS so the recurring runner never
+  charges for a server that no longer exists. Idempotent.
+  """
+  def cancel_for_vps(vps_id) do
+    now = DateTime.truncate(DateTime.utc_now(), :second)
+
+    {n, _} =
+      Repo.update_all(
+        from(s in Subscription, where: s.vps_id == ^vps_id and s.status != :cancelled),
+        set: [status: :cancelled, cancelled_at: now, updated_at: now]
+      )
+
+    {:ok, n}
+  end
+
+  @doc """
+  Settles every subscription that has come due (`next_billing_date <= today`):
+
+    * charges the owner's wallet the monthly price and moves the date a month on;
+    * on insufficient credit, suspends (stops) the VPS and marks the subscription
+      `:past_due`, so the runner retries the next day;
+    * a later successful charge of a `:past_due` subscription resumes the VPS.
+
+  Subscriptions whose VPS is (being) deleted are cancelled instead of charged.
+  Returns a summary map. `today` is injectable for testing.
+  """
+  def settle_due(today \\ Date.utc_today()) do
+    due =
+      Repo.all(
+        from s in Subscription,
+          join: v in Vps,
+          on: v.id == s.vps_id,
+          where:
+            s.status in [:active, :past_due] and
+              not is_nil(s.next_billing_date) and
+              s.next_billing_date <= ^today,
+          order_by: [asc: s.next_billing_date],
+          # Cap work per tick; each settled subscription advances its own date, so
+          # a large backlog simply drains over the next few 30s ticks.
+          limit: 200,
+          preload: [vps: v]
+      )
+
+    Enum.reduce(due, %{charged: 0, suspended: 0, resumed: 0, cancelled: 0, errors: 0}, fn sub, acc ->
+      settle_one(sub, today, acc)
+    end)
+  end
+
+  defp settle_one(%Subscription{vps: %Vps{status: st}} = sub, _today, acc)
+       when st in @dead_vps_statuses do
+    {:ok, _} = cancel_for_vps(sub.vps_id)
+    %{acc | cancelled: acc.cancelled + 1}
+  end
+
+  defp settle_one(%Subscription{} = sub, today, acc) do
+    was_past_due = sub.status == :past_due
+
+    case charge_and_advance(sub, today) do
+      {:ok, _} ->
+        resumed = if was_past_due, do: maybe_resume(sub), else: 0
+        %{acc | charged: acc.charged + 1, resumed: acc.resumed + resumed}
+
+      {:error, :insufficient_credits} ->
+        suspended = maybe_suspend(sub)
+        mark_past_due(sub, Date.add(today, 1))
+        %{acc | suspended: acc.suspended + suspended}
+
+      {:error, reason} ->
+        Logger.error("subscription settle failed for #{sub.id}: #{inspect(reason)}")
+        %{acc | errors: acc.errors + 1}
+    end
+  end
+
+  # Charge the wallet and advance the billing date in ONE transaction, under the
+  # same per-user advisory lock Credits.charge/4 uses — so a charge can never be
+  # applied without the date also moving (no double-billing on the next tick).
+  defp charge_and_advance(%Subscription{} = sub, today) do
+    cents = to_cents(sub.price_monthly)
+
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:wallet, sub.owner_id})])
+
+      if Credits.balance_cents(sub.owner_id) >= cents do
+        {:ok, _} =
+          Credits.add_entry(
+            sub.owner_id,
+            -cents,
+            "vps_charge",
+            "Maandelijkse verlenging: #{sub.vps.name}"
+          )
+
+        {n, _} =
+          Repo.update_all(
+            from(s in Subscription, where: s.id == ^sub.id),
+            set: [status: :active, next_billing_date: next_month(today), updated_at: ts()]
+          )
+
+        n
+      else
+        Repo.rollback(:insufficient_credits)
+      end
+    end)
+  end
+
+  defp mark_past_due(%Subscription{} = sub, retry_date) do
+    Repo.update_all(
+      from(s in Subscription, where: s.id == ^sub.id),
+      set: [status: :past_due, next_billing_date: retry_date, updated_at: ts()]
+    )
+  end
+
+  # Stop a still-running VPS when its owner can't pay (dispatch happens outside the
+  # money transaction). Returns 1 if a stop was dispatched, else 0.
+  defp maybe_suspend(%Subscription{vps: %Vps{status: st}} = sub) when st in [:active, :paused] do
+    case Provisioning.stop_vps(sub.vps_id) do
+      {:ok, _} -> 1
+      _ -> 0
+    end
+  end
+
+  defp maybe_suspend(_sub), do: 0
+
+  # Resume a VPS we previously suspended, now that the owner has paid again.
+  defp maybe_resume(%Subscription{vps: %Vps{status: :stopped}} = sub) do
+    case Provisioning.start_vps(sub.vps_id) do
+      {:ok, _} -> 1
+      _ -> 0
+    end
+  end
+
+  defp maybe_resume(_sub), do: 0
+
+  defp to_cents(%Decimal{} = price), do: price |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
+
+  defp ts, do: DateTime.truncate(DateTime.utc_now(), :second)
 
   defp next_month(date) do
     case Date.new(date.year, date.month, 1) do

@@ -7,7 +7,9 @@ defmodule ControlPlane.Subscriptions.Subscription do
   @foreign_key_type :binary_id
   schema "subscriptions" do
     field :price_monthly, :decimal
-    field :status, Ecto.Enum, values: [:active, :cancelled], default: :active
+    # :past_due — a recurring charge failed for lack of credit; the VPS is
+    # suspended and the runner retries daily until it clears (back to :active).
+    field :status, Ecto.Enum, values: [:active, :cancelled, :past_due], default: :active
     field :billing_cycle, Ecto.Enum, values: [:monthly, :yearly], default: :monthly
     field :started_at, :utc_datetime
     field :next_billing_date, :date

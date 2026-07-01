@@ -31,6 +31,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   alias ControlPlane.Billing
   alias ControlPlane.Fleet
+  alias ControlPlane.Subscriptions
 
   @default_interval_ms 30_000
 
@@ -59,6 +60,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     reconcile_nodes()
     reclaim_reservations()
     meter_usage()
+    settle_subscriptions()
     schedule_tick(interval_ms)
     {:noreply, state}
   end
@@ -106,6 +108,27 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler metering tick failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  defp settle_subscriptions do
+    # Charge subscriptions that have come due and suspend/resume VPSes on the
+    # customer's wallet balance (O-10). Cheap on an idle day: the due-query is
+    # indexed and each due subscription advances its own date, so a subscription
+    # is touched at most once per day regardless of the 30s tick.
+    summary = Subscriptions.settle_due()
+
+    if summary.charged > 0 or summary.suspended > 0 or summary.resumed > 0 do
+      Logger.info(
+        "recurring billing: charged=#{summary.charged} suspended=#{summary.suspended} " <>
+          "resumed=#{summary.resumed} cancelled=#{summary.cancelled} errors=#{summary.errors}"
+      )
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler subscription settle failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end
