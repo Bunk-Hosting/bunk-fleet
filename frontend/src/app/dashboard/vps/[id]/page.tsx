@@ -28,15 +28,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi } from "@/lib/api";
@@ -231,115 +223,58 @@ export default function VpsDetailPage() {
             </Button>
           </Link>
 
-          {/* Start button */}
-          <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
-            <DialogTrigger asChild>
+          {/* Start */}
+          <ConfirmDialog
+            open={startDialogOpen}
+            onOpenChange={setStartDialogOpen}
+            trigger={
               <Button disabled={!canStart}>
                 <Play className="mr-2 h-4 w-4" />
                 Starten
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>VPS starten</DialogTitle>
-                <DialogDescription>
-                  Weet je zeker dat je deze VPS wilt starten?
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setStartDialogOpen(false)}
-                  disabled={actionLoading}
-                >
-                  Annuleren
-                </Button>
-                <Button onClick={handleStart} disabled={actionLoading}>
-                  {actionLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Starten
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            }
+            title="VPS starten"
+            description="Weet je zeker dat je deze VPS wilt starten?"
+            confirmLabel="Starten"
+            onConfirm={handleStart}
+            loading={actionLoading}
+          />
 
-          {/* Stop button */}
-          <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
-            <DialogTrigger asChild>
+          {/* Stop */}
+          <ConfirmDialog
+            open={stopDialogOpen}
+            onOpenChange={setStopDialogOpen}
+            trigger={
               <Button variant="outline" disabled={!canStop}>
                 <Square className="mr-2 h-4 w-4" />
                 Stoppen
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>VPS stoppen</DialogTitle>
-                <DialogDescription>
-                  Weet je zeker dat je deze VPS wilt stoppen? De server wordt
-                  uitgeschakeld.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setStopDialogOpen(false)}
-                  disabled={actionLoading}
-                >
-                  Annuleren
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleStop}
-                  disabled={actionLoading}
-                >
-                  {actionLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Stoppen
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            }
+            title="VPS stoppen"
+            description="Weet je zeker dat je deze VPS wilt stoppen? De server wordt uitgeschakeld."
+            confirmLabel="Stoppen"
+            variant="destructive"
+            onConfirm={handleStop}
+            loading={actionLoading}
+          />
 
-          {/* Delete button */}
-          <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-            <DialogTrigger asChild>
+          {/* Delete */}
+          <ConfirmDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            trigger={
               <Button variant="destructive" disabled={!canDelete}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 Verwijderen
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>VPS verwijderen</DialogTitle>
-                <DialogDescription>
-                  Weet je zeker dat je deze VPS wilt verwijderen? Dit kan niet
-                  ongedaan worden gemaakt. Alle gegevens worden permanent
-                  verwijderd.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setDeleteDialogOpen(false)}
-                  disabled={actionLoading}
-                >
-                  Annuleren
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={actionLoading}
-                >
-                  {actionLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Definitief verwijderen
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            }
+            title="VPS verwijderen"
+            description="Weet je zeker dat je deze VPS wilt verwijderen? Dit kan niet ongedaan worden gemaakt. Alle gegevens worden permanent verwijderd."
+            confirmLabel="Definitief verwijderen"
+            variant="destructive"
+            onConfirm={handleDelete}
+            loading={actionLoading}
+          />
         </div>
       </div>
 
