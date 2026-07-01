@@ -55,26 +55,13 @@ const billingNavItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
-  { label: "Admin", href: "/dashboard/beheer", icon: Shield },
+  { label: "Beheer", href: "/dashboard/beheer", icon: Shield },
   { label: "Gebruikers", href: "/dashboard/beheer/users", icon: Users },
-  { label: "VPS Beheer", href: "/dashboard/beheer/vps", icon: ServerCog },
-  { label: "Netwerk", href: "/dashboard/beheer/network", icon: Network },
-  { label: "Auditlogs", href: "/dashboard/beheer/logs", icon: FileText },
-  { label: "Reconciliatie", href: "/dashboard/beheer/reconcile", icon: RefreshCw },
+  { label: "VPS-beheer", href: "/dashboard/beheer/vps", icon: ServerCog },
+  { label: "Nodes", href: "/dashboard/beheer/nodes", icon: Network },
 ];
 
-const adminSettingsItem: NavItem = {
-  label: "Instellingen",
-  href: "/dashboard/beheer/settings",
-  icon: Settings,
-};
-
-const allNavItems = [
-  ...mainNavItems,
-  ...billingNavItems,
-  ...adminNavItems,
-  adminSettingsItem,
-];
+const allNavItems = [...mainNavItems, ...billingNavItems, ...adminNavItems];
 
 function isActive(itemHref: string, pathname: string): boolean {
   if (pathname === itemHref) return true;
@@ -162,10 +149,18 @@ function SidebarContent({ user }: SidebarProps) {
         {billingNavItems.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
-        {/* The old /dashboard/beheer/* admin pages target endpoints that don't
-            exist on bunk-fleet (middleware redirects them), so they're not shown.
-            Admin-only actions that DO work — e.g. adding a datacenter host — live
-            on the "Mijn hardware" page. */}
+
+        {user.role === "admin" && (
+          <>
+            <Separator className="my-4" />
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Beheer
+            </p>
+            {adminNavItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </>
+        )}
       </nav>
 
       <Separator />

@@ -23,13 +23,10 @@ export function middleware(request: NextRequest) {
       loginUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(loginUrl);
     }
-
-    // Admin (beheer) is served by the bunk-fleet control-plane admin UI, not this
-    // app. A role can't be derived from an opaque token, so deny here (fail
-    // securely / least privilege) rather than leak a non-functional admin panel.
-    if (pathname.startsWith("/dashboard/beheer")) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+    // /dashboard/beheer/* (admin panel) is authorized server-side: every
+    // /api/v1/admin/* call requires the :admin role (403 otherwise) and the
+    // pages wrap in <AdminGuard>. An opaque token can't carry the role, so we
+    // don't gate it here.
   }
 
   return NextResponse.next();

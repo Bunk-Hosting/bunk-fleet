@@ -89,6 +89,14 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.RequireOperator
   end
 
+  # Admin panel API: authenticated on the caller's OWN session token and gated to
+  # the :admin role (distinct from /admin/v1/* which uses a shared secret).
+  pipeline :admin_session_api do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.ApiAuth
+    plug ControlPlaneWeb.Plugs.RequireAdmin
+  end
+
   scope "/api", ControlPlaneWeb do
     pipe_through :api
   end
@@ -172,6 +180,23 @@ defmodule ControlPlaneWeb.Router do
     post "/enroll-tokens", OperatorController, :create_enroll_token
     get "/nodes", OperatorController, :nodes
     get "/earnings", OperatorController, :earnings
+  end
+
+  # Session-authenticated admin panel (role :admin). Powers the dashboard's admin
+  # section: platform stats, user management, a fleet-wide VPS view + lifecycle
+  # actions, and a node overview.
+  scope "/api/v1/admin", ControlPlaneWeb.Admin do
+    pipe_through :admin_session_api
+
+    get "/stats", PanelController, :stats
+    get "/users", PanelController, :users
+    patch "/users/:id", PanelController, :update_user
+    post "/users/:id/credit", PanelController, :credit_user
+    get "/vpses", PanelController, :vpses
+    post "/vpses/:id/start", PanelController, :vps_start
+    post "/vpses/:id/stop", PanelController, :vps_stop
+    delete "/vpses/:id", PanelController, :vps_delete
+    get "/nodes", PanelController, :nodes
   end
 
   # Browser console WebSocket. No router pipeline (a WS upgrade isn't JSON); the

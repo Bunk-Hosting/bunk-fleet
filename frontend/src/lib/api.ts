@@ -17,7 +17,6 @@ import type {
   VpsPackage,
   VpsStatus,
   OsChoice,
-  AdminStats,
   AdminNetworkResponse,
   AuditLog,
   IPAddressStatus,
@@ -372,39 +371,71 @@ export const vpsApi = {
 
 
 // ── Admin (old-stack surface — adapted later; endpoints may 404 on bunk-fleet) ──
+// ── Admin panel (session-authenticated, role :admin) ──────────────────────
+export interface AdminStats {
+  users: { total: number; user: number; operator: number; admin: number };
+  vpses: { total: number; active: number; stopped: number; provisioning: number; failed: number };
+  nodes: { total: number; online: number; datacenter: number; community: number };
+  credit_outstanding_cents: number;
+}
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "user" | "operator" | "admin";
+  confirmed: boolean;
+  two_factor: boolean;
+  inserted_at: string;
+  vps_count: number;
+  balance_cents: number;
+}
+export interface AdminVps {
+  id: string;
+  name: string;
+  status: string;
+  tier: string;
+  owner_email: string | null;
+  node: string | null;
+  region: string | null;
+  vcpu: number;
+  ram_mb: number;
+  disk_gb: number;
+  ip_address: string | null;
+  inserted_at: string;
+}
+export interface AdminNode {
+  id: string;
+  name: string;
+  tier: string;
+  status: string;
+  owner_email: string | null;
+  region: string | null;
+  total_vcpu: number;
+  total_ram_mb: number;
+  total_disk_gb: number;
+  available_vcpu: number;
+  available_ram_mb: number;
+  available_disk_gb: number;
+  last_heartbeat_at: string | null;
+}
+
 export const adminApi = {
-  stats: () => api.get<AdminStats>("/beheer/stats"),
-  users: {
-    list: () => api.get<{ count: number; results: User[] }>("/beheer/users"),
-    get: (id: string) => api.get<{ user: User; vps: Vps[] }>(`/beheer/users/${id}`),
-    update: (id: string, data: { role?: "user" | "admin"; is_active?: boolean }) =>
-      api.patch<User>(`/beheer/users/${id}`, data),
-  },
-  vps: {
-    list: (params?: { status?: VpsStatus; owner_id?: string; os?: OsChoice }) =>
-      api.get<{ count: number; results: Vps[] }>("/beheer/vps", { params }),
-    get: (id: string) => api.get<Vps>(`/beheer/vps/${id}`),
-    create: (data: { label?: string; package_id: number; os: OsChoice; owner_id: string }) =>
-      api.post<Vps>("/beheer/vps", data),
-    update: (id: string, data: { status: VpsStatus }) => api.patch<Vps>(`/beheer/vps/${id}`, data),
-    delete: (id: string) => api.delete(`/beheer/vps/${id}`),
-    start: (id: string) => api.post<{ detail: string }>(`/beheer/vps/${id}/start`),
-    stop: (id: string) => api.post<{ detail: string }>(`/beheer/vps/${id}/stop`),
-  },
-  network: {
-    list: (params?: { status?: IPAddressStatus }) =>
-      api.get<AdminNetworkResponse>("/beheer/network", { params }),
-  },
-  reconcile: {
-    status: () => api.get<ReconcileStatusResponse>("/beheer/reconcile"),
-    trigger: () => api.post<{ task_id: string }>("/beheer/reconcile"),
-  },
-  logs: {
-    list: (params?: Record<string, unknown>) =>
-      api.get<PaginatedResponse<AuditLog>>("/beheer/logs", { params }),
-    exportUrl: (params?: Record<string, string>) =>
-      `${API_URL}/api/v1/beheer/logs/export?${new URLSearchParams(params).toString()}`,
-  },
+  stats: async (): Promise<AdminStats> => (await api.get<AdminStats>("/admin/stats")).data,
+  users: async (): Promise<AdminUser[]> =>
+    (await api.get<{ users: AdminUser[] }>("/admin/users")).data.users,
+  setRole: (id: string, role: "user" | "operator" | "admin") =>
+    api.patch<{ id: string; role: string }>(`/admin/users/${id}`, { role }),
+  addCredit: (id: string, amountCents: number) =>
+    api.post<{ id: string; balance_cents: number }>(`/admin/users/${id}/credit`, {
+      amount_cents: amountCents,
+    }),
+  vpses: async (): Promise<AdminVps[]> =>
+    (await api.get<{ vpses: AdminVps[] }>("/admin/vpses")).data.vpses,
+  vpsStart: (id: string) => api.post(`/admin/vpses/${id}/start`),
+  vpsStop: (id: string) => api.post(`/admin/vpses/${id}/stop`),
+  vpsDelete: (id: string) => api.delete(`/admin/vpses/${id}`),
+  nodes: async (): Promise<AdminNode[]> =>
+    (await api.get<{ nodes: AdminNode[] }>("/admin/nodes")).data.nodes,
 };
 
 // Billing — adapted to bunk-fleet. The overview is derived live from the
