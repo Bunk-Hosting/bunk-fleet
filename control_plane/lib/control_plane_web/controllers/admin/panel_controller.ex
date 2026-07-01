@@ -129,6 +129,7 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     vpses =
       Repo.all(
         from v in Vps,
+          where: v.status != :deleted,
           order_by: [desc: v.inserted_at],
           limit: 1000,
           preload: [:region, :node]

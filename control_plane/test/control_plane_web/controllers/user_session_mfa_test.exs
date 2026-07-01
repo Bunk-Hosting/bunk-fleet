@@ -15,7 +15,7 @@ defmodule ControlPlaneWeb.UserSessionMfaTest do
   test "login without MFA goes straight to /app", %{conn: conn} do
     {:ok, _} = Accounts.register_user(%{email: "plain@bunk.test", password: @pw})
     conn = post(conn, ~p"/login", %{user: %{email: "plain@bunk.test", password: @pw}})
-    assert redirected_to(conn) == ~p"/app"
+    assert redirected_to(conn) == ~p"/"
     assert get_session(conn, :user_token)
   end
 
@@ -32,7 +32,7 @@ defmodule ControlPlaneWeb.UserSessionMfaTest do
     refute get_session(bad, :user_token)
 
     good = post(conn, ~p"/login/mfa", %{totp: %{code: NimbleTOTP.verification_code(u.totp_secret)}})
-    assert redirected_to(good) == ~p"/app"
+    assert redirected_to(good) == ~p"/"
     assert get_session(good, :user_token)
   end
 

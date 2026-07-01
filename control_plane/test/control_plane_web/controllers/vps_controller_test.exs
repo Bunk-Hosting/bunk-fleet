@@ -3,7 +3,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
   alias ControlPlane.{Accounts, Provisioning, Repo}
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Region, Vps}
+  alias ControlPlane.Fleet.{Node, Package, Region, Vps}
 
   @password "super-secret-pw-123"
 
@@ -38,6 +38,20 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     user
   end
 
+  # The size-based create charges the matching package's price (O-9), so create
+  # tests need an available package that fits the 2 vCPU / 4 GB / 50 GB requests.
+  defp insert_package do
+    Repo.insert!(%Package{
+      name: "Test",
+      cpu_cores: 2,
+      ram_gb: 4,
+      disk_gb: 50,
+      bandwidth_tb: 1,
+      price_monthly: Decimal.new("5.00"),
+      is_available: true
+    })
+  end
+
   defp auth(conn, user) do
     token = Accounts.generate_user_session_token(user) |> Base.url_encode64(padding: false)
     put_req_header(conn, "authorization", "Bearer " <> token)
@@ -62,6 +76,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   setup do
     region = insert_region()
     _node = insert_node(region)
+    _package = insert_package()
     %{region: region, user: user_fixture("owner@example.com"), other: user_fixture("other@example.com")}
   end
 

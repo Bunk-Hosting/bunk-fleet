@@ -136,5 +136,8 @@ defmodule ControlPlaneWeb.UserAuth do
     conn |> configure_session(renew: true) |> clear_session()
   end
 
-  defp signed_in_path, do: ~p"/app"
+  # The old customer LiveView portal (/app) was removed; the only server-rendered
+  # area left is the staff fleet dashboard at "/". (Customers use the Next.js app
+  # against the JSON API, not this browser session flow.)
+  defp signed_in_path, do: ~p"/"
 end
