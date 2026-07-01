@@ -11,6 +11,16 @@ defmodule ControlPlane.Fleet.Node do
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Net
 
+  # Sane upper bounds on a single node's advertised capacity (O-24). A node's
+  # totals come from its untrusted agent; without a ceiling a hostile community
+  # node could advertise absurd capacity to always look least-loaded and win every
+  # placement, drawing other tenants' VPSes onto hardware whose operator has full
+  # console/disk access. Generous enough for any real host — this only clamps
+  # obviously-bogus values.
+  @max_total_vcpu 1024
+  @max_total_ram_mb 4_194_304
+  @max_total_disk_gb 524_288
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "nodes" do
@@ -81,6 +91,7 @@ defmodule ControlPlane.Fleet.Node do
       :wg_public_key,
       :overlay_ip
     ])
+    |> clamp_capacity()
     |> validate_required([:name, :region_id])
     |> validate_vps_network()
     |> assoc_constraint(:region)
@@ -171,6 +182,7 @@ defmodule ControlPlane.Fleet.Node do
       :total_disk_gb,
       :last_heartbeat_at
     ])
+    |> clamp_capacity()
     |> validate_required([:last_heartbeat_at])
   end
 
@@ -197,6 +209,28 @@ defmodule ControlPlane.Fleet.Node do
       :last_heartbeat_at,
       :status
     ])
+    |> clamp_capacity()
     |> validate_required([:last_heartbeat_at, :status])
+  end
+
+  # Bound every capacity field an untrusted agent can influence to [0, max], so a
+  # node can neither advertise absurd headroom to win scheduling nor poison the
+  # capacity math with a negative value.
+  defp clamp_capacity(changeset) do
+    changeset
+    |> clamp_field(:total_vcpu, @max_total_vcpu)
+    |> clamp_field(:total_ram_mb, @max_total_ram_mb)
+    |> clamp_field(:total_disk_gb, @max_total_disk_gb)
+    |> clamp_field(:available_vcpu, @max_total_vcpu)
+    |> clamp_field(:available_ram_mb, @max_total_ram_mb)
+    |> clamp_field(:available_disk_gb, @max_total_disk_gb)
+  end
+
+  defp clamp_field(changeset, field, max) do
+    case get_change(changeset, field) do
+      v when is_integer(v) and v > max -> put_change(changeset, field, max)
+      v when is_integer(v) and v < 0 -> put_change(changeset, field, 0)
+      _ -> changeset
+    end
   end
 end

@@ -415,6 +415,23 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Marks a whole batch of commands `:delivered` in a single UPDATE. Same effect as
+  calling `mark_delivered/1` per command (including resetting `delivered_at` for a
+  redelivery) but without the N+1. Returns `{count, nil}`.
+  """
+  def mark_delivered_all([]), do: {0, nil}
+
+  def mark_delivered_all(commands) do
+    ids = Enum.map(commands, & &1.id)
+    ts = now()
+
+    Repo.update_all(
+      from(c in Command, where: c.id in ^ids),
+      set: [status: :delivered, delivered_at: ts, updated_at: ts]
+    )
+  end
+
+  @doc """
   Applies a result reported by a node's agent for `command`.
 
   The `result` map uses string keys: `"status"` (`"done"` or `"failed"`),

@@ -20,19 +20,22 @@ defmodule ControlPlaneWeb.CommandController do
 
   def index(conn, _params) do
     node = conn.assigns.current_node
+    commands = Provisioning.deliverable_commands_for_node(node)
 
-    commands =
-      for command <- Provisioning.deliverable_commands_for_node(node) do
-        {:ok, _delivered} = Provisioning.mark_delivered(command)
+    # Mark the whole batch delivered in one UPDATE rather than one per command
+    # (the previous per-row loop was an N+1 on every agent long-poll).
+    Provisioning.mark_delivered_all(commands)
 
+    payload =
+      Enum.map(commands, fn command ->
         %{
           "id" => command.id,
           "kind" => Atom.to_string(command.kind),
           "payload" => command.payload
         }
-      end
+      end)
 
-    json(conn, commands)
+    json(conn, payload)
   end
 
   def result(conn, %{"id" => id} = params) do
