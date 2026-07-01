@@ -151,7 +151,11 @@ defmodule ControlPlane.Billing do
         from v in Vps,
           join: n in Node,
           on: n.id == v.node_id,
-          where: v.status == :active and not is_nil(v.node_id) and not is_nil(n.owner_email),
+          # Datacenter nodes are our own clusters — never metered for payout — so
+          # skip them explicitly on top of the owner_email guard.
+          where:
+            v.status == :active and not is_nil(v.node_id) and not is_nil(n.owner_email) and
+              n.tier != :datacenter,
           where: v.id not in subquery(teardown_in_flight),
           select: {v.id, n.owner_email}
       )

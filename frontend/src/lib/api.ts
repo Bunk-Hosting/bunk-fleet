@@ -521,6 +521,9 @@ export interface HostNode {
   name: string;
   status: string;
   tier: string;
+  // Datacenter nodes are shared company clusters (no earnings); community nodes
+  // belong to the operator and accrue payout.
+  shared: boolean;
   hypervisor: string;
   region: string | null;
   total_vcpu: number;
@@ -552,8 +555,10 @@ export interface HostEarnings {
 }
 
 export const hostApi = {
-  status: async (): Promise<{ is_host: boolean; role: string }> => {
-    const res = await api.get<{ is_host: boolean; role: string }>("/host/status");
+  status: async (): Promise<{ is_host: boolean; is_admin?: boolean; role: string }> => {
+    const res = await api.get<{ is_host: boolean; is_admin?: boolean; role: string }>(
+      "/host/status"
+    );
     return res.data;
   },
   activate: async (): Promise<{ is_host: boolean; role: string }> => {

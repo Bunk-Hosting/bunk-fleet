@@ -68,15 +68,42 @@ function Meter({ icon: Icon, label, used, total, unit }: {
   );
 }
 
+function NodeItem({ n }: { n: HostNode }) {
+  return (
+    <div className="rounded-lg border border-border p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Server className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">{n.name}</span>
+          <span className="text-xs text-muted-foreground">{n.region ?? "—"} · {n.hypervisor} · {n.tier}</span>
+        </div>
+        <StatusPill status={n.status} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Meter icon={Cpu} label="vCPU" used={n.total_vcpu - n.available_vcpu} total={n.total_vcpu} unit="" />
+        <Meter icon={MemoryStick} label="RAM" used={Math.round((n.total_ram_mb - n.available_ram_mb) / 1024)} total={Math.round(n.total_ram_mb / 1024)} unit="GB" />
+        <Meter icon={HardDriveDownload} label="Schijf" used={n.total_disk_gb - n.available_disk_gb} total={n.total_disk_gb} unit="GB" />
+      </div>
+      {n.last_heartbeat_at && (
+        <p className="text-xs text-muted-foreground">
+          Laatste heartbeat: {new Date(n.last_heartbeat_at).toLocaleString("nl-NL")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function HardwarePage() {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [isHost, setIsHost] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [activating, setActivating] = useState(false);
 
   const [regions, setRegions] = useState<HostRegion[]>([]);
   const [regionCode, setRegionCode] = useState<string>("");
+  const [tier, setTier] = useState<"community" | "datacenter">("community");
   const [generating, setGenerating] = useState(false);
   const [token, setToken] = useState<EnrollTokenResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -105,6 +132,7 @@ export default function HardwarePage() {
       try {
         const s = await hostApi.status();
         setIsHost(s.is_host);
+        setIsAdmin(!!s.is_admin);
         if (s.is_host) await loadHostData();
       } catch {
         // leave as non-host; user can still try to activate
@@ -141,7 +169,8 @@ export default function HardwarePage() {
     if (!regionCode) return;
     setGenerating(true);
     try {
-      const res = await hostApi.createEnrollToken(regionCode, "community");
+      // Only admins may mint datacenter tokens; the backend enforces this too.
+      const res = await hostApi.createEnrollToken(regionCode, isAdmin ? tier : "community");
       setToken(res);
       setCopied(false);
     } catch (err) {
@@ -179,6 +208,19 @@ export default function HardwarePage() {
           <p className="text-muted-foreground">Bied je eigen server aan en verdien aan VPS-hosting.</p>
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="flex items-start gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Beheerder.</span> Jij kunt naast eigen
+            community-hardware ook <span className="font-medium text-foreground">datacenter-locaties</span> toevoegen:
+            onze eigen serverclusters die als standaard-locatie voor klanten dienen. Die worden niet gemeten of
+            uitbetaald en zijn zichtbaar voor álle beheerders. Kies het type bij het genereren van een
+            install-commando hieronder.
+          </p>
+        </div>
+      )}
 
       {/* Always-visible explainer: what this is, what you need, how it works. */}
       <Card>
@@ -324,11 +366,40 @@ export default function HardwarePage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {isAdmin && (
+                  <div className="space-y-2">
+                    <Label>Type host</Label>
+                    <Select value={tier} onValueChange={(v) => setTier(v as "community" | "datacenter")}>
+                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="datacenter">Datacenter (standaard locatie)</SelectItem>
+                        <SelectItem value="community">Community (eigen hardware)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <Button onClick={handleGenerate} disabled={generating || !regionCode} className="gap-2">
                   {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
                   Genereer install-commando
                 </Button>
               </div>
+
+              {isAdmin && (
+                <p className="text-xs text-muted-foreground">
+                  {tier === "datacenter" ? (
+                    <>
+                      <span className="font-medium text-foreground">Datacenter:</span> onze eigen
+                      servercluster en een standaard-locatie die klanten kunnen kiezen. Wordt níét gemeten
+                      of uitbetaald, en is zichtbaar voor alle beheerders.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-foreground">Community:</span> hardware onder jouw
+                      eigen account waarvoor je per seconde tegoed verdient.
+                    </>
+                  )}
+                </p>
+              )}
 
               {token && (
                 <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
@@ -356,8 +427,12 @@ export default function HardwarePage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Mijn nodes</CardTitle>
-                  <CardDescription>Servers die je hebt aangesloten.</CardDescription>
+                  <CardTitle>Nodes</CardTitle>
+                  <CardDescription>
+                    {isAdmin
+                      ? "De gedeelde datacenter-locaties en je eigen community-hardware."
+                      : "Servers die je hebt aangesloten."}
+                  </CardDescription>
                 </div>
                 <Button variant="ghost" size="sm" className="gap-2"
                   onClick={() => hostApi.nodes().then(setNodes).catch(() => {})}>
@@ -372,29 +447,30 @@ export default function HardwarePage() {
                   hier zodra hij verbinding maakt.
                 </p>
               ) : (
-                <div className="space-y-3">
-                  {nodes.map((n) => (
-                    <div key={n.id} className="rounded-lg border border-border p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Server className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-medium">{n.name}</span>
-                          <span className="text-xs text-muted-foreground">{n.region ?? "—"} · {n.hypervisor} · {n.tier}</span>
-                        </div>
-                        <StatusPill status={n.status} />
-                      </div>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <Meter icon={Cpu} label="vCPU" used={n.total_vcpu - n.available_vcpu} total={n.total_vcpu} unit="" />
-                        <Meter icon={MemoryStick} label="RAM" used={Math.round((n.total_ram_mb - n.available_ram_mb) / 1024)} total={Math.round(n.total_ram_mb / 1024)} unit="GB" />
-                        <Meter icon={HardDriveDownload} label="Schijf" used={n.total_disk_gb - n.available_disk_gb} total={n.total_disk_gb} unit="GB" />
-                      </div>
-                      {n.last_heartbeat_at && (
-                        <p className="text-xs text-muted-foreground">
-                          Laatste heartbeat: {new Date(n.last_heartbeat_at).toLocaleString("nl-NL")}
-                        </p>
-                      )}
+                <div className="space-y-6">
+                  {/* Shared datacenter clusters (admins) */}
+                  {nodes.some((n) => n.shared) && (
+                    <div className="space-y-3">
+                      <p className="flex items-center gap-2 text-sm font-semibold">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        Datacenter-locaties (gedeeld)
+                        <span className="font-normal text-xs text-muted-foreground">
+                          onze clusters · zichtbaar voor alle beheerders · niet gemeten
+                        </span>
+                      </p>
+                      {nodes.filter((n) => n.shared).map((n) => <NodeItem key={n.id} n={n} />)}
                     </div>
-                  ))}
+                  )}
+
+                  {/* The operator's own community hardware */}
+                  {nodes.some((n) => !n.shared) && (
+                    <div className="space-y-3">
+                      {nodes.some((n) => n.shared) && (
+                        <p className="text-sm font-semibold">Mijn hardware (community)</p>
+                      )}
+                      {nodes.filter((n) => !n.shared).map((n) => <NodeItem key={n.id} n={n} />)}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

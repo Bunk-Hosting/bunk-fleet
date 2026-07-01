@@ -25,15 +25,12 @@ defmodule ControlPlaneWeb.OperatorController do
   @max_ttl_seconds 86_400
 
   def create_enroll_token(conn, params) do
+    user = conn.assigns.current_user
+
     with {:ok, %Region{} = region} <- resolve_region(params),
-         {:ok, tier} <- parse_tier(params),
+         {:ok, tier} <- parse_tier(user, params),
          {:ok, ttl_seconds} <- parse_ttl(params),
-         {:ok, {plaintext, token}} <-
-           Enrollment.create_enroll_token_for_operator(conn.assigns.current_user, %{
-             region_id: region.id,
-             tier: tier,
-             ttl_seconds: ttl_seconds
-           }) do
+         {:ok, {plaintext, token}} <- mint_token(user, tier, region.id, ttl_seconds) do
       conn
       |> put_status(:created)
       |> json(%{
@@ -52,11 +49,14 @@ defmodule ControlPlaneWeb.OperatorController do
   end
 
   def nodes(conn, _params) do
-    nodes =
-      conn.assigns.current_user.email
-      |> Fleet.list_nodes_for_owner()
-      |> Enum.map(&node_json/1)
+    user = conn.assigns.current_user
+    own = Fleet.list_nodes_for_owner(user.email)
 
+    # Admins also manage the shared datacenter clusters (our standard locations),
+    # visible to every admin regardless of which admin enrolled them.
+    shared = if user.role == :admin, do: Fleet.list_datacenter_nodes(), else: []
+
+    nodes = (own ++ shared) |> Enum.uniq_by(& &1.id) |> Enum.map(&node_json/1)
     json(conn, %{nodes: nodes})
   end
 
@@ -87,6 +87,9 @@ defmodule ControlPlaneWeb.OperatorController do
       name: node.name,
       status: node.status,
       tier: node.tier,
+      # Datacenter nodes are shared company clusters (no earnings); community
+      # nodes belong to the operator and accrue payout.
+      shared: node.tier == :datacenter,
       hypervisor: node.hypervisor,
       region: region_code(node),
       total_vcpu: node.total_vcpu,
@@ -126,10 +129,33 @@ defmodule ControlPlaneWeb.OperatorController do
 
   defp resolve_region(_params), do: {:error, :region_not_found}
 
-  # Operators may only run community-tier nodes; datacenter tier is reserved for
-  # admin-minted tokens (it is the higher-trust label future scheduling will key
-  # on), so an operator-supplied tier is never honoured.
-  defp parse_tier(_params), do: {:ok, :community}
+  # Admins may add trusted :datacenter hosts — our own server clusters, which are
+  # never metered for payout and are shared across every admin. Every other
+  # operator is limited to :community (bring-your-own) hardware they own and earn
+  # credit for, so an operator-supplied tier is silently downgraded.
+  defp parse_tier(%{role: :admin}, %{"tier" => "datacenter"}), do: {:ok, :datacenter}
+  defp parse_tier(%{role: :admin}, %{"tier" => "community"}), do: {:ok, :community}
+  defp parse_tier(%{role: :admin}, %{"tier" => _}), do: {:error, :invalid_tier}
+  defp parse_tier(_user, _params), do: {:ok, :community}
+
+  # A :datacenter token is company-owned: it carries no owner_email, so every admin
+  # sees the resulting node and metering skips it. A :community token is owned by
+  # the operator who minted it (their nodes' usage pays out to them).
+  defp mint_token(_user, :datacenter, region_id, ttl_seconds) do
+    Enrollment.create_enroll_token(%{
+      region_id: region_id,
+      tier: :datacenter,
+      ttl_seconds: ttl_seconds
+    })
+  end
+
+  defp mint_token(user, :community, region_id, ttl_seconds) do
+    Enrollment.create_enroll_token_for_operator(user, %{
+      region_id: region_id,
+      tier: :community,
+      ttl_seconds: ttl_seconds
+    })
+  end
 
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0 and ttl <= @max_ttl_seconds, do: {:ok, ttl}
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl), do: {:error, :invalid_ttl}

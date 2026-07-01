@@ -15,7 +15,9 @@ defmodule ControlPlaneWeb.HostController do
   # GET /api/v1/host/status — is the caller already a host?
   def status(conn, _params) do
     role = conn.assigns.current_user.role
-    json(conn, %{is_host: role in [:operator, :admin], role: role})
+    # is_admin lets the dashboard offer the datacenter-host (standard-location)
+    # flow, which only admins may use.
+    json(conn, %{is_host: role in [:operator, :admin], is_admin: role == :admin, role: role})
   end
 
   # POST /api/v1/host/activate — promote :user -> :operator (idempotent). The

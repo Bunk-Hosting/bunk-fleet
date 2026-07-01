@@ -69,6 +69,19 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  All datacenter-tier nodes — the shared company clusters ("standard locations").
+  They belong to no single operator and are visible to every admin.
+  """
+  def list_datacenter_nodes do
+    Repo.all(
+      from n in Node,
+        where: n.tier == :datacenter,
+        order_by: [asc: n.name],
+        preload: [:region]
+    )
+  end
+
+  @doc """
   Returns all VPSes, with their region preloaded, newest first.
   """
   def list_vpses(opts \\ []) do
