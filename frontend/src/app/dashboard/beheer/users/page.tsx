@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { adminApi } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { formatDate, downloadCsv } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
 export default function AdminUsersPage() {
@@ -34,9 +34,7 @@ export default function AdminUsersPage() {
   const [avgDialogOpen, setAvgDialogOpen] = useState(false);
   const { toast } = useToast();
 
-  async function handleExport() {
-    const XLSX = await import("xlsx");
-
+  function handleExport() {
     const rows = users.map((u) => ({
       "ID": u.id,
       "Naam": u.name,
@@ -47,17 +45,11 @@ export default function AdminUsersPage() {
       "Aantal VPS'en": u.vps_count ?? 0,
     }));
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [6, 24, 34, 8, 14, 8, 14].map((w) => ({ wch: w }));
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Gebruikers");
-
     const date = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `gebruikers-${date}.xlsx`);
+    downloadCsv(`gebruikers-${date}.csv`, rows);
 
     setAvgDialogOpen(false);
-    toast({ title: "Export klaar", description: "Het Excel-bestand is gedownload." });
+    toast({ title: "Export klaar", description: "Het CSV-bestand is gedownload." });
   }
 
   useEffect(() => {

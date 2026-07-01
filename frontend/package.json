@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
-    "jose": "^5.9.6",
     "@radix-ui/react-dropdown-menu": "^2.0.6",
     "@radix-ui/react-label": "^2.0.2",
     "@radix-ui/react-select": "^2.0.0",
@@ -23,7 +22,6 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "axios": "^1.16.1",
-    "xlsx": "^0.18.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.378.0",

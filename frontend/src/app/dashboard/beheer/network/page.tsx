@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { adminApi } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { formatDate, downloadCsv } from "@/lib/utils";
 import type { IPAddressEntry, IPAddressStatus, NetworkSummary } from "@/lib/types";
 
 const STATUS_LABELS: Record<IPAddressStatus, string> = {
@@ -66,9 +66,7 @@ function SummaryCard({
   );
 }
 
-async function exportExcel(entries: IPAddressEntry[], filter: string) {
-  const XLSX = await import("xlsx");
-
+function exportExcel(entries: IPAddressEntry[], filter: string) {
   const rows = entries.map((e) => ({
     "IP-adres": e.address,
     "Status": STATUS_LABELS[e.status],
@@ -78,15 +76,8 @@ async function exportExcel(entries: IPAddressEntry[], filter: string) {
     "Toegewezen op": e.assigned_at ? new Date(e.assigned_at).toLocaleDateString("nl-NL") : "",
   }));
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  // Kolombreedte instellen
-  ws["!cols"] = [16, 14, 24, 12, 30, 14].map((w) => ({ wch: w }));
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "IP-plan");
-
   const suffix = filter !== "ALL" ? `-${filter.toLowerCase()}` : "";
-  XLSX.writeFile(wb, `ip-plan${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  downloadCsv(`ip-plan${suffix}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
 export default function AdminNetworkPage() {
