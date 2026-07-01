@@ -185,7 +185,11 @@ defmodule ControlPlaneWeb.Router do
   # Session-authenticated admin panel (role :admin). Powers the dashboard's admin
   # section: platform stats, user management, a fleet-wide VPS view + lifecycle
   # actions, and a node overview.
-  scope "/api/v1/admin", ControlPlaneWeb.Admin do
+  #
+  # NOTE: mounted at /beheer (not /admin) on purpose — Cloudflare's managed WAF
+  # blocks "/admin" URL paths with an HTML challenge page before they ever reach
+  # the origin, which would 403 every call from the browser.
+  scope "/api/v1/beheer", ControlPlaneWeb.Admin do
     pipe_through :admin_session_api
 
     get "/stats", PanelController, :stats

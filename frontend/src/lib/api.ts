@@ -414,23 +414,25 @@ export interface AdminNode {
   last_heartbeat_at: string | null;
 }
 
+// NOTE: paths are /beheer/* (not /admin/*) — Cloudflare's WAF blocks "/admin"
+// URLs with a challenge page before they reach the origin.
 export const adminApi = {
-  stats: async (): Promise<AdminStats> => (await api.get<AdminStats>("/admin/stats")).data,
+  stats: async (): Promise<AdminStats> => (await api.get<AdminStats>("/beheer/stats")).data,
   users: async (): Promise<AdminUser[]> =>
-    (await api.get<{ users: AdminUser[] }>("/admin/users")).data.users,
+    (await api.get<{ users: AdminUser[] }>("/beheer/users")).data.users,
   setRole: (id: string, role: "user" | "operator" | "admin") =>
-    api.patch<{ id: string; role: string }>(`/admin/users/${id}`, { role }),
+    api.patch<{ id: string; role: string }>(`/beheer/users/${id}`, { role }),
   addCredit: (id: string, amountCents: number) =>
-    api.post<{ id: string; balance_cents: number }>(`/admin/users/${id}/credit`, {
+    api.post<{ id: string; balance_cents: number }>(`/beheer/users/${id}/credit`, {
       amount_cents: amountCents,
     }),
   vpses: async (): Promise<AdminVps[]> =>
-    (await api.get<{ vpses: AdminVps[] }>("/admin/vpses")).data.vpses,
-  vpsStart: (id: string) => api.post(`/admin/vpses/${id}/start`),
-  vpsStop: (id: string) => api.post(`/admin/vpses/${id}/stop`),
-  vpsDelete: (id: string) => api.delete(`/admin/vpses/${id}`),
+    (await api.get<{ vpses: AdminVps[] }>("/beheer/vpses")).data.vpses,
+  vpsStart: (id: string) => api.post(`/beheer/vpses/${id}/start`),
+  vpsStop: (id: string) => api.post(`/beheer/vpses/${id}/stop`),
+  vpsDelete: (id: string) => api.delete(`/beheer/vpses/${id}`),
   nodes: async (): Promise<AdminNode[]> =>
-    (await api.get<{ nodes: AdminNode[] }>("/admin/nodes")).data.nodes,
+    (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
 };
 
 // Billing — adapted to bunk-fleet. The overview is derived live from the
