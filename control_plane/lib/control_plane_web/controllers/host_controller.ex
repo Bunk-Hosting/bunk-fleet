@@ -3,7 +3,7 @@ defmodule ControlPlaneWeb.HostController do
   Self-service "become a host" surface for the customer dashboard.
 
   Onboarding a node makes a plain `:user` an `:operator` (a superset of `:user`),
-  mirroring the native `HostLive` portal. These endpoints sit BEFORE
+  mirroring the former native host portal. These endpoints sit BEFORE
   `RequireOperator` (in the `:user_api` pipeline) precisely because their job is
   to let a non-operator opt in; the actual node/token/earnings endpoints stay
   role-gated under `/api/v1/operator/*`.

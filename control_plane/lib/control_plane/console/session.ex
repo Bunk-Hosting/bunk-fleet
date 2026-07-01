@@ -1,6 +1,6 @@
 defmodule ControlPlane.Console.Session do
   @moduledoc """
-  Bridges a browser terminal to a VPS over SSH. ConsoleLive starts one (linked),
+  Bridges a browser terminal to a VPS over SSH. The console WebSocket (ConsoleSocket) starts one (linked),
   it dials the VPS with the platform console key, allocates a PTY + shell, forwards
   channel output to the owning LiveView as `{:console_output, binary}`, and accepts
   `send_input/2` / `resize/3`. The connect runs in `handle_continue` so the caller

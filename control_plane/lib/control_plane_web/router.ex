@@ -58,33 +58,11 @@ defmodule ControlPlaneWeb.Router do
     delete "/logout", UserSessionController, :delete
   end
 
-  # Customer portal: authenticated area.
-  scope "/", ControlPlaneWeb do
-    pipe_through [:browser, :require_authenticated]
-
-    live_session :dashboard,
-      on_mount: [
-        {ControlPlaneWeb.UserAuth, :ensure_authenticated},
-        {ControlPlaneWeb.UserAuth, :current_path}
-      ],
-      layout: {ControlPlaneWeb.Layouts, :dashboard} do
-      live "/dashboard", CustomerDashboardLive, :index
-      live "/dashboard/vps", VpsListLive, :index
-      live "/dashboard/vps/new", VpsNewLive, :index
-      live "/dashboard/vps/:id", VpsDetailLive, :index
-      live "/dashboard/vps/:id/console", ConsoleLive, :index
-      live "/dashboard/beveiliging", SecurityLive, :index
-      live "/dashboard/billing", BillingLive, :index
-      live "/dashboard/billing/invoices", InvoiceListLive, :index
-    end
-
-    live_session :portal, on_mount: [{ControlPlaneWeb.UserAuth, :ensure_authenticated}] do
-      live "/app", PortalLive, :index
-      live "/app/host", HostLive, :index
-      live "/app/topup", TopupLive, :index
-      live "/app/vps/:id/console", ConsoleLive, :index
-    end
-  end
+  # The customer portal is served entirely by the Next.js frontend against the
+  # JSON API (`/api/v1/*`) and the console WebSocket (`/ws/console/:id`). The old
+  # server-rendered LiveView customer stack (:dashboard / :portal) was removed:
+  # it was unreachable behind the edge and its create paths didn't charge the
+  # wallet, so keeping it was pure attack surface.
 
   # Worker-node API: everything in `:api` plus agent-token bearer authentication.
   pipeline :node_api do
