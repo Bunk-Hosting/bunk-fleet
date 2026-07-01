@@ -7,18 +7,15 @@ import {
   LayoutDashboard,
   Network,
   PlusCircle,
-  RefreshCw,
   Shield,
   Users,
   Server,
   ServerCog,
   HardDrive,
-  FileText,
   LogOut,
   Menu,
   ShieldCheck,
   Wallet,
-  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
