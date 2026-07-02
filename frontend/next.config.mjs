@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.bunkhosting.nl";
-const WS_URL  = (process.env.NEXT_PUBLIC_WS_URL  || "wss://api.bunkhosting.nl").replace(/^http/, "ws");
+// Fallbacks are the live origin; api.bunkhosting.nl has no DNS/tunnel.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://app.bunkhosting.nl";
+const WS_URL  = (process.env.NEXT_PUBLIC_WS_URL  || "wss://app.bunkhosting.nl").replace(/^http/, "ws");
 const CSP_REPORT_URI = `${API_URL}/api/v1/security/csp-report/`;
 
 const securityHeaders = [

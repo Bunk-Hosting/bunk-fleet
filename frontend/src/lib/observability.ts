@@ -14,7 +14,9 @@
  * "omit"`) zodat het rapport ook werkt vanaf uitgelogde sessies.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.bunkhosting.nl";
+// Fallback is the live origin (app.bunkhosting.nl); api.bunkhosting.nl has no
+// DNS and would fail to resolve if the env var were ever missing.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://app.bunkhosting.nl";
 const ENDPOINT = `${API_URL}/api/v1/security/client-error/`;
 
 // Per-message dedupe: zelfde message+stack binnen 5 s maar 1 keer rapporteren.
