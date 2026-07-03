@@ -50,6 +50,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     ensure_esxi_template() {
       export GOVC_URL="$ESXI_URL" GOVC_USERNAME="$ESXI_USER" GOVC_PASSWORD="$ESXI_PASS"
       [ "$ESXI_INSECURE" = "true" ] && export GOVC_INSECURE=1
+      [ -n "$ESXI_DC" ] && export GOVC_DATACENTER="$ESXI_DC"
       if ! command -v govc >/dev/null 2>&1; then
         echo "-> govc (VMware CLI) ophalen..."
         curl -fsSL https://github.com/vmware/govmomi/releases/latest/download/govc_Linux_x86_64.tar.gz | tar -xzf - -C /usr/local/bin govc || { echo "!! govc-download mislukt"; return 1; }
@@ -62,8 +63,10 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       echo "-> Template '$ESXI_TMPL' ontbreekt; Ubuntu cloud-OVA importeren (kan enkele minuten duren)..."
       ova="https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.ova"
       args="-name=$ESXI_TMPL"
+      [ -n "$ESXI_DC" ] && args="$args -dc=$ESXI_DC"
       [ -n "$ESXI_DS" ] && args="$args -ds=$ESXI_DS"
       [ -n "$ESXI_RP" ] && args="$args -pool=$ESXI_RP"
+      [ -n "$ESXI_FOLDER" ] && args="$args -folder=$ESXI_FOLDER"
       if govc import.ova $args "$ova" && govc vm.markastemplate "$ESXI_TMPL"; then
         echo "-> Template '$ESXI_TMPL' aangemaakt en klaar voor gebruik."
       else
@@ -88,7 +91,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     HYP="$(printf '%s' "$HYP" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$HYP" in pve) HYP=proxmox;; vmware|vsphere|vcenter) HYP=esxi;; esac
     PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false
-    ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DS=""; ESXI_RP=""; ESXI_TMPL=""
+    ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DC=""; ESXI_DS=""; ESXI_RP=""; ESXI_FOLDER=""; ESXI_TMPL=""
     if [ "$HYP" = "proxmox" ]; then
       read -r -p "Proxmox API host (https://IP:8006): " PXHOST </dev/tty
       read -r -p "Proxmox node-naam (bv. pve): " PXNODE </dev/tty
@@ -96,12 +99,22 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       read -r -s -p "Proxmox API token-secret: " PXSEC </dev/tty; echo
       read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
     elif [ "$HYP" = "esxi" ]; then
-      read -r -p "vSphere/ESXi URL (https://host/sdk): " ESXI_URL </dev/tty
-      read -r -p "Gebruiker: " ESXI_USER </dev/tty
+      read -r -p "vSphere/ESXi adres (bv. 192.168.1.50 of vcenter.school.nl): " ESXI_URL </dev/tty
+      # Accept a bare IP/hostname: add the scheme + /sdk path govmomi expects,
+      # so "192.168.1.50" becomes "https://192.168.1.50/sdk" (fixes the common
+      # "unsupported protocol scheme" error from leaving those off).
+      case "$ESXI_URL" in http://*|https://*) : ;; *) ESXI_URL="https://$ESXI_URL" ;; esac
+      case "$ESXI_URL" in */sdk|*/sdk/) : ;; *) ESXI_URL="${ESXI_URL%/}/sdk" ;; esac
+      echo "   -> gebruik URL: $ESXI_URL"
+      read -r -p "Gebruiker (bv. administrator@vsphere.local): " ESXI_USER </dev/tty
       read -r -s -p "Wachtwoord: " ESXI_PASS </dev/tty; echo
       read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
+      # Datacenter/folder matter on vCenter (multiple of each); on a standalone
+      # ESXi host leave them empty and the default is used.
+      read -r -p "Datacenter (vCenter; leeg = standaard/losse ESXi-host): " ESXI_DC </dev/tty
       read -r -p "Datastore (leeg = standaard): " ESXI_DS </dev/tty
-      read -r -p "Resource pool (leeg = standaard): " ESXI_RP </dev/tty
+      read -r -p "Resource pool of cluster (leeg = standaard): " ESXI_RP </dev/tty
+      read -r -p "VM-folder (leeg = standaard): " ESXI_FOLDER </dev/tty
       read -r -p "Template-VM naam (leeg = automatisch aanmaken): " ESXI_TMPL </dev/tty
       ESXI_TMPL="${ESXI_TMPL:-bunk-ubuntu-2204}"
     else
@@ -114,14 +127,17 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     read -r -p "  Disk in GB: " OFFER_DISK </dev/tty
 
     echo
-    echo "Netwerk voor je VPS'en (leeg laten = standaard/Bunk-bereik):"
-    echo "  1) Zelfde subnet als deze host (geen VLAN)"
-    echo "  2) Apart VLAN/subnet voor VPS'en"
-    read -r -p "Keuze [1]: " NETMODE </dev/tty; NETMODE="${NETMODE:-1}"
-    read -r -p "  Bridge (bv. vmbr0): " VPS_BRIDGE </dev/tty
+    echo "Netwerk voor je VPS'en:"
+    # Bridge/VLAN are Proxmox-only concepts (the Proxmox provider forces the NIC
+    # bridge + 802.1q tag). On ESXi a VM's network is a *port group* and the
+    # clone inherits it from the template, so we neither ask nor pass it there.
+    VPS_BRIDGE=""
     VPS_VLAN=0
-    if [ "$NETMODE" = "2" ]; then
-      read -r -p "  VLAN-tag: " VPS_VLAN </dev/tty
+    if [ "$HYP" = "proxmox" ]; then
+      read -r -p "  Bridge (bv. vmbr0; leeg = van de template overnemen): " VPS_BRIDGE </dev/tty
+      read -r -p "  VLAN-tag (0 = geen VLAN): " VPS_VLAN </dev/tty; VPS_VLAN="${VPS_VLAN:-0}"
+    else
+      echo "  VPS'en gebruiken de port group / netwerk-adapter van de template."
     fi
     read -r -p "  Gateway voor VPS'en (bv. 192.168.1.1): " VPS_GW </dev/tty
     read -r -p "  Subnet-prefix (bv. 24): " VPS_CIDR </dev/tty
@@ -159,8 +175,10 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Environment=BUNK_ESXI_USER=${ESXI_USER}
     Environment=BUNK_ESXI_PASSWORD=${ESXI_PASS}
     Environment=BUNK_ESXI_INSECURE=${ESXI_INSECURE:-false}
+    Environment=BUNK_ESXI_DATACENTER=${ESXI_DC}
     Environment=BUNK_ESXI_DATASTORE=${ESXI_DS}
     Environment=BUNK_ESXI_RESOURCE_POOL=${ESXI_RP}
+    Environment=BUNK_ESXI_FOLDER=${ESXI_FOLDER}
     Environment=BUNK_ESXI_TEMPLATE=${ESXI_TMPL}
     Environment=BUNK_OFFER_VCPU=${OFFER_VCPU:-0}
     Environment=BUNK_OFFER_RAM_MB=${OFFER_RAM:-0}
