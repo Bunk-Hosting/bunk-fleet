@@ -42,6 +42,37 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     done
 
     bold() { printf "\\033[1m%s\\033[0m\\n" "$1"; }
+
+    # Zero-touch ESXi template: if the chosen template VM doesn't exist yet, pull
+    # VMware's own CLI (govc) and import Ubuntu's cloud OVA (cloud-init +
+    # open-vm-tools ready) as a template. Best-effort — a failure is reported but
+    # doesn't abort the agent install.
+    ensure_esxi_template() {
+      export GOVC_URL="$ESXI_URL" GOVC_USERNAME="$ESXI_USER" GOVC_PASSWORD="$ESXI_PASS"
+      [ "$ESXI_INSECURE" = "true" ] && export GOVC_INSECURE=1
+      if ! command -v govc >/dev/null 2>&1; then
+        echo "-> govc (VMware CLI) ophalen..."
+        curl -fsSL https://github.com/vmware/govmomi/releases/latest/download/govc_Linux_x86_64.tar.gz | tar -xzf - -C /usr/local/bin govc || { echo "!! govc-download mislukt"; return 1; }
+        chmod +x /usr/local/bin/govc
+      fi
+      if govc vm.info "$ESXI_TMPL" >/dev/null 2>&1; then
+        echo "-> Template '$ESXI_TMPL' bestaat al — geen actie nodig."
+        return 0
+      fi
+      echo "-> Template '$ESXI_TMPL' ontbreekt; Ubuntu cloud-OVA importeren (kan enkele minuten duren)..."
+      ova="https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.ova"
+      args="-name=$ESXI_TMPL"
+      [ -n "$ESXI_DS" ] && args="$args -ds=$ESXI_DS"
+      [ -n "$ESXI_RP" ] && args="$args -pool=$ESXI_RP"
+      if govc import.ova $args "$ova" && govc vm.markastemplate "$ESXI_TMPL"; then
+        echo "-> Template '$ESXI_TMPL' aangemaakt en klaar voor gebruik."
+      else
+        echo "!! Kon de template niet automatisch aanmaken (check datastore/resource-pool/netwerk/rechten)."
+        echo "   De agent draait wel, maar kan pas VPS'en aanmaken zodra er een cloud-init template bestaat."
+        return 1
+      fi
+    }
+
     bold "== Bunk Worker installatie =="
     echo "Control plane: $CP"
     echo "Deze worker draait op DEZE Linux-machine en praat met je Proxmox- of"
@@ -71,7 +102,8 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
       read -r -p "Datastore (leeg = standaard): " ESXI_DS </dev/tty
       read -r -p "Resource pool (leeg = standaard): " ESXI_RP </dev/tty
-      read -r -p "Template-VM naam (verplicht): " ESXI_TMPL </dev/tty
+      read -r -p "Template-VM naam (leeg = automatisch aanmaken): " ESXI_TMPL </dev/tty
+      ESXI_TMPL="${ESXI_TMPL:-bunk-ubuntu-2204}"
     else
       echo "Onbekende hypervisor: $HYP"; exit 1
     fi
@@ -95,6 +127,11 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     read -r -p "  Subnet-prefix (bv. 24): " VPS_CIDR </dev/tty
     read -r -p "  Eerste bruikbare IP (bv. 192.168.1.100): " VPS_RSTART </dev/tty
     read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
+
+    echo
+    if [ "$HYP" = "esxi" ]; then
+      ensure_esxi_template || echo "(template-stap overgeslagen — zie melding hierboven)"
+    fi
 
     echo
     echo "-> bunk-worker binary downloaden..."
