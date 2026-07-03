@@ -53,7 +53,11 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       [ -n "$ESXI_DC" ] && export GOVC_DATACENTER="$ESXI_DC"
       if ! command -v govc >/dev/null 2>&1; then
         echo "-> govc (VMware CLI) ophalen..."
-        curl -fsSL https://github.com/vmware/govmomi/releases/latest/download/govc_Linux_x86_64.tar.gz | tar -xzf - -C /usr/local/bin govc || { echo "!! govc-download mislukt"; return 1; }
+        install -d -m 755 /usr/local/bin
+        gtmp="$(mktemp)"
+        curl -fsSL https://github.com/vmware/govmomi/releases/latest/download/govc_Linux_x86_64.tar.gz -o "$gtmp" || { echo "!! govc-download mislukt (schijf vol of geen netwerk? check: df -h /)"; rm -f "$gtmp"; return 1; }
+        tar -xzf "$gtmp" -C /usr/local/bin govc || { echo "!! govc uitpakken mislukt"; rm -f "$gtmp"; return 1; }
+        rm -f "$gtmp"
         chmod +x /usr/local/bin/govc
       fi
       if govc vm.info "$ESXI_TMPL" >/dev/null 2>&1; then
@@ -151,8 +155,11 @@ defmodule ControlPlaneWeb.WorkerInstallController do
 
     echo
     echo "-> bunk-worker binary downloaden..."
-    curl -fsSL "$CP/dist/bunk-worker" -o /usr/local/bin/bunk-worker
-    chmod +x /usr/local/bin/bunk-worker
+    install -d -m 755 /usr/local/bin
+    btmp="$(mktemp)"
+    curl -fsSL "$CP/dist/bunk-worker" -o "$btmp" || { echo "!! Kon de bunk-worker binary niet wegschrijven — schijf vol? Check met: df -h /"; rm -f "$btmp"; exit 1; }
+    install -m 755 "$btmp" /usr/local/bin/bunk-worker
+    rm -f "$btmp"
     install -d -m 700 /var/lib/bunk-worker
 
     echo "-> systemd-service installeren..."
