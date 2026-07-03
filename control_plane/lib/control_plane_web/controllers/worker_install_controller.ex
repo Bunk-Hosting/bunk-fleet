@@ -45,49 +45,49 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     echo "ESXi-API over het netwerk — niet op de hypervisor zelf."
     echo
 
-    [ -z "$TOKEN" ] && read -rp "Enroll-token (uit de portal): " TOKEN
+    [ -z "$TOKEN" ] && read -r -p "Enroll-token (uit de portal): " TOKEN </dev/tty
     [ -z "$TOKEN" ] && { echo "Een enroll-token is verplicht."; exit 1; }
 
-    read -rp "Hypervisor (proxmox/esxi) [proxmox]: " HYP; HYP="${HYP:-proxmox}"
+    read -r -p "Hypervisor (proxmox/esxi) [proxmox]: " HYP </dev/tty; HYP="${HYP:-proxmox}"
     PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false
     ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DS=""; ESXI_RP=""; ESXI_TMPL=""
     if [ "$HYP" = "proxmox" ]; then
-      read -rp "Proxmox API host (https://IP:8006): " PXHOST
-      read -rp "Proxmox node-naam (bv. pve): " PXNODE
-      read -rp "Proxmox API token-id (user@realm!tokenid): " PXTID
-      read -rsp "Proxmox API token-secret: " PXSEC; echo
-      read -rp "TLS-certificaat verifiëren? (j/N): " VS; case "$VS" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
+      read -r -p "Proxmox API host (https://IP:8006): " PXHOST </dev/tty
+      read -r -p "Proxmox node-naam (bv. pve): " PXNODE </dev/tty
+      read -r -p "Proxmox API token-id (user@realm!tokenid): " PXTID </dev/tty
+      read -r -s -p "Proxmox API token-secret: " PXSEC </dev/tty; echo
+      read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
     elif [ "$HYP" = "esxi" ]; then
-      read -rp "vSphere/ESXi URL (https://host/sdk): " ESXI_URL
-      read -rp "Gebruiker: " ESXI_USER
-      read -rsp "Wachtwoord: " ESXI_PASS; echo
-      read -rp "TLS-certificaat verifiëren? (j/N): " VS; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
-      read -rp "Datastore (leeg = standaard): " ESXI_DS
-      read -rp "Resource pool (leeg = standaard): " ESXI_RP
-      read -rp "Template-VM naam (verplicht): " ESXI_TMPL
+      read -r -p "vSphere/ESXi URL (https://host/sdk): " ESXI_URL </dev/tty
+      read -r -p "Gebruiker: " ESXI_USER </dev/tty
+      read -r -s -p "Wachtwoord: " ESXI_PASS </dev/tty; echo
+      read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
+      read -r -p "Datastore (leeg = standaard): " ESXI_DS </dev/tty
+      read -r -p "Resource pool (leeg = standaard): " ESXI_RP </dev/tty
+      read -r -p "Template-VM naam (verplicht): " ESXI_TMPL </dev/tty
     else
       echo "Onbekende hypervisor: $HYP"; exit 1
     fi
     echo
     echo "Hoeveel capaciteit wil je aanbieden? (leeg laten = alles beschikbaar)"
-    read -rp "  vCPU-cores: " OFFER_VCPU
-    read -rp "  RAM in MB:  " OFFER_RAM
-    read -rp "  Disk in GB: " OFFER_DISK
+    read -r -p "  vCPU-cores: " OFFER_VCPU </dev/tty
+    read -r -p "  RAM in MB:  " OFFER_RAM </dev/tty
+    read -r -p "  Disk in GB: " OFFER_DISK </dev/tty
 
     echo
     echo "Netwerk voor je VPS'en (leeg laten = standaard/Bunk-bereik):"
     echo "  1) Zelfde subnet als deze host (geen VLAN)"
     echo "  2) Apart VLAN/subnet voor VPS'en"
-    read -rp "Keuze [1]: " NETMODE; NETMODE="${NETMODE:-1}"
-    read -rp "  Bridge (bv. vmbr0): " VPS_BRIDGE
+    read -r -p "Keuze [1]: " NETMODE </dev/tty; NETMODE="${NETMODE:-1}"
+    read -r -p "  Bridge (bv. vmbr0): " VPS_BRIDGE </dev/tty
     VPS_VLAN=0
     if [ "$NETMODE" = "2" ]; then
-      read -rp "  VLAN-tag: " VPS_VLAN
+      read -r -p "  VLAN-tag: " VPS_VLAN </dev/tty
     fi
-    read -rp "  Gateway voor VPS'en (bv. 192.168.1.1): " VPS_GW
-    read -rp "  Subnet-prefix (bv. 24): " VPS_CIDR
-    read -rp "  Eerste bruikbare IP (bv. 192.168.1.100): " VPS_RSTART
-    read -rp "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND
+    read -r -p "  Gateway voor VPS'en (bv. 192.168.1.1): " VPS_GW </dev/tty
+    read -r -p "  Subnet-prefix (bv. 24): " VPS_CIDR </dev/tty
+    read -r -p "  Eerste bruikbare IP (bv. 192.168.1.100): " VPS_RSTART </dev/tty
+    read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
 
     echo
     echo "-> bunk-worker binary downloaden..."
