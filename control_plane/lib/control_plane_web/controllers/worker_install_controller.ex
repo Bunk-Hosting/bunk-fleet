@@ -30,10 +30,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     set -euo pipefail
     CP="#{cp}"
     TOKEN=""
+    HYP=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --token) TOKEN="$2"; shift 2;;
         --token=*) TOKEN="${1#*=}"; shift;;
+        --hypervisor) HYP="$2"; shift 2;;
+        --hypervisor=*) HYP="${1#*=}"; shift;;
         *) shift;;
       esac
     done
@@ -48,7 +51,11 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     [ -z "$TOKEN" ] && read -r -p "Enroll-token (uit de portal): " TOKEN </dev/tty
     [ -z "$TOKEN" ] && { echo "Een enroll-token is verplicht."; exit 1; }
 
-    read -r -p "Hypervisor (proxmox/esxi) [proxmox]: " HYP </dev/tty; HYP="${HYP:-proxmox}"
+    [ -z "$HYP" ] && read -r -p "Hypervisor (proxmox/esxi) [proxmox]: " HYP </dev/tty
+    HYP="${HYP:-proxmox}"
+    # Normalise so "ESXi", " esxi ", "vSphere", "PVE" etc. all match.
+    HYP="$(printf '%s' "$HYP" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$HYP" in pve) HYP=proxmox;; vmware|vsphere|vcenter) HYP=esxi;; esac
     PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false
     ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DS=""; ESXI_RP=""; ESXI_TMPL=""
     if [ "$HYP" = "proxmox" ]; then
