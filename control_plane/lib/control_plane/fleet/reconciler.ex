@@ -35,6 +35,13 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   @default_interval_ms 30_000
 
+  # Metering is time-delta based (each usage_records row stores the seconds since
+  # that VPS's previous meter), so the cadence never changes the billed total — it
+  # only bounds how fast usage_records grows and how often EVERY active VPS is
+  # locked FOR UPDATE. Running it hourly instead of on every 30s tick cuts row
+  # growth and lock churn ~120x at scale. Override with `:meter_interval_ms`.
+  @default_meter_interval_ms 60 * 60 * 1000
+
   @doc """
   Starts the reconciler.
 
@@ -50,8 +57,9 @@ defmodule ControlPlane.Fleet.Reconciler do
   @impl true
   def init(opts) do
     interval_ms = Keyword.get(opts, :interval_ms, @default_interval_ms)
+    meter_interval_ms = Keyword.get(opts, :meter_interval_ms, @default_meter_interval_ms)
     schedule_tick(interval_ms)
-    {:ok, %{interval_ms: interval_ms}}
+    {:ok, %{interval_ms: interval_ms, meter_interval_ms: meter_interval_ms, last_meter_ms: nil}}
   end
 
   @impl true
@@ -59,10 +67,24 @@ defmodule ControlPlane.Fleet.Reconciler do
     # Each sub-step is isolated so a failure in one still lets the other run.
     reconcile_nodes()
     reclaim_reservations()
-    meter_usage()
+    state = maybe_meter_usage(state)
     settle_subscriptions()
     schedule_tick(interval_ms)
     {:noreply, state}
+  end
+
+  # Meter only once per meter_interval_ms (default hourly), not every tick. Uses a
+  # monotonic clock so it's immune to wall-clock jumps; the first tick after boot
+  # meters immediately (last_meter_ms is nil), catching up any elapsed runtime.
+  defp maybe_meter_usage(%{meter_interval_ms: mi, last_meter_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= mi do
+      meter_usage()
+      %{state | last_meter_ms: now}
+    else
+      state
+    end
   end
 
   defp reconcile_nodes do
