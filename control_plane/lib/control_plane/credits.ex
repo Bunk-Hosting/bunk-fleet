@@ -98,6 +98,11 @@ defmodule ControlPlane.Credits do
     Repo.all(from t in TopupRequest, where: t.status == :pending, order_by: [asc: t.inserted_at], preload: [:user])
   end
 
+  @doc "Number of still-pending top-up requests for a user (used to cap abuse)."
+  def count_pending_topups(user_id) do
+    Repo.aggregate(from(t in TopupRequest, where: t.user_id == ^user_id and t.status == :pending), :count)
+  end
+
   @doc """
   Confirms a pending top-up (admin, after payment received): credits the wallet
   and marks the request paid, atomically. A non-pending request yields

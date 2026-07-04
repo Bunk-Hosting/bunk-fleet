@@ -18,12 +18,16 @@ defmodule ControlPlaneWeb.MollieController do
 
   @min_cents 500
   @max_cents 100_000
+  # A user can't stack unbounded unpaid checkouts: each one fans out an
+  # authenticated create_payment call to Mollie and leaves a :pending row.
+  @max_pending_topups 5
 
   def topup(conn, params) do
     user = conn.assigns.current_user
 
     with {:ok, cents} <- parse_amount(params),
          true <- Mollie.configured?() || {:error, :not_configured},
+         :ok <- check_pending_cap(user.id),
          {:ok, payment} <-
            Mollie.create_payment(%{
              amount_cents: cents,
@@ -37,6 +41,9 @@ defmodule ControlPlaneWeb.MollieController do
     else
       {:error, :invalid_amount} ->
         error(conn, :unprocessable_entity, "invalid_amount")
+
+      {:error, :too_many_pending} ->
+        error(conn, :too_many_requests, "too_many_pending_topups")
 
       {:error, :not_configured} ->
         error(conn, :service_unavailable, "payments_unavailable")
@@ -68,7 +75,11 @@ defmodule ControlPlaneWeb.MollieController do
           case Credits.mark_topup_paid_by_mollie_id(payment_id, amount) do
             {:ok, _} -> :ok
             {:error, :not_pending} -> :ok
-            {:error, :not_found} -> :ok
+            # A verified *paid* payment with no matching topup row means a real
+            # customer payment we can't reconcile — never swallow it silently.
+            {:error, :not_found} ->
+              Logger.error("mollie webhook: PAID payment #{payment_id} has no matching topup_request — possible lost payment, reconcile manually")
+
             {:error, :amount_mismatch} -> Logger.error("mollie webhook amount mismatch for #{payment_id}")
             other -> Logger.warning("mollie webhook credit: #{inspect(other)}")
           end
@@ -110,6 +121,12 @@ defmodule ControlPlaneWeb.MollieController do
   end
 
   defp parse_amount(_), do: {:error, :invalid_amount}
+
+  defp check_pending_cap(user_id) do
+    if Credits.count_pending_topups(user_id) >= @max_pending_topups,
+      do: {:error, :too_many_pending},
+      else: :ok
+  end
 
   defp public_url, do: Application.get_env(:control_plane, :public_url) || ""
 end

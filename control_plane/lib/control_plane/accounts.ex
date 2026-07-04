@@ -68,12 +68,23 @@ defmodule ControlPlane.Accounts do
   def valid_totp?(%User{totp_secret: secret} = user, code) when is_binary(secret) do
     trimmed = String.trim(to_string(code))
 
-    if byte_size(trimmed) == 6 and NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
-      user
-      |> Ecto.Changeset.change(totp_last_used_at: DateTime.truncate(DateTime.utc_now(), :second))
-      |> Repo.update()
+    now = DateTime.truncate(DateTime.utc_now(), :second)
 
-      true
+    if byte_size(trimmed) == 6 and NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
+      # Atomically claim this time-step so a valid code cannot be replayed, even
+      # under concurrent requests: only the write that advances the watermark
+      # wins (1 row affected). Previously the update result was discarded
+      # fire-and-forget, so a failed/lost write (or a race) left no watermark and
+      # the same 6-digit code could be reused within its ~30s window.
+      {count, _} =
+        from(u in User,
+          where:
+            u.id == ^user.id and
+              (is_nil(u.totp_last_used_at) or u.totp_last_used_at < ^now)
+        )
+        |> Repo.update_all(set: [totp_last_used_at: now])
+
+      count == 1
     else
       false
     end

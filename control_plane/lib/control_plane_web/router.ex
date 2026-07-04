@@ -114,6 +114,23 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.RateLimit, bucket: "auth", max: 30, window_ms: 60_000
   end
 
+  # Public node enrollment is unauthenticated (the single-use enroll token is the
+  # credential); throttle per client IP so token guessing / enroll spam can't run
+  # unbounded against the DB.
+  pipeline :enroll_public do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "enroll", max: 30, window_ms: 60_000
+  end
+
+  # Authenticated but throttled: each wallet top-up fans out an authenticated
+  # create_payment call to Mollie, so cap per client IP on top of the per-user
+  # pending-topup cap in the controller.
+  pipeline :user_api_throttled do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.ApiAuth
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "topup", max: 15, window_ms: 60_000
+  end
+
   # Public webhook: still no auth (Mollie can't authenticate), but rate-limited so
   # it can't be flooded to amplify outbound get_payment fetches / hammer Mollie.
   # 120/min/ip is far above Mollie's real callback rate for one merchant.
@@ -168,8 +185,13 @@ defmodule ControlPlaneWeb.Router do
 
     # The caller's own metered usage and cost.
     get "/billing/usage", BillingController, :usage
+  end
 
-    # Mollie wallet top-up: create a payment, return its checkout URL.
+  # Mollie wallet top-up: create a payment, return its checkout URL. Split into a
+  # throttled scope so the outbound Mollie fan-out is rate-limited per client IP.
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :user_api_throttled
+
     post "/billing/topup", MollieController, :topup
   end
 
@@ -211,7 +233,7 @@ defmodule ControlPlaneWeb.Router do
 
   # bunk-agent onboarding / heartbeat / command API.
   scope "/v1", ControlPlaneWeb do
-    pipe_through :api
+    pipe_through :enroll_public
 
     post "/enroll", EnrollController, :enroll
   end

@@ -528,7 +528,7 @@ defmodule ControlPlane.Provisioning do
 
   # Provision failed: mark the VPS failed and release its held reservation, adding
   # the freed capacity back to the node.
-  defp finalize_vps(multi, %Command{kind: :provision, vps_id: vps_id}, :failed, _result)
+  defp finalize_vps(multi, %Command{kind: :provision, vps_id: vps_id}, :failed, result)
        when not is_nil(vps_id) do
     multi
     |> Multi.run(:vps, fn repo, _changes ->
@@ -549,6 +549,25 @@ defmodule ControlPlane.Provisioning do
     # for a VM that never existed. Idempotent: refund/cancel run once, since the
     # subscription is only :cancelled here.
     |> Multi.run(:refund, fn repo, _changes -> refund_failed_provision(repo, vps_id) end)
+    # A failed provision may have left a half-created VM on the operator's node
+    # (the agent returns its id precisely so we can reconcile it). Enqueue a
+    # compensating :delete so the orphan is destroyed rather than lingering and
+    # silently consuming the operator's real capacity forever.
+    |> maybe_cleanup_orphan(vps_id, sane_vm_id(result["vm_id"]))
+  end
+
+  defp maybe_cleanup_orphan(multi, _vps_id, nil), do: multi
+
+  defp maybe_cleanup_orphan(multi, vps_id, vm_id) do
+    Multi.insert(multi, :orphan_cleanup, fn %{vps: vps} ->
+      Command.changeset(%Command{}, %{
+        node_id: vps.node_id,
+        vps_id: vps_id,
+        kind: :delete,
+        status: :pending,
+        payload: %{"vm_id" => vm_id}
+      })
+    end)
   end
 
   # Accept an agent-reported IP only if it is a valid IPv4 and (when the node

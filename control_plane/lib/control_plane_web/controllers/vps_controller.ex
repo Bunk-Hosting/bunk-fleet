@@ -67,9 +67,24 @@ defmodule ControlPlaneWeb.VpsController do
         ok
 
       other ->
-        Credits.refund(user.id, price_cents, "vps_refund", "Terugbetaling: VPS-aanmaak mislukt")
+        refund_charge(user.id, price_cents)
         other
     end
+  rescue
+    # A raise after the wallet was debited (bug, changeset explosion, etc.) must
+    # still refund, otherwise the customer is charged for a VPS they never got.
+    e ->
+      refund_charge(user.id, price_cents)
+      reraise e, __STACKTRACE__
+  catch
+    # DBConnection pool timeouts surface as an :exit, not a rescue-able error.
+    :exit, reason ->
+      refund_charge(user.id, price_cents)
+      exit(reason)
+  end
+
+  defp refund_charge(user_id, price_cents) do
+    Credits.refund(user_id, price_cents, "vps_refund", "Terugbetaling: VPS-aanmaak mislukt")
   end
 
   defp package_price_cents(%Package{price_monthly: price}) do
