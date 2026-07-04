@@ -233,6 +233,43 @@ defmodule ControlPlane.ProvisioningTest do
       assert {:error, :not_found} = Provisioning.delete_vps(Ecto.UUID.generate())
     end
 
+    test "deleting while a provision is in flight defers teardown and tears down the created VM" do
+      region = insert_region()
+      node = insert_node(region)
+      {:ok, %{vps: vps, command: provision}} = Provisioning.create_vps(create_attrs(region))
+      after_place = Repo.get!(Node, node.id)
+
+      # The agent has picked the provision command up (in flight).
+      Provisioning.mark_delivered_all([provision])
+
+      # A delete now must NOT fail the command or free capacity — the agent may
+      # still be creating the VM. It defers (marks :deleting, command: nil).
+      assert {:ok, %{vps: deleting, command: nil}} = Provisioning.delete_vps(vps.id)
+      assert deleting.status == :deleting
+      assert Repo.get!(Command, provision.id).status == :delivered
+      assert Repo.get!(Node, node.id).available_vcpu == after_place.available_vcpu
+
+      # The provision then reports success: don't activate; commit the reservation
+      # and enqueue a compensating :delete for the VM the agent created, so the
+      # delete-done path frees capacity exactly once and nothing is orphaned.
+      assert {:ok, _} =
+               Provisioning.apply_result(provision, %{
+                 "status" => "done",
+                 "vm_id" => "20202",
+                 "ip" => "10.10.0.10",
+                 "error" => nil
+               })
+
+      reloaded = Repo.get!(Vps, vps.id)
+      assert reloaded.status == :deleting
+      assert reloaded.provider_vm_id == "20202"
+      assert Repo.get_by!(Reservation, vps_id: vps.id).status == :committed
+
+      cleanup = Repo.get_by!(Command, vps_id: vps.id, kind: :delete)
+      assert cleanup.status == :pending
+      assert cleanup.payload == %{"vm_id" => "20202"}
+    end
+
     test "cleans up directly (no agent round-trip) a VPS still queued for capacity" do
       region = insert_region()
 

@@ -183,8 +183,14 @@ defmodule ControlPlane.Provisioning do
   # (admin override) wins; otherwise a per-node advisory lock serialises pool
   # allocation so concurrent creates can't pick the same address.
   defp allocate_ip(repo, attrs, node) do
-    if attrs[:ip_config] || attrs["ip_config"] do
-      {:ok, {attrs, attrs[:ip_address] || attrs["ip_address"]}}
+    cfg = attrs[:ip_config] || attrs["ip_config"]
+
+    if cfg do
+      # Derive ip_address from the explicit config (or a passed ip_address) so the
+      # control plane's record IS the assigned address — the authoritative console
+      # target — rather than leaving it nil and later trusting the agent's report.
+      ip = attrs[:ip_address] || attrs["ip_address"] || ip_from_config(cfg)
+      {:ok, {Map.put(attrs, :ip_address, ip), ip}}
     else
       repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:vps_ip, node.id})])
 
@@ -259,12 +265,16 @@ defmodule ControlPlane.Provisioning do
       %Vps{node_id: nil} = vps ->
         mark_vps_deleted(vps)
 
-      # Scheduled (capacity reserved) but provisioning never produced a live VM —
-      # e.g. the node's agent died mid-provision. Release the held reservation,
-      # restore the node's capacity and cancel any outstanding provision command,
-      # then mark the VPS deleted so it can never get permanently stuck undeletable.
+      # Scheduled (capacity reserved) but no live VM recorded yet. If the provision
+      # command is still in flight (delivered to the agent), the agent may be
+      # mid-CreateVM; force-failing it now would orphan the VM it produces AND
+      # double-count the freed capacity. Defer: mark :deleting and let the
+      # provision-done result run the compensating teardown. Only when nothing is
+      # in flight is it safe to cancel-and-release immediately.
       %Vps{provider_vm_id: nil} = vps ->
-        cancel_and_release(vps)
+        if provision_in_flight?(vps.id),
+          do: defer_teardown(vps),
+          else: cancel_and_release(vps)
 
       %Vps{} = vps ->
         dispatch_delete(vps)
@@ -284,6 +294,32 @@ defmodule ControlPlane.Provisioning do
       from c in Command,
         where: c.vps_id == ^vps_id and c.kind == :delete and c.status in [:pending, :delivered]
     )
+  end
+
+  # A provision command already handed to the agent (:delivered). Distinct from a
+  # merely :pending one, which the agent has not started — that one is safe to
+  # cancel outright.
+  defp provision_in_flight?(vps_id) do
+    Repo.exists?(
+      from c in Command,
+        where: c.vps_id == ^vps_id and c.kind == :provision and c.status == :delivered
+    )
+  end
+
+  # Record delete intent without failing the in-flight provision or releasing
+  # capacity. The provision result (see finalize_vps/4, :provision/:done) then
+  # dispatches a compensating :delete for whatever VM the agent created and frees
+  # capacity only once that delete confirms — so nothing is orphaned or
+  # double-counted.
+  defp defer_teardown(%Vps{} = vps) do
+    case vps |> Vps.changeset(%{status: :deleting}) |> Repo.update() do
+      {:ok, vps} ->
+        Events.broadcast_changed(:vps)
+        {:ok, %{vps: vps, command: nil}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # Moves the VPS to :deleting and enqueues a :delete command for its node's agent.
@@ -495,33 +531,61 @@ defmodule ControlPlane.Provisioning do
   # the held reservation. Capacity stays decremented.
   defp finalize_vps(multi, %Command{kind: :provision, vps_id: vps_id}, :done, result)
        when not is_nil(vps_id) do
+    vm_id = sane_vm_id(result["vm_id"])
+
     multi
     |> Multi.run(:vps, fn repo, _changes ->
       vps = repo.get!(Vps, vps_id)
 
-      # Keep the IP the control plane allocated + injected via cloud-init. Only
-      # take the agent-reported IP when it is a valid IPv4 AND inside the reporting
-      # node's declared VPS range — an untrusted operator must not be able to point
-      # ip_address at a co-tenant/arbitrary host (the console SSHes to exactly this
-      # address). A nil/empty/invalid report keeps the address we already assigned.
-      ip = accept_reported_ip(result["ip"], vps, repo)
+      cond do
+        # A delete was requested while this provision was in flight (deferred
+        # teardown): the VM now exists, so record its id and stay :deleting — the
+        # compensating :delete below tears it down. Never activate a VPS the
+        # customer already deleted.
+        vps.status in [:deleting, :deleted] and is_binary(vm_id) ->
+          vps |> Vps.changeset(%{provider_vm_id: vm_id}) |> repo.update()
 
-      vps
-      |> Vps.changeset(%{
-        status: :active,
-        provider_vm_id: sane_vm_id(result["vm_id"]),
-        ip_address: ip
-      })
-      |> repo.update()
+        # Delete requested but the provision produced no usable VM id → nothing to
+        # tear down, so finish the delete now.
+        vps.status in [:deleting, :deleted] ->
+          vps |> Vps.changeset(%{status: :deleted}) |> repo.update()
+
+        # Normal path: activate. The browser console SSHes to exactly
+        # vps.ip_address, so this MUST stay the CP-allocated address (see
+        # console_ip/3) — never one the untrusted agent reports.
+        true ->
+          ip = console_ip(result["ip"], vps, repo)
+
+          vps
+          |> Vps.changeset(%{status: :active, provider_vm_id: vm_id, ip_address: ip})
+          |> repo.update()
+      end
     end)
-    |> Multi.run(:reservation, fn repo, _changes ->
+    |> Multi.run(:reservation, fn repo, %{vps: vps} ->
       case held_reservation(repo, vps_id) do
         nil ->
-          Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
+          if vps.status not in [:deleted], do: Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
           {:ok, nil}
 
-        reservation ->
-          reservation |> Reservation.changeset(%{status: :committed}) |> repo.update()
+        held ->
+          if vps.status == :deleted do
+            # No VM was created and the customer deleted it → free capacity now.
+            with {:ok, _} <- release_reservation(repo, held), do: restore_if_present(repo, held)
+          else
+            # Active, or :deleting-with-a-VM: commit the booking. For the latter the
+            # committed reservation is what the delete-done path releases, so
+            # capacity is freed exactly once — on confirmed teardown.
+            held |> Reservation.changeset(%{status: :committed}) |> repo.update()
+          end
+      end
+    end)
+    |> Multi.run(:compensate, fn repo, %{vps: vps} ->
+      if vps.status in [:deleting] and is_binary(vm_id) do
+        %Command{}
+        |> Command.changeset(%{node_id: vps.node_id, vps_id: vps_id, kind: :delete, status: :pending, payload: %{"vm_id" => vm_id}})
+        |> repo.insert()
+      else
+        {:ok, nil}
       end
     end)
   end
@@ -570,37 +634,64 @@ defmodule ControlPlane.Provisioning do
     end)
   end
 
-  # Accept an agent-reported IP only if it is a valid IPv4 and (when the node
-  # declares a VPS range) falls inside it; otherwise keep the allocated address.
-  defp accept_reported_ip(reported, %Vps{} = vps, repo) when is_binary(reported) and reported != "" do
+  # Resolve the console target IP for a provision-done result.
+  #
+  # The control plane allocates the VPS IP itself (IpPool) and injects it via
+  # cloud-init, so vps.ip_address is authoritative and we keep it — a differing
+  # agent report is logged (possible operator misconfig or an attempt to redirect
+  # the shared-key console at a co-tenant) but NOT applied.
+  defp console_ip(reported, %Vps{ip_address: allocated} = vps, _repo)
+       when is_binary(allocated) and allocated != "" do
+    if is_binary(reported) and reported != "" and reported != allocated do
+      Logger.warning(
+        "vps #{vps.id}: agent-reported ip #{inspect(reported)} differs from CP-allocated #{allocated}; keeping allocated (console binds to the CP-assigned address)"
+      )
+    end
+
+    allocated
+  end
+
+  # No CP-allocated IP (e.g. the node advertises no pool): only adopt the reported
+  # IP if it is a valid IPv4 that falls inside the node's DECLARED range. Unlike
+  # before there is NO accept-anything fallback — an unbounded node yields no IP
+  # rather than trusting an arbitrary operator-supplied address.
+  defp console_ip(reported, %Vps{} = vps, repo) when is_binary(reported) and reported != "" do
     node = vps.node_id && repo.get(Node, vps.node_id)
 
-    if ControlPlane.Net.valid?(reported) and ip_in_node_range?(reported, node) do
+    if ControlPlane.Net.valid?(reported) and ip_in_declared_range?(reported, node) do
       reported
     else
-      Logger.warning("ignoring out-of-range/invalid reported ip #{inspect(reported)} for vps #{vps.id}")
-      vps.ip_address
+      Logger.warning(
+        "vps #{vps.id}: no CP-allocated ip and reported #{inspect(reported)} is not inside a declared node range; leaving ip unset"
+      )
+
+      nil
     end
   end
 
-  defp accept_reported_ip(_reported, %Vps{} = vps, _repo), do: vps.ip_address
+  defp console_ip(_reported, %Vps{ip_address: allocated}, _repo), do: allocated
 
-  # No range on the node → can't bound it, accept any valid IPv4. With a range,
-  # require start <= ip <= end.
-  defp ip_in_node_range?(_ip, %Node{vps_range_start: s, vps_range_end: e})
-       when not (is_binary(s) and is_binary(e)),
-       do: true
+  # Strict range check: a node WITHOUT a valid declared [start,end] range accepts
+  # nothing (returns false), closing the old accept-any hole.
+  defp ip_in_declared_range?(ip, %Node{vps_range_start: s, vps_range_end: e})
+       when is_binary(s) and is_binary(e) do
+    ControlPlane.Net.valid?(s) and ControlPlane.Net.valid?(e) and ControlPlane.Net.valid?(ip) and
+      ControlPlane.Net.to_int(ip) >= ControlPlane.Net.to_int(s) and
+      ControlPlane.Net.to_int(ip) <= ControlPlane.Net.to_int(e)
+  end
 
-  defp ip_in_node_range?(ip, %Node{vps_range_start: s, vps_range_end: e}) do
-    if ControlPlane.Net.valid?(s) and ControlPlane.Net.valid?(e) do
-      i = ControlPlane.Net.to_int(ip)
-      i >= ControlPlane.Net.to_int(s) and i <= ControlPlane.Net.to_int(e)
-    else
-      true
+  defp ip_in_declared_range?(_ip, _node), do: false
+
+  # Pull the IPv4 out of a Proxmox-style ip_config ("ip=10.0.0.5/24,gw=..."), so
+  # an explicit-config VPS still gets an authoritative ip_address.
+  defp ip_from_config(cfg) when is_binary(cfg) do
+    case Regex.run(~r/\bip=(\d+\.\d+\.\d+\.\d+)/, cfg) do
+      [_, ip] -> if ControlPlane.Net.valid?(ip), do: ip, else: nil
+      _ -> nil
     end
   end
 
-  defp ip_in_node_range?(_ip, _node), do: true
+  defp ip_from_config(_), do: nil
 
   # Bound the agent-supplied VM id to a sane length/charset so it can't smuggle
   # control characters or absurd values into the DB / later command payloads.
