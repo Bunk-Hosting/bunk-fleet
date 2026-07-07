@@ -43,7 +43,7 @@ defmodule ControlPlaneWeb do
   defp html_helpers do
     quote do
       # Translation
-      import ControlPlaneWeb.Gettext
+      use Gettext, backend: ControlPlaneWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
@@ -77,7 +77,7 @@ defmodule ControlPlaneWeb do
         layouts: [html: ControlPlaneWeb.Layouts]
 
       import Plug.Conn
-      import ControlPlaneWeb.Gettext
+      use Gettext, backend: ControlPlaneWeb.Gettext
 
       unquote(verified_routes())
     end

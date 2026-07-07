@@ -10,23 +10,42 @@ defmodule ControlPlaneWeb.ConsoleSocket do
   require Logger
   alias ControlPlane.Console.Session
 
+  # Each live session is a GenServer holding a real SSH connection to a VPS. Cap
+  # how many a single user may hold at once so a scripted client can't exhaust
+  # control-plane processes/FDs or hammer operator nodes' sshd (authenticated DoS).
+  # Sessions register into ControlPlane.Console.Registry under {:user, uid}; the
+  # duplicate registry drops dead entries automatically, so this count is live.
+  @max_sessions_per_user 5
+
   @impl true
   def init(state) do
-    case Session.start_link(%{
-           host: state.host,
-           port: state.port,
-           user: state.user,
-           owner: self(),
-           user_id: state.user_id,
-           vps_id: state.vps_id
-         }) do
-      {:ok, pid} ->
-        {:ok, Map.put(state, :session, pid)}
+    if session_limit_reached?(state.user_id) do
+      Logger.warning("console ws: per-user session limit reached for user #{inspect(state.user_id)}")
+      {:stop, :normal, state}
+    else
+      case Session.start_link(%{
+             host: state.host,
+             port: state.port,
+             user: state.user,
+             owner: self(),
+             user_id: state.user_id,
+             vps_id: state.vps_id
+           }) do
+        {:ok, pid} ->
+          {:ok, Map.put(state, :session, pid)}
 
-      {:error, reason} ->
-        Logger.warning("console ws: session start failed: #{inspect(reason)}")
-        {:stop, :normal, state}
+        {:error, reason} ->
+          Logger.warning("console ws: session start failed: #{inspect(reason)}")
+          {:stop, :normal, state}
+      end
     end
+  end
+
+  defp session_limit_reached?(nil), do: false
+
+  defp session_limit_reached?(user_id) do
+    Registry.count_match(ControlPlane.Console.Registry, {:user, user_id}, nil) >=
+      @max_sessions_per_user
   end
 
   @impl true

@@ -5,7 +5,7 @@ defmodule ControlPlaneWeb.Gettext do
   By using [Gettext](https://hexdocs.pm/gettext),
   your module gains a set of macros for translations, for example:
 
-      import ControlPlaneWeb.Gettext
+      use Gettext, backend: ControlPlaneWeb.Gettext
 
       # Simple translation
       gettext("Here is the string to translate")
@@ -20,5 +20,5 @@ defmodule ControlPlaneWeb.Gettext do
 
   See the [Gettext Docs](https://hexdocs.pm/gettext) for detailed usage.
   """
-  use Gettext, otp_app: :control_plane
+  use Gettext.Backend, otp_app: :control_plane
 end

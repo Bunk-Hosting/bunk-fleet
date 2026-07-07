@@ -74,33 +74,63 @@ defmodule ControlPlane.Provisioning do
   live (non-`:deleted`/non-`:failed`) VPSes.
   """
   def create_vps_for_owner(%{id: owner_id, email: email}, attrs) do
-    Repo.transaction(fn ->
-      # Serialize per owner so two concurrent creates can't both pass the quota
-      # check and exceed the cap (TOCTOU). The lock is released at commit/rollback.
-      Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:owner_vps, owner_id})])
+    full =
+      attrs
+      |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
+      |> Map.put(:owner_id, owner_id)
+      |> Map.put(:owner_email, email)
 
-      if count_live_vpses(owner_id) >= max_vpses_per_owner() do
-        Repo.rollback(:quota_exceeded)
-      else
-        full =
-          attrs
-          |> Map.drop([:owner_id, "owner_id", :owner_email, "owner_email"])
-          |> Map.put(:owner_id, owner_id)
-          |> Map.put(:owner_email, email)
+    # The quota gate + durable :queued insert run in ONE short transaction: the
+    # per-owner advisory lock (auto-released at commit) serialises concurrent
+    # creates against the quota check, so two can't both pass the cap (TOCTOU).
+    #
+    # Placement + dispatch deliberately run AFTER this commits — each in its own
+    # top-level transaction, never nested inside this one. Ecto uses no savepoint
+    # for a nested transaction, so a normal placement failure (fleet full, IP
+    # collision) inside the scheduler's `Repo.transaction` would otherwise poison
+    # this enclosing transaction, and the following `mark_vps_failed`/reservation-
+    # release update would raise "current transaction is aborted" → HTTP 500
+    # instead of a clean {:error, :no_capacity} (→ 409).
+    case Repo.transaction(fn ->
+           Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:owner_vps, owner_id})])
 
-        case create_vps(full) do
+           if count_live_vpses(owner_id) >= max_vpses_per_owner() do
+             Repo.rollback(:quota_exceeded)
+           else
+             case Repo.insert(vps_changeset(full)) do
+               {:ok, vps} -> vps
+               {:error, changeset} -> Repo.rollback(changeset)
+             end
+           end
+         end) do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, %Vps{} = vps} ->
+        req = %{
+          region_id: full[:region_id] || full["region_id"],
+          vcpu: full[:vcpu] || full["vcpu"],
+          ram_mb: full[:ram_mb] || full["ram_mb"],
+          disk_gb: full[:disk_gb] || full["disk_gb"],
+          # Tier from the persisted VPS (server-authoritative), so a :datacenter
+          # VPS is never placed on a community node (O-24).
+          tier: vps.tier
+        }
+
+        case place_and_dispatch(vps, req, full) do
           {:ok, %{vps: vps}} ->
-            ControlPlane.Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
-            %{vps: vps}
+            ControlPlane.Subscriptions.create_for_vps(
+              vps,
+              owner_id,
+              full[:package_id] || full["package_id"]
+            )
 
-          {:error, _op, reason, _changes} ->
-            Repo.rollback(reason)
+            {:ok, %{vps: vps}}
 
           {:error, reason} ->
-            Repo.rollback(reason)
+            {:error, reason}
         end
-      end
-    end)
+    end
   end
 
   @doc """
@@ -620,6 +650,90 @@ defmodule ControlPlane.Provisioning do
     |> maybe_cleanup_orphan(vps_id, sane_vm_id(result["vm_id"]))
   end
 
+  # Delete succeeded: the VM is gone, so mark the VPS :deleted, release its
+  # committed reservation and add the reclaimed capacity back to the node.
+  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :done, _result)
+       when not is_nil(vps_id) do
+    multi
+    |> Multi.run(:vps, fn repo, _changes ->
+      vps = repo.get!(Vps, vps_id)
+
+      vps
+      |> Vps.changeset(%{status: :deleted})
+      |> repo.update()
+    end)
+    |> Multi.run(:reservation, fn repo, _changes ->
+      release_reservation(repo, committed_reservation(repo, vps_id))
+    end)
+    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
+      restore_if_present(repo, reservation)
+    end)
+  end
+
+  # Delete failed: do NOT touch the VPS or its reservation — the VM may still
+  # exist, so freeing capacity would risk a double-booking. We only record the
+  # error on the command (done by the caller) and log for an operator to retry.
+  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :failed, result)
+       when not is_nil(vps_id) do
+    Logger.error(
+      "delete command failed for vps #{vps_id}: #{inspect(result["error"])}; " <>
+        "VPS left intact for retry"
+    )
+
+    multi
+  end
+
+  # Power command succeeded: transition the VPS to the resulting power state.
+  # Only a live VPS is transitioned (a delete that raced in must never be
+  # resurrected); capacity is untouched because power state != capacity.
+  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :done, _result)
+       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+    target =
+      case kind do
+        :start -> :active
+        :resume -> :active
+        :stop -> :stopped
+        :pause -> :paused
+      end
+
+    Multi.run(multi, :vps, fn repo, _changes ->
+      vps = repo.get!(Vps, vps_id)
+
+      if vps.status in [:active, :stopped, :paused] do
+        changeset = Vps.changeset(vps, %{status: target})
+
+        # Resuming into :active: reset the meter watermark to now so the interval
+        # the VPS spent stopped/paused is NEVER billed. The meter only runs on
+        # :active VPSes and computes `now - last_metered_at`; without this reset,
+        # the first tick after resume would span the entire downtime, over-charging
+        # the customer and over-paying the operator for time the VM never served.
+        changeset =
+          if target == :active do
+            now = DateTime.truncate(DateTime.utc_now(), :second)
+            Ecto.Changeset.put_change(changeset, :last_metered_at, now)
+          else
+            changeset
+          end
+
+        repo.update(changeset)
+      else
+        {:ok, vps}
+      end
+    end)
+  end
+
+  # Power command failed: leave the VPS as-is; the error is recorded on the
+  # command by the caller. Log for visibility.
+  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :failed, result)
+       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+    Logger.error("#{kind} command failed for vps #{vps_id}: #{inspect(result["error"])}")
+    multi
+  end
+
+  # Non-provision/non-delete commands (or those without an associated VPS) only
+  # update the command itself.
+  defp finalize_vps(multi, _command, _outcome, _result), do: multi
+
   defp maybe_cleanup_orphan(multi, _vps_id, nil), do: multi
 
   defp maybe_cleanup_orphan(multi, vps_id, vm_id) do
@@ -716,75 +830,6 @@ defmodule ControlPlane.Provisioning do
         {:ok, :refunded}
     end
   end
-
-  # Delete succeeded: the VM is gone, so mark the VPS :deleted, release its
-  # committed reservation and add the reclaimed capacity back to the node.
-  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :done, _result)
-       when not is_nil(vps_id) do
-    multi
-    |> Multi.run(:vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
-
-      vps
-      |> Vps.changeset(%{status: :deleted})
-      |> repo.update()
-    end)
-    |> Multi.run(:reservation, fn repo, _changes ->
-      release_reservation(repo, committed_reservation(repo, vps_id))
-    end)
-    |> Multi.run(:restore_capacity, fn repo, %{reservation: reservation} ->
-      restore_if_present(repo, reservation)
-    end)
-  end
-
-  # Delete failed: do NOT touch the VPS or its reservation — the VM may still
-  # exist, so freeing capacity would risk a double-booking. We only record the
-  # error on the command (done by the caller) and log for an operator to retry.
-  defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :failed, result)
-       when not is_nil(vps_id) do
-    Logger.error(
-      "delete command failed for vps #{vps_id}: #{inspect(result["error"])}; " <>
-        "VPS left intact for retry"
-    )
-
-    multi
-  end
-
-  # Power command succeeded: transition the VPS to the resulting power state.
-  # Only a live VPS is transitioned (a delete that raced in must never be
-  # resurrected); capacity is untouched because power state != capacity.
-  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :done, _result)
-       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
-    target =
-      case kind do
-        :start -> :active
-        :resume -> :active
-        :stop -> :stopped
-        :pause -> :paused
-      end
-
-    Multi.run(multi, :vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
-
-      if vps.status in [:active, :stopped, :paused] do
-        vps |> Vps.changeset(%{status: target}) |> repo.update()
-      else
-        {:ok, vps}
-      end
-    end)
-  end
-
-  # Power command failed: leave the VPS as-is; the error is recorded on the
-  # command by the caller. Log for visibility.
-  defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :failed, result)
-       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
-    Logger.error("#{kind} command failed for vps #{vps_id}: #{inspect(result["error"])}")
-    multi
-  end
-
-  # Non-provision/non-delete commands (or those without an associated VPS) only
-  # update the command itself.
-  defp finalize_vps(multi, _command, _outcome, _result), do: multi
 
   # Reservation lookups are intentionally non-bang (Repo.one, not Repo.one!).
   # A finalisation can legitimately find no matching reservation — the reconciler

@@ -224,6 +224,32 @@ defmodule ControlPlane.Fleet.Node do
     |> clamp_field(:available_vcpu, @max_total_vcpu)
     |> clamp_field(:available_ram_mb, @max_total_ram_mb)
     |> clamp_field(:available_disk_gb, @max_total_disk_gb)
+    |> clamp_available_to_total()
+  end
+
+  # An operator removing hardware lowers total_* on the next heartbeat while
+  # available_* (scheduler-owned) stays as it was, which would leave
+  # available > total — corrupting the capacity display and letting the scheduler
+  # place work the node can no longer host. Clamp available down to the new total.
+  defp clamp_available_to_total(changeset) do
+    Enum.reduce(
+      [
+        {:available_vcpu, :total_vcpu},
+        {:available_ram_mb, :total_ram_mb},
+        {:available_disk_gb, :total_disk_gb}
+      ],
+      changeset,
+      fn {available_field, total_field}, cs ->
+        total = get_field(cs, total_field)
+        available = get_field(cs, available_field)
+
+        if is_integer(total) and is_integer(available) and available > total do
+          put_change(cs, available_field, total)
+        else
+          cs
+        end
+      end
+    )
   end
 
   defp clamp_field(changeset, field, max) do

@@ -44,6 +44,18 @@ defmodule ControlPlaneWeb.Admin.VpsController do
   end
 
   def delete(conn, %{"id" => id}) do
+    # Validate the id shape first: delete_vps/1 → Repo.get(Vps, id) raises
+    # Ecto.Query.CastError (→ 500) on a non-UUID. A bad id collapses to 404.
+    case Ecto.UUID.cast(id) do
+      :error ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+
+      {:ok, id} ->
+        do_delete(conn, id)
+    end
+  end
+
+  defp do_delete(conn, id) do
     case Provisioning.delete_vps(id) do
       {:ok, %{vps: vps}} ->
         conn
