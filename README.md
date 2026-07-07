@@ -30,9 +30,8 @@ worker node and dials *out* to the control plane (NAT-friendly).
 | Path             | What it is                                                                 |
 | ---------------- | -------------------------------------------------------------------------- |
 | `control_plane/` | Elixir **Phoenix 1.7** app (OTP app `:control_plane`), Postgres + Ecto.     |
-| `agent/`         | Go **1.23** module `github.com/Bunk-Hosting/bunk-fleet/agent` (stdlib-only).|
-| `docs/`          | Protocol contract, architecture & roadmap.                                 |
-| `proto/`         | Wire schema / message definitions shared by control plane and agent.       |
+| `agent/`         | Go **1.23** module `github.com/Bunk-Hosting/bunk-fleet/agent` (static build).|
+| `docs/`          | Protocol contract (wire messages), architecture & roadmap.                 |
 
 ## Architecture
 

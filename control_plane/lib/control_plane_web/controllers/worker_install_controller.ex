@@ -158,6 +158,21 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     install -d -m 755 /usr/local/bin
     btmp="$(mktemp)"
     curl -fsSL "$CP/dist/bunk-worker" -o "$btmp" || { echo "!! Kon de bunk-worker binary niet wegschrijven — schijf vol? Check met: df -h /"; rm -f "$btmp"; exit 1; }
+    # Integriteitscheck: vergelijk met de checksum die naast de binary is
+    # gepubliceerd. Vangt afgekapte/corrupte downloads (bv. een verbroken
+    # verbinding of proxy-truncatie) vóórdat er iets als root wordt geïnstalleerd.
+    expected="$(curl -fsSL "$CP/dist/bunk-worker.sha256" 2>/dev/null | awk '{print $1}')" || expected=""
+    if [ -n "$expected" ]; then
+      actual="$(sha256sum "$btmp" | awk '{print $1}')"
+      if [ "$expected" != "$actual" ]; then
+        echo "!! Checksum-mismatch op de gedownloade binary (verwacht $expected, kreeg $actual)."
+        echo "!! Download opnieuw of neem contact op — er wordt NIETS geinstalleerd."
+        rm -f "$btmp"; exit 1
+      fi
+      echo "   checksum OK ($actual)"
+    else
+      echo "   (geen checksum gepubliceerd op $CP/dist/bunk-worker.sha256 — stap overgeslagen)"
+    fi
     install -m 755 "$btmp" /usr/local/bin/bunk-worker
     rm -f "$btmp"
     install -d -m 700 /var/lib/bunk-worker

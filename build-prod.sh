@@ -11,8 +11,10 @@ docker run --rm \
   -v "$ROOT/agent":/src \
   -v "$ROOT/control_plane/priv/static/dist":/out \
   -w /src golang:1.23-alpine \
-  sh -c 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/bunk-worker ./cmd/bunk-agent'
-ls -la "$ROOT/control_plane/priv/static/dist/bunk-worker"
+  sh -c 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/bunk-worker ./cmd/bunk-agent \
+    && cd /out && sha256sum bunk-worker > bunk-worker.sha256'
+ls -la "$ROOT/control_plane/priv/static/dist/bunk-worker" "$ROOT/control_plane/priv/static/dist/bunk-worker.sha256"
+cat "$ROOT/control_plane/priv/static/dist/bunk-worker.sha256"
 
 echo "=== 2/2 building control-plane image ==="
 docker build -t bunk-fleet-cp:latest "$ROOT/control_plane"

@@ -31,14 +31,18 @@ fi
 # Console SSH key — the in-browser console SSHes into VPSes with this; its public
 # key is injected into every VPS via cloud-init. Generated once, base64 in the env.
 if ! grep -q '^CONSOLE_SSH_PRIVATE_KEY=' "$ENV_FILE"; then
-  TMPK=$(mktemp -u)
-  ssh-keygen -t rsa -b 2048 -m PEM -N '' -C bunk-console -f "$TMPK" >/dev/null
+  # mktemp -d (not -u): -u only reserves a NAME, so a pre-planted file/symlink at
+  # that guessable /tmp path could make ssh-keygen prompt "Overwrite?" (hanging
+  # the deploy) or follow the symlink. A 0700 dir removes both. ed25519 > RSA-2048.
+  TMPD=$(mktemp -d)
+  TMPK="$TMPD/key"
+  ssh-keygen -t ed25519 -N '' -C bunk-console -f "$TMPK" >/dev/null
   {
     echo "CONSOLE_SSH_PRIVATE_KEY=$(base64 -w0 "$TMPK")"
     echo "CONSOLE_SSH_PUBLIC_KEY=$(base64 -w0 "${TMPK}.pub")"
     echo "CONSOLE_SSH_USER=root"
   } >> "$ENV_FILE"
-  rm -f "$TMPK" "${TMPK}.pub"
+  rm -rf "$TMPD"
   echo "GENERATED console SSH key"
 fi
 
@@ -55,7 +59,9 @@ else
   docker start "$PGNAME" >/dev/null 2>&1 || true
   echo "PG already present"
 fi
-for i in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/null 2>&1 && break; sleep 2; done
+pg_ok=0
+for i in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 2; done
+[ "$pg_ok" = 1 ] || { echo "FATAL: Postgres never became ready"; docker logs --tail 30 "$PGNAME"; exit 1; }
 
 # 4. Migrate (release eval) — runtime.exs evaluates the full prod config block on
 # any release command, so it needs SECRET_KEY_BASE et al. even though eval doesn't
@@ -71,7 +77,7 @@ docker run --rm --network "$NET" \
 # 5. (Re)start the control-plane server
 docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
-  -p 4000:4000 \
+  -p 127.0.0.1:4000:4000 \
   -e PHX_SERVER=true \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
@@ -86,12 +92,15 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   "$IMG" >/dev/null
 echo "STARTED $CPNAME on :4000"
 
-# 6. Health check
+# 6. Health check — a crash-looping CP (bad migration, missing env) must FAIL
+# the deploy, not fall through to a green "container status" summary.
+health_ok=0
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000/api/v1/auth/me 2>/dev/null || echo 000)
-  [ "$code" = "401" ] && { echo "HEALTH_OK (auth/me -> 401 as expected)"; break; }
+  [ "$code" = "401" ] && { echo "HEALTH_OK (auth/me -> 401 as expected)"; health_ok=1; break; }
   sleep 2
 done
+[ "$health_ok" = 1 ] || { echo "FATAL: control plane never became healthy"; docker logs --tail 40 "$CPNAME"; exit 1; }
 echo "=== container status ==="
 docker ps --filter name=bf-prod --format '{{.Names}}  {{.Status}}  {{.Ports}}'
 
