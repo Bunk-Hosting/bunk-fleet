@@ -4,7 +4,9 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci || npm install
+# Fail loudly on lockfile drift instead of silently producing an unpinned,
+# non-reproducible dependency tree via `npm install`.
+RUN npm ci
 
 # Development image
 FROM base AS dev

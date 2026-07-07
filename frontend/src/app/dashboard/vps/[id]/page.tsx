@@ -33,7 +33,15 @@ import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi } from "@/lib/api";
 import { formatDate, getOsLabel } from "@/lib/utils";
-import type { Vps, VpsCredentials } from "@/lib/types";
+import type { Vps, VpsCredentials, VpsStatus } from "@/lib/types";
+
+const TRANSITIONAL_STATUSES: VpsStatus[] = [
+  "PENDING",
+  "PROVISIONING",
+  "DELETING",
+];
+const POLL_INTERVAL_MS = 10_000;
+const POST_ACTION_POLL_MS = 60_000;
 
 export default function VpsDetailPage() {
   const params = useParams();
@@ -52,21 +60,27 @@ export default function VpsDetailPage() {
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pollUntil, setPollUntil] = useState<number | null>(null);
 
-  const fetchVps = useCallback(async () => {
-    try {
-      const response = await vpsApi.get(id);
-      setVps(response.data);
-    } catch {
-      toast({
-        title: "Fout",
-        description: "Kon VPS gegevens niet laden.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [id, toast]);
+  const fetchVps = useCallback(
+    async (silent = false) => {
+      try {
+        const response = await vpsApi.get(id);
+        setVps(response.data);
+      } catch {
+        if (!silent) {
+          toast({
+            title: "Fout",
+            description: "Kon VPS gegevens niet laden.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [id, toast]
+  );
 
   const fetchCredentials = async () => {
     if (credentials) {
@@ -100,6 +114,23 @@ export default function VpsDetailPage() {
     fetchVps();
   }, [fetchVps]);
 
+  // Poll zolang de VPS in een overgangsstatus zit, of kort na een
+  // start/stop-actie zodat de nieuwe status zichtbaar wordt.
+  const isTransitional =
+    vps !== null && TRANSITIONAL_STATUSES.includes(vps.status);
+  const shouldPoll = isTransitional || pollUntil !== null;
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const interval = setInterval(() => {
+      setPollUntil((until) =>
+        until !== null && Date.now() >= until ? null : until
+      );
+      fetchVps(true);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [shouldPoll, fetchVps]);
+
   const handleStart = async () => {
     setActionLoading(true);
     try {
@@ -109,6 +140,7 @@ export default function VpsDetailPage() {
         description: "De VPS wordt gestart.",
       });
       setStartDialogOpen(false);
+      setPollUntil(Date.now() + POST_ACTION_POLL_MS);
       await fetchVps();
     } catch {
       toast({
@@ -130,6 +162,7 @@ export default function VpsDetailPage() {
         description: "De VPS wordt gestopt.",
       });
       setStopDialogOpen(false);
+      setPollUntil(Date.now() + POST_ACTION_POLL_MS);
       await fetchVps();
     } catch {
       toast({

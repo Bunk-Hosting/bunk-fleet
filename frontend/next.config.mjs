@@ -46,11 +46,15 @@ const securityHeaders = [
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' data: blob: https:",
+      // No remote images are ever loaded (QR codes are data: URLs, xterm uses
+      // blob:) — drop the https: wildcard to shut off tracking-pixel/exfil vectors.
+      "img-src 'self' data: blob:",
       "font-src 'self' data: https://fonts.gstatic.com",
       `connect-src 'self' ${API_URL} ${WS_URL} https://challenges.cloudflare.com`,
       "frame-src 'self' https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
+      // No <object>/<embed>/<applet> anywhere; block them outright.
+      "object-src 'none'",
       "worker-src blob:",
       "base-uri 'self'",
       "form-action 'self'",
@@ -61,7 +65,6 @@ const securityHeaders = [
   },
 ];
 
-const BUNK_API = process.env.BUNK_API_URL || "http://192.168.10.10:4000";
 const nextConfig = {
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },

@@ -1,12 +1,13 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Toaster } from "@/components/ui/toaster";
 import { UserProvider, useUser } from "@/contexts/UserContext";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useUser();
+  const { user, loading, error, refresh } = useUser();
 
   if (loading) {
     return (
@@ -17,6 +18,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
+    if (error) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-4 p-4 text-center">
+          <p className="text-muted-foreground">
+            Kon je sessie niet laden. Controleer je verbinding en probeer het opnieuw.
+          </p>
+          <Button onClick={() => refresh()}>Opnieuw proberen</Button>
+        </div>
+      );
+    }
     return null;
   }
 

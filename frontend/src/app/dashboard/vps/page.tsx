@@ -1,31 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, PlusCircle, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { VpsCard } from "@/components/vps/vps-card";
 import { vpsApi } from "@/lib/api";
-import type { Vps } from "@/lib/types";
+import type { Vps, VpsStatus } from "@/lib/types";
+
+const TRANSITIONAL_STATUSES: VpsStatus[] = [
+  "PENDING",
+  "PROVISIONING",
+  "DELETING",
+];
+const POLL_INTERVAL_MS = 10_000;
 
 export default function VpsListPage() {
   const [vpsList, setVpsList] = useState<Vps[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchVps() {
-      try {
-        const response = await vpsApi.list();
-        setVpsList(response.data.results);
-      } catch {
-        // error handled by layout
-      } finally {
-        setLoading(false);
-      }
+  const fetchVps = useCallback(async () => {
+    try {
+      const response = await vpsApi.list();
+      setVpsList(response.data.results);
+    } catch {
+      // error handled by layout
+    } finally {
+      setLoading(false);
     }
-    fetchVps();
   }, []);
+
+  useEffect(() => {
+    fetchVps();
+  }, [fetchVps]);
+
+  // Poll zolang er een VPS in een overgangsstatus zit, zodat de lijst
+  // automatisch bijwerkt zodra de status verandert.
+  const hasTransitional = vpsList.some((vps) =>
+    TRANSITIONAL_STATUSES.includes(vps.status)
+  );
+
+  useEffect(() => {
+    if (!hasTransitional) return;
+    const interval = setInterval(fetchVps, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [hasTransitional, fetchVps]);
 
   if (loading) {
     return (

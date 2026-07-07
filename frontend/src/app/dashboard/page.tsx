@@ -6,12 +6,15 @@ import { Loader2, Server, ServerOff, PlusCircle, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { VpsCard } from "@/components/vps/vps-card";
-import { authApi, vpsApi, billingApi } from "@/lib/api";
+import { vpsApi, billingApi } from "@/lib/api";
+import { useUser } from "@/contexts/UserContext";
 import { formatEuro } from "@/lib/utils";
-import type { User, Vps } from "@/lib/types";
+import type { Vps } from "@/lib/types";
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
+  // The dashboard layout's UserProvider has already fetched /auth/me — reuse it
+  // instead of firing a second identical request on every dashboard visit.
+  const { user } = useUser();
   const [vpsList, setVpsList] = useState<Vps[]>([]);
   const [balanceCents, setBalanceCents] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,11 +22,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [userRes, vpsRes] = await Promise.all([
-          authApi.me(),
-          vpsApi.list(),
-        ]);
-        setUser(userRes.data);
+        const vpsRes = await vpsApi.list();
         setVpsList(vpsRes.data.results);
       } catch {
         // errors handled by layout redirect
