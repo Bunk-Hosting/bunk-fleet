@@ -394,10 +394,15 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 // reportResult posts a command outcome with a bounded timeout, logging (but not
 // propagating) any reporting failure.
 func reportResult(ctx context.Context, logger *slog.Logger, cp *transport.Client, commandID string, res transport.CommandResult) {
-	// Use a fresh bounded context so result reporting still runs even if the
-	// command's own context is near its deadline; cancellation still propagates
-	// from the parent.
-	rptCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	// Detach from the command's own deadline before applying a fresh 15s cap.
+	// The command context carries a 15-MINUTE ceiling (handleCommand); when a
+	// command actually hits that ceiling — the exact "hung hypervisor" case the
+	// timeout exists for — `ctx` is already expired, so deriving the report
+	// context from it would fail instantly and the "failed" outcome would never
+	// reach the control plane (which then re-delivers, and replay-dedup silently
+	// drops it, wedging the command). WithoutCancel strips the deadline while
+	// retaining request-scoped values.
+	rptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if err := cp.ReportResult(rptCtx, commandID, res); err != nil {
 		logger.Error("report result failed", "id", commandID, "status", res.Status, "err", err)

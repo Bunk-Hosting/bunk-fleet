@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -138,18 +139,33 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 	poolRef := pool.Reference()
 	metadata, userdata := cloudInit(spec)
 
+	configSpec := &types.VirtualMachineConfigSpec{
+		NumCPUs:  int32(spec.VCPU),
+		MemoryMB: int64(spec.RAMMB),
+		ExtraConfig: []types.BaseOptionValue{
+			&types.OptionValue{Key: "guestinfo.metadata", Value: base64.StdEncoding.EncodeToString([]byte(metadata))},
+			&types.OptionValue{Key: "guestinfo.metadata.encoding", Value: "base64"},
+			&types.OptionValue{Key: "guestinfo.userdata", Value: base64.StdEncoding.EncodeToString([]byte(userdata))},
+			&types.OptionValue{Key: "guestinfo.userdata.encoding", Value: "base64"},
+		},
+	}
+
+	// Grow the primary disk to the requested size during the clone so the customer
+	// gets the disk they paid for instead of the template's size. A disk can only
+	// be grown, never shrunk; a smaller-or-equal request keeps the template size.
+	if spec.DiskGB > 0 {
+		diskChange, err := growDiskSpec(ctx, tmpl, spec.DiskGB)
+		if err != nil {
+			return provider.VMStatus{}, err
+		}
+		if diskChange != nil {
+			configSpec.DeviceChange = []types.BaseVirtualDeviceConfigSpec{diskChange}
+		}
+	}
+
 	cloneSpec := types.VirtualMachineCloneSpec{
 		Location: types.VirtualMachineRelocateSpec{Datastore: &dsRef, Pool: &poolRef},
-		Config: &types.VirtualMachineConfigSpec{
-			NumCPUs:  int32(spec.VCPU),
-			MemoryMB: int64(spec.RAMMB),
-			ExtraConfig: []types.BaseOptionValue{
-				&types.OptionValue{Key: "guestinfo.metadata", Value: base64.StdEncoding.EncodeToString([]byte(metadata))},
-				&types.OptionValue{Key: "guestinfo.metadata.encoding", Value: "base64"},
-				&types.OptionValue{Key: "guestinfo.userdata", Value: base64.StdEncoding.EncodeToString([]byte(userdata))},
-				&types.OptionValue{Key: "guestinfo.userdata.encoding", Value: "base64"},
-			},
-		},
+		Config:   configSpec,
 		PowerOn:  true,
 		Template: false,
 	}
@@ -160,7 +176,12 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 	}
 	info, err := task.WaitForResult(ctx, nil)
 	if err != nil {
-		return provider.VMStatus{}, fmt.Errorf("esxi: clone task: %w", err)
+		// The clone may still be running server-side; roll back the (possibly
+		// partial) VM by name so it isn't orphaned — mirrors the Proxmox provider.
+		// If cleanup can't destroy it, surface its ref so the control plane can
+		// reconcile the orphan rather than losing track of it.
+		orphan := c.rollbackClone(spec.Name)
+		return provider.VMStatus{ID: orphan, State: "error"}, fmt.Errorf("esxi: clone task: %w", err)
 	}
 
 	ref, ok := info.Result.(types.ManagedObjectReference)
@@ -168,6 +189,66 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 		return provider.VMStatus{}, errors.New("esxi: clone returned no VM reference")
 	}
 	return provider.VMStatus{ID: ref.Value, State: "provisioning"}, nil
+}
+
+// growDiskSpec returns a device-edit that grows the template's primary disk to
+// diskGB, or nil when the template disk is already at least that big (never
+// shrinks). Errors if the template has no disk to grow.
+func growDiskSpec(ctx context.Context, tmpl *object.VirtualMachine, diskGB int) (types.BaseVirtualDeviceConfigSpec, error) {
+	devices, err := tmpl.Device(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("esxi: read template devices: %w", err)
+	}
+
+	disks := devices.SelectByType((*types.VirtualDisk)(nil))
+	if len(disks) == 0 {
+		return nil, errors.New("esxi: template has no virtual disk to resize")
+	}
+	disk, ok := disks[0].(*types.VirtualDisk)
+	if !ok {
+		return nil, errors.New("esxi: unexpected virtual disk device type")
+	}
+
+	targetKB := int64(diskGB) * 1024 * 1024
+	if disk.CapacityInKB >= targetKB {
+		return nil, nil
+	}
+	disk.CapacityInKB = targetKB
+
+	return &types.VirtualDeviceConfigSpec{
+		Operation: types.VirtualDeviceConfigSpecOperationEdit,
+		Device:    disk,
+	}, nil
+}
+
+// rollbackClone best-effort destroys a VM left behind by a failed clone, on a
+// fresh detached session (the caller's ctx may be the deadline that killed the
+// clone). Returns "" when the VM was never created or was cleaned up, or its ref
+// when it exists but could not be destroyed (so the CP can reconcile it).
+func (c *Client) rollbackClone(name string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	f, err := c.finder(ctx, gc)
+	if err != nil {
+		return ""
+	}
+	vm, err := f.VirtualMachine(ctx, name)
+	if err != nil {
+		return "" // never created (or already gone): nothing to roll back
+	}
+
+	ref := vm.Reference().Value
+	if derr := c.DeleteVM(ctx, ref); derr != nil {
+		return ref
+	}
+	return ""
 }
 
 func (c *Client) DeleteVM(ctx context.Context, id string) error {
@@ -387,18 +468,52 @@ func nonNeg(n int) int {
 	return n
 }
 
+// singleLine returns s only if it contains no CR/LF, else "" — used to keep
+// user-supplied values from injecting extra lines into the cloud-config YAML.
+func singleLine(s string) string {
+	if strings.ContainsAny(s, "\r\n") {
+		return ""
+	}
+	return s
+}
+
 // cloudInit builds guestinfo metadata + userdata (NoCloud-style) from the spec.
 func cloudInit(spec provider.VMSpec) (metadata, userdata string) {
 	var b strings.Builder
 	b.WriteString("#cloud-config\n")
-	if len(spec.SSHKeys) > 0 {
+
+	// Only single-line SSH keys: a key containing a newline would break out of the
+	// YAML list item and inject arbitrary cloud-config below it.
+	var keys []string
+	for _, k := range spec.SSHKeys {
+		if k != "" && !strings.ContainsAny(k, "\r\n") {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) > 0 {
 		b.WriteString("ssh_authorized_keys:\n")
-		for _, k := range spec.SSHKeys {
+		for _, k := range keys {
 			b.WriteString("  - ")
 			b.WriteString(k)
 			b.WriteString("\n")
 		}
 	}
+
+	// Password login for the cloud-init user, mirroring the Proxmox provider's
+	// ciuser/cipassword so an ESXi VPS isn't left SSH-key-only. Both values are
+	// validated single-line to keep them from injecting extra YAML.
+	user := singleLine(spec.CloudInit["user"])
+	pass := singleLine(spec.CloudInit["password"])
+	if user != "" && pass != "" {
+		b.WriteString("ssh_pwauth: true\n")
+		b.WriteString("chpasswd:\n  expire: false\n  users:\n")
+		b.WriteString("    - name: ")
+		b.WriteString(user)
+		b.WriteString("\n      password: ")
+		b.WriteString(pass)
+		b.WriteString("\n      type: text\n")
+	}
+
 	userdata = b.String()
 
 	var m strings.Builder

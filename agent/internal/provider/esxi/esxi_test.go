@@ -137,6 +137,33 @@ func TestNetworkConfig(t *testing.T) {
 	}
 }
 
+func TestCloudInitUserPassword(t *testing.T) {
+	_, userdata := cloudInit(provider.VMSpec{
+		Name:     "vm1",
+		SSHKeys:  []string{"ssh-rsa AAAA key"},
+		CloudInit: map[string]string{"user": "bunk", "password": "s3cret"},
+	})
+	if !contains(userdata, "chpasswd:") || !contains(userdata, "name: bunk") ||
+		!contains(userdata, "password: s3cret") || !contains(userdata, "ssh_pwauth: true") {
+		t.Errorf("userdata missing password stanza: %q", userdata)
+	}
+}
+
+func TestCloudInitRejectsMultilineInjection(t *testing.T) {
+	_, userdata := cloudInit(provider.VMSpec{
+		Name:      "vm1",
+		SSHKeys:   []string{"ssh-rsa AAAA\nruncmd:\n  - rm -rf /"},
+		CloudInit: map[string]string{"user": "bunk", "password": "p\nruncmd: evil"},
+	})
+	if contains(userdata, "runcmd") {
+		t.Errorf("multiline value must be dropped, not injected: %q", userdata)
+	}
+	// The password contained a newline, so the whole password stanza is dropped.
+	if contains(userdata, "chpasswd:") {
+		t.Errorf("invalid multiline password must not produce a chpasswd stanza: %q", userdata)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
 		for i := 0; i+len(sub) <= len(s); i++ {

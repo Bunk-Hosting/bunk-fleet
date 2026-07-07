@@ -15,5 +15,27 @@ RestartSec=5
 # agent keeps the SAME node identity across restarts instead of re-enrolling.
 StateDirectory=bunk-agent
 
+# --- Sandboxing --------------------------------------------------------------
+# The agent runs as root because it drives wg-quick (WireGuard overlay). The
+# hardening below keeps that capability while removing everything it doesn't need.
+# If overlay setup fails after an upgrade, relax the two lines flagged below first.
+NoNewPrivileges=yes
+ProtectSystem=strict
+# wg-quick writes peer config under /etc/wireguard and resolvconf state under /run.
+ReadWritePaths=/etc/wireguard /run
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX
+# Drop all capabilities except those wg-quick/ip actually use (relax here if the
+# overlay fails to come up: some kernels need CAP_SYS_MODULE to load wireguard).
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_MODULE CAP_DAC_OVERRIDE
+
 [Install]
 WantedBy=multi-user.target

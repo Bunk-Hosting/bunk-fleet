@@ -387,15 +387,25 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 // already-cloned VM. Separated out so CreateVM can roll the clone back on any
 // failure here. Returns the running VM status on success.
 func (c *Client) configureAndStart(ctx context.Context, node string, newID int, spec provider.VMSpec) (provider.VMStatus, error) {
-	// 2. Grow the primary disk to the requested size. PVE's resize is
-	// synchronous (it returns null rather than a UPID), so no task wait.
+	// 2. Grow the primary disk to the requested size. Modern PVE (7.2+/8.x)
+	// returns a task UPID from resize; older PVE returns null. Await the task when
+	// one is present, so a failed/locked resize (e.g. storage full, or lock
+	// contention right after the clone) surfaces as an error instead of the VM
+	// being configured, started, and reported "done" with the template disk size
+	// — silently giving the customer less disk than they paid for.
 	if spec.DiskGB > 0 {
 		resizeForm := url.Values{}
 		resizeForm.Set("disk", "scsi0")
 		resizeForm.Set("size", strconv.Itoa(spec.DiskGB)+"G")
 		resizePath := fmt.Sprintf("/nodes/%s/qemu/%d/resize", node, newID)
-		if err := c.doJSON(ctx, http.MethodPut, resizePath, resizeForm, nil); err != nil {
+		var resizeTask taskResponse
+		if err := c.doJSON(ctx, http.MethodPut, resizePath, resizeForm, &resizeTask); err != nil {
 			return provider.VMStatus{}, fmt.Errorf("proxmox: resize disk on vm %d: %w", newID, err)
+		}
+		if upid := strings.TrimSpace(resizeTask.Data); upid != "" {
+			if err := c.waitTask(ctx, upid); err != nil {
+				return provider.VMStatus{}, fmt.Errorf("proxmox: resize disk on vm %d: %w", newID, err)
+			}
 		}
 	}
 

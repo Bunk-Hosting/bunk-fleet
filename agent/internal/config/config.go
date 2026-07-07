@@ -87,40 +87,49 @@ func envOr(key, def string) string {
 	return def
 }
 
-// envBool parses a boolean environment variable, falling back to def.
-func envBool(key string, def bool) bool {
+// A set-but-unparseable typed env var must NOT silently fall back to the default:
+// e.g. BUNK_ESXI_INSECURE=ture → false would block the connection with a confusing
+// TLS error, and BUNK_VPS_VLAN=1oo → untagged is a tenant-isolation hazard. The
+// helpers below record such cases into an accumulator that Load() surfaces as a
+// fatal config error, while an UNSET var still cleanly uses the default.
+
+// envBool parses a boolean environment variable, falling back to def when unset.
+func envBool(key string, def bool, errs *[]error) bool {
 	v := os.Getenv(key)
 	if v == "" {
 		return def
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
+		*errs = append(*errs, fmt.Errorf("config: %s=%q is not a valid boolean", key, v))
 		return def
 	}
 	return b
 }
 
-// envDuration parses a duration environment variable, falling back to def.
-func envDuration(key string, def time.Duration) time.Duration {
+// envDuration parses a duration environment variable, falling back to def when unset.
+func envDuration(key string, def time.Duration, errs *[]error) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {
 		return def
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
+		*errs = append(*errs, fmt.Errorf("config: %s=%q is not a valid duration (e.g. 30s, 1m)", key, v))
 		return def
 	}
 	return d
 }
 
-// envInt parses an integer environment variable, falling back to def.
-func envInt(key string, def int) int {
+// envInt parses an integer environment variable, falling back to def when unset.
+func envInt(key string, def int, errs *[]error) int {
 	v := os.Getenv(key)
 	if v == "" {
 		return def
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		*errs = append(*errs, fmt.Errorf("config: %s=%q is not a valid integer", key, v))
 		return def
 	}
 	return n
@@ -131,6 +140,10 @@ func envInt(key string, def int) int {
 // or malformed.
 func Load() (Config, error) {
 	fs := flag.NewFlagSet("bunk-agent", flag.ContinueOnError)
+
+	// Accumulates "set-but-unparseable env var" errors from the typed helpers
+	// below; surfaced as a single fatal config error after flag parsing.
+	var envErrs []error
 
 	var (
 		controlPlaneURL = fs.String("control-plane-url", envOr("BUNK_CONTROL_PLANE_URL", ""), "control plane base URL")
@@ -144,36 +157,39 @@ func Load() (Config, error) {
 		// Verify TLS by default: the Proxmox API token is root-equivalent and must
 		// not be sent over an unverified connection. Operators with self-signed
 		// certs must explicitly opt out via BUNK_PROXMOX_VERIFY_SSL=false.
-		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true), "verify Proxmox TLS certificate")
+		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true, &envErrs), "verify Proxmox TLS certificate")
 
-		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second), "capacity heartbeat interval")
+		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second, &envErrs), "capacity heartbeat interval")
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
 
 		esxiURL      = fs.String("esxi-url", envOr("BUNK_ESXI_URL", ""), "vSphere/ESXi SDK URL (https://host/sdk)")
 		esxiUser     = fs.String("esxi-user", envOr("BUNK_ESXI_USER", ""), "vSphere/ESXi username")
 		esxiPass     = fs.String("esxi-password", envOr("BUNK_ESXI_PASSWORD", ""), "vSphere/ESXi password")
-		esxiInsecure = fs.Bool("esxi-insecure", envBool("BUNK_ESXI_INSECURE", false), "skip vSphere TLS verification")
+		esxiInsecure = fs.Bool("esxi-insecure", envBool("BUNK_ESXI_INSECURE", false, &envErrs), "skip vSphere TLS verification")
 		esxiDC       = fs.String("esxi-datacenter", envOr("BUNK_ESXI_DATACENTER", ""), "vSphere datacenter (default when empty)")
 		esxiDS       = fs.String("esxi-datastore", envOr("BUNK_ESXI_DATASTORE", ""), "vSphere datastore (default when empty)")
 		esxiPool     = fs.String("esxi-resource-pool", envOr("BUNK_ESXI_RESOURCE_POOL", ""), "vSphere resource pool (default when empty)")
 		esxiFolder   = fs.String("esxi-folder", envOr("BUNK_ESXI_FOLDER", ""), "vSphere VM folder (default when empty)")
 		esxiTemplate = fs.String("esxi-template", envOr("BUNK_ESXI_TEMPLATE", ""), "template VM name to clone")
 
-		offerVCPU = fs.Int("offer-vcpu", envInt("BUNK_OFFER_VCPU", 0), "max vCPUs to advertise (0 = all)")
-		offerRAM  = fs.Int("offer-ram-mb", envInt("BUNK_OFFER_RAM_MB", 0), "max RAM (MB) to advertise (0 = all)")
-		offerDisk = fs.Int("offer-disk-gb", envInt("BUNK_OFFER_DISK_GB", 0), "max disk (GB) to advertise (0 = all)")
+		offerVCPU = fs.Int("offer-vcpu", envInt("BUNK_OFFER_VCPU", 0, &envErrs), "max vCPUs to advertise (0 = all)")
+		offerRAM  = fs.Int("offer-ram-mb", envInt("BUNK_OFFER_RAM_MB", 0, &envErrs), "max RAM (MB) to advertise (0 = all)")
+		offerDisk = fs.Int("offer-disk-gb", envInt("BUNK_OFFER_DISK_GB", 0, &envErrs), "max disk (GB) to advertise (0 = all)")
 
 		vpsBridge     = fs.String("vps-bridge", envOr("BUNK_VPS_BRIDGE", ""), "Proxmox bridge for VPS NICs (e.g. vmbr0); empty = inherit template")
-		vpsVLAN       = fs.Int("vps-vlan", envInt("BUNK_VPS_VLAN", 0), "VLAN tag for VPS NICs (0 = untagged)")
+		vpsVLAN       = fs.Int("vps-vlan", envInt("BUNK_VPS_VLAN", 0, &envErrs), "VLAN tag for VPS NICs (0 = untagged)")
 		vpsGateway    = fs.String("vps-gateway", envOr("BUNK_VPS_GATEWAY", ""), "gateway address for VPS IPs")
-		vpsCidrPrefix = fs.Int("vps-cidr-prefix", envInt("BUNK_VPS_CIDR_PREFIX", 0), "CIDR prefix length for VPS IPs (e.g. 24)")
+		vpsCidrPrefix = fs.Int("vps-cidr-prefix", envInt("BUNK_VPS_CIDR_PREFIX", 0, &envErrs), "CIDR prefix length for VPS IPs (e.g. 24)")
 		vpsRangeStart = fs.String("vps-range-start", envOr("BUNK_VPS_RANGE_START", ""), "first assignable VPS IP")
 		vpsRangeEnd   = fs.String("vps-range-end", envOr("BUNK_VPS_RANGE_END", ""), "last assignable VPS IP")
 	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return Config{}, err
+	}
+	if len(envErrs) > 0 {
+		return Config{}, errors.Join(envErrs...)
 	}
 
 	cfg := Config{
