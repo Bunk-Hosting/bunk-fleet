@@ -140,9 +140,11 @@ defmodule ControlPlane.Fleet do
   Returns the VPSes owned by `owner_id`, region preloaded, newest first.
   """
   def list_vpses_for_owner(owner_id) do
+    # Exclude :deleted — a torn-down VPS must vanish from the customer's list
+    # (the frontend renders whatever this returns), not linger as a ghost row.
     Repo.all(
       from v in Vps,
-        where: v.owner_id == ^owner_id,
+        where: v.owner_id == ^owner_id and v.status != :deleted,
         order_by: [desc: v.inserted_at],
         preload: [:region]
     )
