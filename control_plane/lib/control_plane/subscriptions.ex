@@ -89,9 +89,11 @@ defmodule ControlPlane.Subscriptions do
   @doc """
   Settles every subscription that has come due (`next_billing_date <= today`):
 
-    * charges the owner's wallet the monthly price and moves the date a month on;
+    * charges the owner's wallet the monthly price and advances the billing date
+      one period FROM THE ANCHOR (the original due date), so the customer's
+      billing day never drifts;
     * on insufficient credit, suspends (stops) the VPS and marks the subscription
-      `:past_due`, so the runner retries the next day;
+      `:past_due` with `retry_at = tomorrow` — the anchor stays untouched;
     * a later successful charge of a `:past_due` subscription resumes the VPS.
 
   Subscriptions whose VPS is (being) deleted are cancelled instead of charged.
@@ -106,7 +108,8 @@ defmodule ControlPlane.Subscriptions do
           where:
             s.status in [:active, :past_due] and
               not is_nil(s.next_billing_date) and
-              s.next_billing_date <= ^today,
+              s.next_billing_date <= ^today and
+              (is_nil(s.retry_at) or s.retry_at <= ^today),
           order_by: [asc: s.next_billing_date],
           # Cap work per tick; each settled subscription advances its own date, so
           # a large backlog simply drains over the next few 30s ticks.
@@ -167,18 +170,24 @@ defmodule ControlPlane.Subscriptions do
       Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:wallet, sub.owner_id})])
 
       # Atomically CLAIM this billing period: advance the date only while the row is
-      # still due. A second settler (e.g. a second control-plane instance) then sees
-      # 0 rows and can't re-charge — the advisory lock alone would not stop a
-      # double-charge when the balance still covers the price. A rollback below
-      # undoes this advance, so an unaffordable charge leaves the date untouched.
+      # still due AND still carries the anchor we read (so a concurrent settler that
+      # already advanced it can't be double-charged, and the anchor arithmetic below
+      # is guaranteed to start from the row's real value). A rollback below undoes
+      # this advance, so an unaffordable charge leaves the date untouched.
       {claimed, _} =
         Repo.update_all(
           from(s in Subscription,
             where:
               s.id == ^sub.id and s.status in [:active, :past_due] and
+                s.next_billing_date == ^sub.next_billing_date and
                 s.next_billing_date <= ^today
           ),
-          set: [status: :active, next_billing_date: next_month(today), updated_at: ts()]
+          set: [
+            status: :active,
+            next_billing_date: advance_from_anchor(sub.next_billing_date, today),
+            retry_at: nil,
+            updated_at: ts()
+          ]
         )
 
       cond do
@@ -202,10 +211,14 @@ defmodule ControlPlane.Subscriptions do
     end)
   end
 
+  # Throttle the retry via retry_at and leave next_billing_date (the anchor)
+  # untouched. Overwriting the anchor with the retry date — as this used to do —
+  # made every insufficient-credit blip drift the customer's billing day forward,
+  # accumulating free days over time.
   defp mark_past_due(%Subscription{} = sub, retry_date) do
     Repo.update_all(
       from(s in Subscription, where: s.id == ^sub.id),
-      set: [status: :past_due, next_billing_date: retry_date, updated_at: ts()]
+      set: [status: :past_due, retry_at: retry_date, updated_at: ts()]
     )
   end
 
@@ -233,6 +246,17 @@ defmodule ControlPlane.Subscriptions do
   defp to_cents(%Decimal{} = price), do: price |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
 
   defp ts, do: DateTime.truncate(DateTime.utc_now(), :second)
+
+  # One period on from the ANCHOR (the original due date), not from the settle day,
+  # so a short past_due retry never shifts the billing day. Guard: if the sub was
+  # delinquent for so long that one period from the anchor is still not in the
+  # future (the VPS spent over a month suspended), re-anchor from today — charging
+  # once for the month ahead — rather than immediately coming due again and
+  # retroactively billing time the customer never had service.
+  defp advance_from_anchor(anchor, today) do
+    candidate = next_month(anchor)
+    if Date.compare(candidate, today) == :gt, do: candidate, else: next_month(today)
+  end
 
   defp next_month(date) do
     case Date.new(date.year, date.month, 1) do

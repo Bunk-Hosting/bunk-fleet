@@ -141,7 +141,9 @@ defmodule ControlPlane.Billing do
     # the result to keep earning on a VPS the customer believes is stopped.
     teardown_in_flight =
       from c in Command,
-        where: c.kind in [:stop, :pause, :delete] and c.status in [:pending, :delivered],
+        where:
+          c.kind in [:stop, :pause, :delete] and c.status in [:pending, :delivered] and
+            not is_nil(c.vps_id),
         select: c.vps_id
 
     # Candidate {vps_id => owner_email}: the operator to pay lives on the node. We

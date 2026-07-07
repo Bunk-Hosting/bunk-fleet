@@ -12,7 +12,12 @@ defmodule ControlPlane.Subscriptions.Subscription do
     field :status, Ecto.Enum, values: [:active, :cancelled, :past_due], default: :active
     field :billing_cycle, Ecto.Enum, values: [:monthly, :yearly], default: :monthly
     field :started_at, :utc_datetime
+    # The billing ANCHOR: the date the current period runs to. Never mutated by a
+    # failed charge — past_due retries are throttled via :retry_at instead, so the
+    # customer's billing day doesn't drift forward (free days) on payment blips.
     field :next_billing_date, :date
+    # When a past_due subscription may next be retried (nil = no throttle).
+    field :retry_at, :date
     field :cancelled_at, :utc_datetime
     field :package_id, :integer
 
