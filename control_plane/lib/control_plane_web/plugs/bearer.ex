@@ -21,6 +21,35 @@ defmodule ControlPlaneWeb.Plugs.Bearer do
     end
   end
 
+  @cookie "bunk_session"
+
+  @doc "Name of the HttpOnly session cookie set for the browser login flow."
+  def cookie_name, do: @cookie
+
+  @doc """
+  The session token from the `Authorization: Bearer` header (API clients + agents)
+  or, failing that, the HttpOnly `bunk_session` cookie (browser flow). Returns
+  `{:ok, token}` or `:error`.
+
+  Preferring the header keeps token-based API/agent callers working unchanged; the
+  cookie fallback lets the browser hold the token HttpOnly (never in JS-readable
+  storage), so an XSS foothold can't exfiltrate a live session.
+  """
+  def session_token(conn) do
+    case token(conn) do
+      {:ok, t} ->
+        {:ok, t}
+
+      :error ->
+        conn = fetch_cookies(conn)
+
+        case conn.cookies[@cookie] do
+          t when is_binary(t) and t != "" -> {:ok, t}
+          _ -> :error
+        end
+    end
+  end
+
   @doc ~S(Halts the connection with 401 and a `{"error": "unauthorized"}` body.)
   def unauthorized(conn) do
     conn

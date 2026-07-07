@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// bunk-fleet issues opaque bearer session tokens (not JWTs), so this middleware
-// can only check the token's PRESENCE for UX redirects. The real authorization
-// boundary is the API, which validates every bearer token. The token is mirrored
-// into an `access_token` cookie (alongside localStorage) purely so this
-// server-side gate runs without a flash of protected UI.
+// Auth is an HttpOnly `bunk_session` cookie set by the control plane. This
+// middleware only checks its PRESENCE for UX redirects (avoiding a flash of
+// protected UI); the real authorization boundary is the API, which validates the
+// session on every request. Middleware runs server-side, so it can read the
+// HttpOnly cookie even though client JS cannot.
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isLoggedIn = Boolean(request.cookies.get("access_token")?.value);
+  const isLoggedIn = Boolean(request.cookies.get("bunk_session")?.value);
 
   // Send logged-in users away from the auth-only pages.
   const authOnlyPaths = ["/login", "/register", "/forgot-password"];

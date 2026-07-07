@@ -110,6 +110,46 @@ defmodule ControlPlaneWeb.AuthControllerTest do
     end
   end
 
+  describe "HttpOnly session cookie" do
+    setup [:register_user]
+
+    test "login sets an HttpOnly cookie that authenticates without a bearer header",
+         %{conn: conn} do
+      login = post(conn, ~p"/api/v1/auth/login", %{"email" => @email, "password" => @password})
+      assert %{"token" => _} = json_response(login, 200)
+
+      cookie = login.resp_cookies["bunk_session"]
+      assert cookie.http_only
+      assert is_binary(cookie.value) and cookie.value != ""
+
+      # A fresh request carrying only the cookie (no Authorization header) authenticates.
+      me =
+        build_conn()
+        |> put_req_cookie("bunk_session", cookie.value)
+        |> get(~p"/api/v1/auth/me")
+
+      assert %{"user" => %{"email" => @email}} = json_response(me, 200)
+    end
+
+    test "logout via the cookie revokes the session and clears the cookie", %{conn: conn} do
+      login = post(conn, ~p"/api/v1/auth/login", %{"email" => @email, "password" => @password})
+      value = login.resp_cookies["bunk_session"].value
+
+      out =
+        build_conn()
+        |> put_req_cookie("bunk_session", value)
+        |> delete(~p"/api/v1/auth/logout")
+
+      assert response(out, 204)
+      assert out.resp_cookies["bunk_session"].max_age == 0
+
+      assert build_conn()
+             |> put_req_cookie("bunk_session", value)
+             |> get(~p"/api/v1/auth/me")
+             |> json_response(401)
+    end
+  end
+
   describe "DELETE /api/v1/auth/logout/all" do
     setup [:register_user]
 

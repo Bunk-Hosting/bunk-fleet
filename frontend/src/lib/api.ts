@@ -25,35 +25,22 @@ import type {
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-const TOKEN_KEY = "bunk_token";
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
-function setToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOKEN_KEY, token);
-  // Mirror into a cookie so the server-side middleware can gate /dashboard
-  // without a flash of protected UI. This cookie is NOT the auth boundary — the
-  // API validates the bearer header on every request; it only signals presence.
-  // Only a presence MARKER goes in the cookie (never the live token): the
-  // middleware needs to know "is there a session?", and the API authenticates
-  // via the Authorization header, so the cookie never has to carry the secret.
-  const secure = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `access_token=1; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secure}`;
-}
-function clearToken(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(TOKEN_KEY);
-  document.cookie = "access_token=; path=/; max-age=0; SameSite=Lax";
+// Auth is carried by an HttpOnly `bunk_session` cookie set by the control plane on
+// login/register and cleared on logout. The token is deliberately NOT kept in
+// localStorage or any JS-readable place, so an XSS foothold can't exfiltrate a
+// live session. Requests must be same-origin (the default: an empty API_URL routes
+// through the Next `/api/v1` rewrite) for the browser to send the cookie;
+// `withCredentials` below also covers a same-site cross-origin API host. The
+// middleware gates /dashboard by reading the same cookie server-side.
+function resetClientState(): void {
   // Drop cached catalog so a different user/session in the same tab refetches.
   packageCache = [];
   packagesPromise = null;
 }
 
-// Kept for API compatibility with pages that called it; bunk-fleet uses bearer
-// tokens, so there is no CSRF cookie to fetch.
+// Kept for API compatibility with pages that call it; bunk-fleet has no CSRF
+// cookie to fetch (auth is a same-site HttpOnly cookie).
 export async function ensureCsrfCookie(): Promise<void> {}
 
 // Known bunk-fleet error codes -> friendly Dutch messages. Unknown codes fall
@@ -109,12 +96,9 @@ export function parseApiError(err: unknown, fallback: string): string {
 const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
   headers: { "Content-Type": "application/json" },
-});
-
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+  // Send the HttpOnly session cookie with every request (needed for a same-site
+  // cross-origin API host; a no-op for the same-origin default).
+  withCredentials: true,
 });
 
 api.interceptors.response.use(
@@ -125,7 +109,7 @@ api.interceptors.response.use(
     // Fail securely: a 401 outside the auth flow means the session is gone — drop
     // the token and send the user back to login.
     if (status === 401 && typeof window !== "undefined" && !url.includes("/auth/login") && !window.location.pathname.startsWith("/login")) {
-      clearToken();
+      resetClientState();
       window.location.href = "/login";
     }
     return Promise.reject(error);
@@ -243,7 +227,9 @@ function transformUser(u: BunkUser): User {
 // ── Auth ──────────────────────────────────────────────────────────────
 export const authApi = {
   register: async (name: string, email: string, password: string, _passwordConfirm: string, captcha?: string) => {
-    const res = await api.post<{ user: BunkUser; token: string }>("/auth/register", {
+    // The control plane sets the HttpOnly session cookie on this response; there
+    // is no token to store client-side.
+    await api.post("/auth/register", {
       name,
       email,
       password,
@@ -251,23 +237,29 @@ export const authApi = {
       // the backend has TURNSTILE_SECRET_KEY configured).
       ...(captcha ? { turnstile_token: captcha } : {}),
     });
-    setToken(res.data.token);
     return { data: { detail: "ok" } };
   },
 
   // bunk-fleet login is single-step (password → token); the frontend's optional
   // OTP/TOTP steps simply never trigger because no *_required flag is returned.
-  login: async (email: string, password: string, _captcha?: string, code?: string) => {
+  login: async (email: string, password: string, captcha?: string, code?: string) => {
     const res = await api.post<{ user?: BunkUser; token?: string; totp_required?: boolean }>(
       "/auth/login",
-      { email, password, ...(code ? { code } : {}) },
+      {
+        email,
+        password,
+        // Sent for server-side Turnstile verification (enforced when the backend
+        // has TURNSTILE_SECRET_KEY configured) — same contract as register.
+        ...(captcha ? { turnstile_token: captcha } : {}),
+        ...(code ? { code } : {}),
+      },
     );
-    // 2FA gate: the backend returns { totp_required: true } and NO token until a
-    // valid TOTP code is supplied — never store a missing token in that case.
+    // 2FA gate: the backend returns { totp_required: true } and does NOT set the
+    // session cookie until a valid TOTP code is supplied.
     if (res.data.totp_required) {
       return { data: { totp_required: true } as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
     }
-    if (res.data.token) setToken(res.data.token);
+    // On success the control plane sets the HttpOnly session cookie on this response.
     return { data: {} as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
   },
 
@@ -275,9 +267,10 @@ export const authApi = {
 
   logout: async () => {
     try {
+      // The control plane clears the HttpOnly session cookie on this response.
       await api.delete("/auth/logout");
     } finally {
-      clearToken();
+      resetClientState();
     }
     return { data: {} };
   },
@@ -316,14 +309,16 @@ export const packagesApi = {
 // ── VPS ───────────────────────────────────────────────────────────────
 export const vpsApi = {
   list: async () => {
-    await ensurePackages();
+    // Package catalog is cosmetic here (spec→name/price mapping with a "Custom"
+    // fallback) — a broken /packages endpoint must not take down the VPS list.
+    await ensurePackages().catch(() => []);
     const res = await api.get<{ vpses: BunkVps[] }>("/vpses");
     const results = res.data.vpses.map(transformVps);
     return { data: { count: results.length, results } };
   },
 
   get: async (id: string) => {
-    await ensurePackages();
+    await ensurePackages().catch(() => []);
     const res = await api.get<{ vps: BunkVps }>(`/vpses/${id}`);
     return { data: transformVps(res.data.vps) };
   },

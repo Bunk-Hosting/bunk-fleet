@@ -14,6 +14,10 @@ defmodule ControlPlaneWeb.AuthController do
   use ControlPlaneWeb, :controller
 
   alias ControlPlane.Accounts
+  alias ControlPlaneWeb.Plugs.Bearer
+
+  # 7-day HttpOnly session cookie (matches the token's own lifetime).
+  @session_cookie_max_age 60 * 60 * 24 * 7
 
   def register(conn, params) do
     # Verify the CAPTCHA server-side BEFORE creating an account (and granting the
@@ -24,6 +28,7 @@ defmodule ControlPlaneWeb.AuthController do
       token = Accounts.generate_user_session_token(user)
 
       conn
+      |> put_session_cookie(token)
       |> put_status(:created)
       |> json(%{user: user_json(user), token: encode_token(token)})
     else
@@ -76,18 +81,19 @@ defmodule ControlPlaneWeb.AuthController do
     end
   end
 
-  defp issue_session(conn, user) do
-    token = Accounts.generate_user_session_token(user)
-
-    conn
-    |> put_status(:ok)
-    |> json(%{user: user_json(user), token: encode_token(token)})
-  end
-
   def login(conn, _params) do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "email and password are required"})
+  end
+
+  defp issue_session(conn, user) do
+    token = Accounts.generate_user_session_token(user)
+
+    conn
+    |> put_session_cookie(token)
+    |> put_status(:ok)
+    |> json(%{user: user_json(user), token: encode_token(token)})
   end
 
   def me(conn, _params) do
@@ -95,12 +101,16 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def logout(conn, _params) do
-    with {:ok, encoded} <- bearer_token(conn),
+    # Extract from header OR the HttpOnly cookie so a cookie-based browser session
+    # revokes the exact token it presented, then always clear the cookie.
+    with {:ok, encoded} <- ControlPlaneWeb.Plugs.Bearer.session_token(conn),
          {:ok, token} <- Base.url_decode64(encoded, padding: false) do
       Accounts.delete_user_session_token(token)
     end
 
-    send_resp(conn, :no_content, "")
+    conn
+    |> delete_resp_cookie(Bearer.cookie_name(), path: "/")
+    |> send_resp(:no_content, "")
   end
 
   @doc """
@@ -116,10 +126,25 @@ defmodule ControlPlaneWeb.AuthController do
 
   defp encode_token(token), do: Base.url_encode64(token, padding: false)
 
-  defp bearer_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] when token != "" -> {:ok, token}
-      _ -> :error
+  # Sets the session token as an HttpOnly cookie so the browser holds it out of
+  # JS reach (an XSS foothold can't read it). Same-site Lax + Secure (over https)
+  # for CSRF/transport safety. API clients keep using the returned bearer token.
+  defp put_session_cookie(conn, token) do
+    put_resp_cookie(conn, Bearer.cookie_name(), encode_token(token),
+      http_only: true,
+      secure: secure_request?(conn),
+      same_site: "Lax",
+      max_age: @session_cookie_max_age,
+      path: "/"
+    )
+  end
+
+  # True when the original client request was https — trust X-Forwarded-Proto from
+  # the edge (the control plane itself is reached over http on the internal network).
+  defp secure_request?(conn) do
+    case get_req_header(conn, "x-forwarded-proto") do
+      ["https" | _] -> true
+      _ -> conn.scheme == :https
     end
   end
 
