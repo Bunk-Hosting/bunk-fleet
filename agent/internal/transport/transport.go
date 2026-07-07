@@ -193,15 +193,22 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 
 // Enroll exchanges a one-time token for node credentials and stores them on the
 // Client for subsequent calls.
-func (c *Client) Enroll(ctx context.Context, token string, net VpsNetwork, wgPublicKey string) (EnrollResponse, error) {
+// Version is the agent build string sent at enrollment. Override at build time
+// with -ldflags "-X github.com/Bunk-Hosting/bunk-fleet/agent/internal/transport.Version=<v>".
+var Version = "dev"
+
+func (c *Client) Enroll(ctx context.Context, token, hypervisor string, net VpsNetwork, wgPublicKey string) (EnrollResponse, error) {
 	if token == "" {
 		return EnrollResponse{}, errors.New("transport: empty enrollment token")
+	}
+	if hypervisor == "" {
+		hypervisor = "proxmox"
 	}
 	var out EnrollResponse
 	req := EnrollRequest{
 		Token:         token,
-		Hypervisor:    "proxmox",
-		AgentVersion:  "dev",
+		Hypervisor:    hypervisor,
+		AgentVersion:  Version,
 		VpsGateway:    net.Gateway,
 		VpsCidrPrefix: net.CidrPrefix,
 		VpsRangeStart: net.RangeStart,

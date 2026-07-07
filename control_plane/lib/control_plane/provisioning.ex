@@ -491,8 +491,13 @@ defmodule ControlPlane.Provisioning do
     ids = Enum.map(commands, & &1.id)
     ts = now()
 
+    # Guard on non-terminal status: a concurrent apply_result / cancel_and_release
+    # may have moved a command to :done/:failed between the poll's read and this
+    # write. Without the guard we'd resurrect a cancelled command back to
+    # :delivered and hand the agent a provision/delete it must not run (orphan VM,
+    # double-booked capacity).
     Repo.update_all(
-      from(c in Command, where: c.id in ^ids),
+      from(c in Command, where: c.id in ^ids and c.status in [:pending, :delivered]),
       set: [status: :delivered, delivered_at: ts, updated_at: ts]
     )
   end
@@ -565,7 +570,10 @@ defmodule ControlPlane.Provisioning do
 
     multi
     |> Multi.run(:vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
+      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+      # row; locking it here serialises them so a provision-done can't overwrite a
+      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
 
       cond do
         # A delete was requested while this provision was in flight (deferred
@@ -626,7 +634,10 @@ defmodule ControlPlane.Provisioning do
        when not is_nil(vps_id) do
     multi
     |> Multi.run(:vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
+      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+      # row; locking it here serialises them so a provision-done can't overwrite a
+      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
 
       vps
       |> Vps.changeset(%{status: :failed})
@@ -656,7 +667,10 @@ defmodule ControlPlane.Provisioning do
        when not is_nil(vps_id) do
     multi
     |> Multi.run(:vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
+      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+      # row; locking it here serialises them so a provision-done can't overwrite a
+      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
 
       vps
       |> Vps.changeset(%{status: :deleted})
@@ -697,7 +711,10 @@ defmodule ControlPlane.Provisioning do
       end
 
     Multi.run(multi, :vps, fn repo, _changes ->
-      vps = repo.get!(Vps, vps_id)
+      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+      # row; locking it here serialises them so a provision-done can't overwrite a
+      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
 
       if vps.status in [:active, :stopped, :paused] do
         changeset = Vps.changeset(vps, %{status: target})

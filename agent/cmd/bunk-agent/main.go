@@ -5,9 +5,9 @@
 package main
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -66,7 +66,7 @@ func run(logger *slog.Logger) error {
 		}
 
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, transport.VpsNetwork{
+		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, cfg.Hypervisor, transport.VpsNetwork{
 			Gateway:    cfg.VpsNetwork.Gateway,
 			CidrPrefix: cfg.VpsNetwork.CidrPrefix,
 			RangeStart: cfg.VpsNetwork.RangeStart,

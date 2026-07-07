@@ -18,10 +18,10 @@ func testClient(t *testing.T) (*Client, func()) {
 	server := model.Service.NewServer()
 
 	c, err := New(Config{
-		URL:      server.URL.String(),
-		User:     "user",
-		Password: "pass",
-		Insecure: true,
+		URL:          server.URL.String(),
+		User:         "user",
+		Password:     "pass",
+		Insecure:     true,
 		Datastore:    "LocalDS_0",
 		ResourcePool: "/DC0/host/DC0_H0/Resources",
 		Template:     "DC0_H0_VM0",
@@ -139,8 +139,8 @@ func TestNetworkConfig(t *testing.T) {
 
 func TestCloudInitUserPassword(t *testing.T) {
 	_, userdata := cloudInit(provider.VMSpec{
-		Name:     "vm1",
-		SSHKeys:  []string{"ssh-rsa AAAA key"},
+		Name:      "vm1",
+		SSHKeys:   []string{"ssh-rsa AAAA key"},
 		CloudInit: map[string]string{"user": "bunk", "password": "s3cret"},
 	})
 	if !contains(userdata, "chpasswd:") || !contains(userdata, "name: bunk") ||

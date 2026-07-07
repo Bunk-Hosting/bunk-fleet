@@ -163,19 +163,28 @@ defmodule ControlPlane.Billing do
       )
       |> Map.new()
 
+    # Process in bounded batches of 1,000, each in its OWN short transaction. A
+    # single insert_all over the whole active fleet blows Postgres's 65,535
+    # bind-parameter cap above ~7k VPSes (a total metering + operator-payout
+    # outage), and locking every active VPS at once stalls all provision / power /
+    # delete finalisation for the entire tick. The UNIQUE (vps_id, metered_at)
+    # index keeps each batch double-bill safe on its own.
+    owner_by_vps
+    |> Map.keys()
+    |> Enum.chunk_every(1_000)
+    |> Enum.reduce(0, fn ids, acc -> acc + meter_batch(ids, owner_by_vps, now) end)
+  end
+
+  defp meter_batch(ids, owner_by_vps, now) do
     {:ok, metered} =
       Repo.transaction(fn ->
-        ids = Map.keys(owner_by_vps)
-
-        # Lock every candidate VPS row in one pass (ascending id for a deterministic
-        # lock order, deadlock-free), so the watermark we read is the committed
-        # truth and any concurrent meter serializes here — the same guarantee as
-        # the old per-row re-read, but without N round-trips.
+        # Lock this batch's rows (ascending id = deterministic, deadlock-free) so
+        # the watermark we read is committed truth and concurrent meters serialise.
         locked = Repo.all(from v in Vps, where: v.id in ^ids, order_by: v.id, lock: "FOR UPDATE")
 
-        # Build one row per still-meterable VPS, computing seconds in Elixir exactly
-        # as before (elapsed_seconds + the meterable? re-check on the locked row).
-        # insert_all needs explicit timestamps since it bypasses the changeset.
+        # One row per still-meterable VPS; seconds computed in Elixir (elapsed_seconds
+        # + the meterable? re-check on the locked row). insert_all bypasses the
+        # changeset, so timestamps are explicit.
         rows =
           for vps <- locked, meterable?(vps, now) do
             %{
@@ -194,10 +203,9 @@ defmodule ControlPlane.Billing do
 
         metered_ids = Enum.map(rows, & &1.vps_id)
 
-        # One bulk insert + one bulk watermark advance instead of 3N statements.
         # on_conflict :nothing turns the UNIQUE (vps_id, metered_at) backstop into a
-        # silent no-op for an accidental same-tick re-meter (rather than aborting the
-        # whole batch), so a duplicate slice can never double-bill.
+        # silent no-op for an accidental same-tick re-meter, so a duplicate slice
+        # can never double-bill.
         unless rows == [] do
           Repo.insert_all(UsageRecord, rows,
             on_conflict: :nothing,

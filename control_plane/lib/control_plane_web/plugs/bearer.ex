@@ -50,9 +50,18 @@ defmodule ControlPlaneWeb.Plugs.Bearer do
     end
   end
 
-  @doc ~S(Halts the connection with 401 and a `{"error": "unauthorized"}` body.)
+  @doc ~S"""
+  Halts the connection with 401 and a `{"error": "unauthorized"}` body.
+
+  Also clears the `bunk_session` cookie: if a browser presents a revoked/expired
+  cookie it is now dead weight that would otherwise loop the SPA forever between
+  /dashboard and /login (the browser keeps re-sending it). A live session never
+  reaches here, so clearing it unconditionally is safe; an API/agent caller using
+  the Authorization header just ignores the harmless Set-Cookie.
+  """
   def unauthorized(conn) do
     conn
+    |> delete_resp_cookie(@cookie, path: "/")
     |> put_status(:unauthorized)
     |> json(%{error: "unauthorized"})
     |> halt()

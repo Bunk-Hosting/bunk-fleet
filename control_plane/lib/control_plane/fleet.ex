@@ -108,7 +108,11 @@ defmodule ControlPlane.Fleet do
   def package_for_specs(vcpu, ram_mb, disk_gb) do
     with v when is_integer(v) <- coerce_int(vcpu),
          m when is_integer(m) <- coerce_int(ram_mb),
-         d when is_integer(d) <- coerce_int(disk_gb) do
+         d when is_integer(d) <- coerce_int(disk_gb),
+         # RAM must be an exact whole-GB match. Without this, ram_mb=3000 rounds
+         # via div(m,1024)=2 to the 2 GB package's price while ~3 GB is actually
+         # provisioned — underpay + silent oversell of real node capacity.
+         true <- rem(m, 1024) == 0 do
       Repo.one(
         from p in Package,
           where:
