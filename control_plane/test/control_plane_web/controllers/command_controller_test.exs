@@ -82,8 +82,7 @@ defmodule ControlPlaneWeb.CommandControllerTest do
       assert returned["id"] == command.id
       assert returned["kind"] == "provision"
 
-      assert returned["payload"] == %{
-               "name" => "web-1",
+      assert %{
                "vcpu" => 4,
                "ram_mb" => 8192,
                "disk_gb" => 100,
@@ -91,7 +90,10 @@ defmodule ControlPlaneWeb.CommandControllerTest do
                "cloud_init" => %{"ciuser" => "bunk-console"},
                "ssh_keys" => ["ssh-ed25519 AAAA..."],
                "ip_config" => "ip=10.10.0.10/19,gw=10.10.0.1"
-             }
+             } = returned["payload"]
+
+      # Unique guest name = display slug + short UUID suffix.
+      assert returned["payload"]["name"] =~ ~r/^web-1-[0-9a-f]{8}$/
 
       assert Repo.get!(Command, command.id).status == :delivered
     end

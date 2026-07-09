@@ -85,8 +85,7 @@ defmodule ControlPlane.ProvisioningTest do
       assert persisted.kind == :provision
       assert persisted.status == :pending
 
-      assert persisted.payload == %{
-               "name" => attrs.name,
+      assert %{
                "vcpu" => 4,
                "ram_mb" => 8192,
                "disk_gb" => 100,
@@ -94,7 +93,11 @@ defmodule ControlPlane.ProvisioningTest do
                "cloud_init" => %{"ciuser" => "bunk-console"},
                "ssh_keys" => ["ssh-ed25519 AAAA..."],
                "ip_config" => "ip=10.10.0.10/19,gw=10.10.0.1"
-             }
+             } = persisted.payload
+
+      # Guest name = display slug + short UUID suffix → unique per VPS, so a
+      # co-tenant's identically-named VPS can't have its VM adopted.
+      assert persisted.payload["name"] =~ ~r/^#{Regex.escape(attrs.name)}-[0-9a-f]{8}$/
 
       # Node available capacity was decremented by the scheduler.
       reloaded = Repo.get!(Node, node.id)

@@ -31,6 +31,14 @@ defmodule ControlPlane.Accounts do
   def totp_active?(_), do: false
 
   @doc "Generates a fresh (unconfirmed) TOTP secret for the user and persists it."
+  # Refuse to reset a VPS owner who has ALREADY confirmed 2FA: overwriting the
+  # secret here would silently disable their working authenticator. Combined with
+  # cookie auth + SameSite=Lax (which still attaches the cookie on a top-level GET
+  # navigation), an attacker could otherwise CSRF a victim into losing 2FA. To
+  # re-enrol they must first disable it, which requires a valid current code.
+  def start_totp_setup(%User{totp_confirmed_at: confirmed}) when not is_nil(confirmed),
+    do: {:error, :already_enabled}
+
   def start_totp_setup(%User{} = user) do
     {:ok, user} =
       user

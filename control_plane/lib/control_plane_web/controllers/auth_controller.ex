@@ -164,12 +164,16 @@ defmodule ControlPlaneWeb.AuthController do
 
   @doc "Starts TOTP setup: persists a fresh secret and returns it + a QR data URL."
   def totp_setup(conn, _params) do
-    user = Accounts.start_totp_setup(conn.assigns.current_user)
+    case Accounts.start_totp_setup(conn.assigns.current_user) do
+      {:error, :already_enabled} ->
+        conn |> put_status(:conflict) |> json(%{error: "totp_already_enabled"})
 
-    json(conn, %{
-      secret: Accounts.totp_secret_base32(user),
-      qr_data_url: qr_data_url(Accounts.totp_uri(user))
-    })
+      user ->
+        json(conn, %{
+          secret: Accounts.totp_secret_base32(user),
+          qr_data_url: qr_data_url(Accounts.totp_uri(user))
+        })
+    end
   end
 
   @doc "Confirms TOTP setup with a code from the authenticator app."

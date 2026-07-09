@@ -900,7 +900,7 @@ defmodule ControlPlane.Provisioning do
   # The exact snake_case payload the Go agent expects for a provision command.
   defp provision_payload(%Vps{} = vps, attrs) do
     %{
-      "name" => vps.name,
+      "name" => guest_name(vps),
       "vcpu" => vps.vcpu,
       "ram_mb" => vps.ram_mb,
       "disk_gb" => vps.disk_gb,
@@ -909,6 +909,26 @@ defmodule ControlPlane.Provisioning do
       "ssh_keys" => (attrs[:ssh_keys] || attrs["ssh_keys"] || []) ++ console_public_keys(),
       "ip_config" => attrs[:ip_config] || attrs["ip_config"]
     }
+  end
+
+  # The hypervisor guest name the agent creates AND keys idempotency on
+  # (FindByName). It MUST be globally unique per VPS: the customer-chosen display
+  # name is not (two tenants can both name a VPS "web1" on the same node, and the
+  # agent would then adopt the first tenant's live VM for the second — cross-tenant
+  # takeover). We derive a DNS-safe slug of the display name plus a short slice of
+  # the VPS's UUID, so the name stays readable but is unique and deterministic
+  # across command re-deliveries.
+  defp guest_name(%Vps{id: id, name: name}) do
+    slug =
+      (name || "")
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9-]+/, "-")
+      |> String.trim("-")
+      |> String.slice(0, 40)
+
+    slug = if slug == "", do: "vps", else: slug
+    short = id |> String.replace("-", "") |> String.slice(0, 8)
+    "#{slug}-#{short}"
   end
 
   defp mark_vps_failed(%Vps{} = vps) do
