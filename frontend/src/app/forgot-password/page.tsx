@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Server, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +40,7 @@ export default function ForgotPasswordPage() {
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10">
         <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
           <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
+            <Server className="h-6 w-6 text-accent" />
             <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
           </a>
           <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
             {submitted ? (
               <div className="text-center py-4">
                 <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-                  <span className="material-symbols-outlined text-accent text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>mark_email_read</span>
+                  <MailCheck className="h-6 w-6 text-accent" />
                 </div>
                 <h2 className="text-lg font-semibold mb-2">Check je inbox</h2>
                 <p className="text-sm text-muted-foreground mb-6">

@@ -111,12 +111,7 @@ function SidebarContent({ user }: SidebarProps) {
       {/* Logo */}
       <div className="px-4 py-6">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <span
-            className="material-symbols-outlined text-accent"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            dns
-          </span>
+          <Server className="h-6 w-6 text-accent" />
           <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
             BUNK HOSTING
           </span>
@@ -208,12 +203,7 @@ export function Sidebar({ user }: SidebarProps) {
           </SheetContent>
         </Sheet>
         <Link href="/dashboard" className="flex items-center gap-3">
-          <span
-            className="material-symbols-outlined text-accent"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            dns
-          </span>
+          <Server className="h-6 w-6 text-accent" />
           <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">
             BUNK HOSTING
           </span>

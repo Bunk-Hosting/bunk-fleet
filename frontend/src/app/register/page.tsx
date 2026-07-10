@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, MailCheck } from "lucide-react";
+import { Loader2, MailCheck, Server } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +73,7 @@ function RegisterForm() {
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant/10 transition-all duration-300">
         <div className="max-w-7xl mx-auto flex justify-between items-center px-6 lg:px-8 h-16 w-full">
           <a href={process.env.NEXT_PUBLIC_WEBSITE_URL || "/"} className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>dns</span>
+            <Server className="h-6 w-6 text-accent" />
             <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
           </a>
         </div>
