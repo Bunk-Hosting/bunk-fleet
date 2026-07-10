@@ -393,4 +393,27 @@ defmodule ControlPlane.ProvisioningTest do
       refute Enum.any?(Provisioning.deliverable_commands_for_node(node), &(&1.id == pending.id))
     end
   end
+
+  describe "Fleet.delete_node/1" do
+    test "removes a node that hosts no live VPSes" do
+      region = insert_region()
+      node = insert_node(region)
+
+      assert {:ok, _} = ControlPlane.Fleet.delete_node(node.id)
+      refute Repo.get(Node, node.id)
+    end
+
+    test "refuses while the node still hosts a live VPS" do
+      region = insert_region()
+      node = insert_node(region)
+      _vps = active_vps(region)
+
+      assert {:error, :node_has_vpses} = ControlPlane.Fleet.delete_node(node.id)
+      assert Repo.get(Node, node.id)
+    end
+
+    test "returns :not_found for an unknown node" do
+      assert {:error, :not_found} = ControlPlane.Fleet.delete_node(Ecto.UUID.generate())
+    end
+  end
 end

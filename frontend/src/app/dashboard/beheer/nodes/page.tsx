@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, HardDrive } from "lucide-react";
+import { Loader2, RefreshCw, HardDrive, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,12 +33,36 @@ function NodesInner() {
   const [nodes, setNodes] = useState<AdminNode[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [removing, setRemoving] = useState<string | null>(null);
+
   const load = () =>
     adminApi
       .nodes()
       .then(setNodes)
       .catch(() => toast({ title: "Fout", description: "Kon nodes niet laden.", variant: "destructive" }))
       .finally(() => setLoading(false));
+
+  const removeNode = async (n: AdminNode) => {
+    if (!window.confirm(`Node "${n.name}" definitief verwijderen uit de fleet?`)) return;
+    setRemoving(n.id);
+    try {
+      await adminApi.nodeDelete(n.id);
+      toast({ title: "Node verwijderd", description: n.name });
+      setNodes((prev) => prev.filter((x) => x.id !== n.id));
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      toast({
+        title: "Verwijderen mislukt",
+        description:
+          status === 409
+            ? "Deze node host nog VPS'en — verwijder die eerst."
+            : "Kon de node niet verwijderen.",
+        variant: "destructive",
+      });
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -82,6 +106,20 @@ function NodesInner() {
                   <div className="flex items-center gap-2">
                     <Badge variant={n.tier === "datacenter" ? "default" : "secondary"}>{n.tier}</Badge>
                     <Badge variant={STATUS_VARIANT[n.status] ?? "outline"}>{n.status}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      title="Node verwijderen"
+                      disabled={removing === n.id}
+                      onClick={() => removeNode(n)}
+                    >
+                      {removing === n.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

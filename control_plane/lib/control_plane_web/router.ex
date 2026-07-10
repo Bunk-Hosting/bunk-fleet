@@ -223,6 +223,7 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/stop", PanelController, :vps_stop
     delete "/vpses/:id", PanelController, :vps_delete
     get "/nodes", PanelController, :nodes
+    delete "/nodes/:id", PanelController, :delete_node
   end
 
   # Browser console WebSocket. No router pipeline (a WS upgrade isn't JSON); the

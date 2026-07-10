@@ -157,6 +157,21 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     json(conn, %{nodes: Enum.map(Fleet.list_nodes(), &node_json/1)})
   end
 
+  def delete_node(conn, %{"id" => id}) do
+    case Ecto.UUID.cast(id) do
+      {:ok, node_id} ->
+        case Fleet.delete_node(node_id) do
+          {:ok, _} -> json(conn, %{detail: "ok"})
+          {:error, :not_found} -> error(conn, :not_found, "not_found")
+          {:error, :node_has_vpses} -> error(conn, :conflict, "node_has_vpses")
+          {:error, reason} -> error(conn, :unprocessable_entity, to_string(inspect(reason)))
+        end
+
+      :error ->
+        error(conn, :not_found, "not_found")
+    end
+  end
+
   # --- helpers -------------------------------------------------------------
 
   defp vps_action(conn, id, fun) do

@@ -82,6 +82,39 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Removes a node from the fleet.
+
+  Refuses with `{:error, :node_has_vpses}` while the node still hosts any live
+  (non-`:deleted`/`:failed`) VPS, so removing a node can never orphan a running
+  customer VM — those must be torn down first. On success the node's commands and
+  reservations cascade-delete and any dead VPSes' `node_id` is nilified. Returns
+  `{:error, :not_found}` for an unknown id.
+
+  Note: the node's agent (if still running) keeps its persisted credentials, so
+  its next heartbeat will 401 against the now-missing node — the operator should
+  uninstall/stop the agent after removal.
+  """
+  def delete_node(node_id) do
+    case Repo.get(Node, node_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Node{} = node ->
+        live =
+          Repo.aggregate(
+            from(v in Vps, where: v.node_id == ^node_id and v.status not in [:deleted, :failed]),
+            :count
+          )
+
+        if live > 0 do
+          {:error, :node_has_vpses}
+        else
+          Repo.delete(node)
+        end
+    end
+  end
+
+  @doc """
   Returns all VPSes, with their region preloaded, newest first.
   """
   def list_vpses(opts \\ []) do

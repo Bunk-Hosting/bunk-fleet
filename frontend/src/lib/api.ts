@@ -428,6 +428,7 @@ export const adminApi = {
   vpsDelete: (id: string) => api.delete(`/beheer/vpses/${id}`),
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
+  nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
 };
 
 // Billing — adapted to bunk-fleet. The overview is derived live from the
