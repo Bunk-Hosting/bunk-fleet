@@ -26,6 +26,13 @@ defmodule ControlPlane.BillingTest do
       region_id: region.id,
       owner_email: owner_email
     })
+    # Metering only accrues for :online, recently-heartbeating nodes, so the
+    # fixture must present that state to be metered.
+    |> Ecto.Changeset.put_change(:status, :online)
+    |> Ecto.Changeset.put_change(
+      :last_heartbeat_at,
+      DateTime.utc_now() |> DateTime.truncate(:second)
+    )
     |> Repo.insert!()
   end
 

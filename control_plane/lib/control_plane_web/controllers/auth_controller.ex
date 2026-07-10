@@ -139,12 +139,16 @@ defmodule ControlPlaneWeb.AuthController do
     )
   end
 
-  # True when the original client request was https — trust X-Forwarded-Proto from
-  # the edge (the control plane itself is reached over http on the internal network).
-  defp secure_request?(conn) do
-    case get_req_header(conn, "x-forwarded-proto") do
-      ["https" | _] -> true
-      _ -> conn.scheme == :https
+  # Whether to mark the session cookie Secure. Derive it from the configured
+  # public origin, NOT X-Forwarded-Proto: the Cloudflare tunnel reaches the edge
+  # over http and the edge sets X-Forwarded-Proto to that internal http scheme, so
+  # trusting the header would ship a NON-Secure session cookie in production even
+  # though the browser<->Cloudflare leg is https. When PUBLIC_URL is https the
+  # cookie is always Secure; in dev/test (http/unset) it is not.
+  defp secure_request?(_conn) do
+    case Application.get_env(:control_plane, :public_url) do
+      "https://" <> _ -> true
+      _ -> false
     end
   end
 

@@ -84,6 +84,10 @@ defmodule ControlPlane.Billing do
   # Decimal places the returned money amount is rounded to.
   @money_scale 6
 
+  # A node whose last heartbeat is older than this (or not :online) is treated as
+  # not delivering, so its VPSes are not metered for operator payout.
+  @meter_node_staleness_seconds 180
+
   # Placeholder rates. These are NOT a business price — override in config
   # (`config :control_plane, :billing_rates, %{...}`). Kept tiny and explicit so
   # an un-configured environment meters at a documented, zero rate rather than
@@ -148,6 +152,13 @@ defmodule ControlPlane.Billing do
 
     # Candidate {vps_id => owner_email}: the operator to pay lives on the node. We
     # resolve it here unlocked, then re-validate each VPS under a row lock below.
+    # Don't accrue operator payout while the node is offline or has gone silent:
+    # a VPS on a dead node isn't being delivered, so metering it would pay an
+    # operator for capacity they aren't providing (and let them earn by simply
+    # not reporting a teardown). Require the node currently :online AND heard from
+    # within the staleness window.
+    node_cutoff = DateTime.add(now, -@meter_node_staleness_seconds, :second)
+
     owner_by_vps =
       Repo.all(
         from v in Vps,
@@ -158,6 +169,7 @@ defmodule ControlPlane.Billing do
           where:
             v.status == :active and not is_nil(v.node_id) and not is_nil(n.owner_email) and
               n.tier != :datacenter,
+          where: n.status == :online and n.last_heartbeat_at >= ^node_cutoff,
           where: v.id not in subquery(teardown_in_flight),
           select: {v.id, n.owner_email}
       )

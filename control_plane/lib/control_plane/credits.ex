@@ -176,6 +176,23 @@ defmodule ControlPlane.Credits do
     end
   end
 
+  @doc """
+  Marks a pending top-up `:cancelled` by its Mollie id (payment expired/canceled/
+  failed). Idempotent and guarded on `:pending`, so it frees the per-user pending
+  cap without ever touching an already-paid credit.
+  """
+  def cancel_topup_by_mollie_id(mollie_payment_id) do
+    {count, _} =
+      from(t in TopupRequest,
+        where: t.mollie_payment_id == ^mollie_payment_id and t.status == :pending
+      )
+      |> Repo.update_all(
+        set: [status: :cancelled, updated_at: DateTime.truncate(DateTime.utc_now(), :second)]
+      )
+
+    if count == 1, do: :ok, else: {:error, :not_pending}
+  end
+
   # No amount to check against → accept (back-compat / admin flow).
   defp amount_matches?(_tr, nil), do: true
 

@@ -17,6 +17,9 @@ defmodule ControlPlaneWeb.BillingControllerTest do
   defp insert_node(region) do
     %Node{}
     |> Node.changeset(%{name: "node-#{System.unique_integer([:positive])}", region_id: region.id, owner_email: "op@example.com"})
+    # Only :online, recently-heartbeating nodes are metered.
+    |> Ecto.Changeset.put_change(:status, :online)
+    |> Ecto.Changeset.put_change(:last_heartbeat_at, DateTime.utc_now() |> DateTime.truncate(:second))
     |> Repo.insert!()
   end
 

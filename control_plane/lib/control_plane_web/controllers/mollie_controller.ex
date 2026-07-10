@@ -84,6 +84,12 @@ defmodule ControlPlaneWeb.MollieController do
             other -> Logger.warning("mollie webhook credit: #{inspect(other)}")
           end
 
+        {:ok, %{status: status}} when status in ["expired", "canceled", "failed"] ->
+          # Terminal, unpaid: release the pending row so it stops counting against
+          # the user's pending-topup cap.
+          Credits.cancel_topup_by_mollie_id(payment_id)
+          Logger.info("mollie webhook #{payment_id} status=#{status} (topup cancelled)")
+
         {:ok, %{status: status}} ->
           Logger.info("mollie webhook #{payment_id} status=#{status} (no credit)")
 
