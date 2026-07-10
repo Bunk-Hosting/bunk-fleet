@@ -841,7 +841,7 @@ defmodule ControlPlane.Provisioning do
         {:ok, :no_subscription}
 
       sub ->
-        cents = sub.price_monthly |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
+        cents = ControlPlane.Money.to_cents(sub.price_monthly)
         {:ok, _} = ControlPlane.Credits.refund(sub.owner_id, cents, "vps_refund", "Terugbetaling: provisioning mislukt")
         {:ok, _} = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
         {:ok, :refunded}

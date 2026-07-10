@@ -243,7 +243,7 @@ defmodule ControlPlane.Subscriptions do
 
   defp maybe_resume(_sub), do: 0
 
-  defp to_cents(%Decimal{} = price), do: price |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
+  defp to_cents(%Decimal{} = price), do: ControlPlane.Money.to_cents(price)
 
   defp ts, do: DateTime.truncate(DateTime.utc_now(), :second)
 

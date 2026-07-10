@@ -88,7 +88,7 @@ defmodule ControlPlaneWeb.VpsController do
   end
 
   defp package_price_cents(%Package{price_monthly: price}) do
-    price |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
+    ControlPlane.Money.to_cents(price)
   end
 
   def delete(conn, %{"id" => id}) do
