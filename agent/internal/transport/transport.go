@@ -1,5 +1,5 @@
 // Package transport defines the bunk-agent's client contract with the
-// federated control plane.
+// control plane.
 //
 // The agent always DIALS OUT (so it works behind NAT): it enrolls once with a
 // one-time token to obtain a durable node identity and credentials, then

@@ -92,7 +92,7 @@ func New(cfg Config) (*Client, error) {
 func httpClient(verifySSL bool) *http.Client {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !verifySSL, //nolint:gosec // operator-controlled, homelab certs
+			InsecureSkipVerify: !verifySSL, //nolint:gosec // our own nodes, self-signed Proxmox certs
 		},
 	}
 	return &http.Client{

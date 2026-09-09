@@ -1,4 +1,4 @@
-// Command bunk-agent is the worker-node agent of the Bunk federated VPS
+// Command bunk-agent is the worker-node agent of the Bunk multi-node VPS
 // hosting platform. It talks to a local hypervisor (Proxmox first), dials out
 // to the control plane, enrolls with a one-time token, and reports capacity
 // heartbeats on a timer until interrupted.
@@ -160,7 +160,7 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 	}
 }
 
-// capOffer caps advertised capacity to the operator's chosen offer (0 per
+// capOffer caps advertised capacity to the configured VPS-pool size (0 per
 // dimension = unlimited), clamping availability so the scheduler never sees
 // more free capacity than is actually offered.
 func capOffer(c provider.Capacity, o config.OfferConfig) provider.Capacity {

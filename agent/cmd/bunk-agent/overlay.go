@@ -81,7 +81,7 @@ PersistentKeepalive = 25
 
 // applyOverlay writes the wg config and best-effort brings the interface up.
 // Bring-up needs wireguard-tools + CAP_NET_ADMIN; failure is non-fatal (the
-// config is on disk for the operator to apply).
+// config is on disk for an admin to apply).
 func applyOverlay(logger *slog.Logger, st persistedState) {
 	if st.WGPrivateKey == "" || st.OverlayIP == "" || st.HubPublicKey == "" {
 		return

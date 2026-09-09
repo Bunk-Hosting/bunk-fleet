@@ -24,8 +24,10 @@ type ProxmoxConfig struct {
 	VerifySSL   bool
 }
 
-// OfferConfig caps how much capacity the operator chooses to advertise to the
-// control plane. A zero value for a dimension means "offer everything available".
+// OfferConfig caps how much of this machine is dedicated to the VPS pool, i.e.
+// the capacity advertised to the control plane. A zero value for a dimension
+// means "all of it"; a non-zero value reserves the remainder for whatever else
+// the node runs.
 type OfferConfig struct {
 	VCPU   int
 	RAMMB  int
@@ -266,7 +268,7 @@ func (c Config) validate() error {
 }
 
 // validateControlPlaneURL enforces https for any non-internal control-plane host
-// (H3): plain http would let a MITM on the operator's hostile LAN steal the
+// (H3): plain http would let a MITM on the node's LAN steal the
 // agent token and inject/replay commands. http is allowed ONLY for loopback,
 // RFC1918 private IPs, or single-label hostnames (e.g. a docker service name).
 func validateControlPlaneURL(raw string) error {

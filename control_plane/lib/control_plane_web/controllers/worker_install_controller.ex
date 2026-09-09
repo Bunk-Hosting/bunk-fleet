@@ -3,7 +3,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   Serves the interactive bunk-worker install wizard (`curl … | bash`).
 
   The wizard runs on any Linux machine (a small VM is ideal) that can reach the
-  operator's Proxmox or ESXi API over the network — it does NOT run on, or need
+  node's Proxmox or ESXi API over the network — it does NOT run on, or need
   root on, the hypervisor host itself.
   """
   use ControlPlaneWeb, :controller
@@ -125,13 +125,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       echo "Onbekende hypervisor: $HYP"; exit 1
     fi
     echo
-    echo "Hoeveel capaciteit wil je aanbieden? (leeg laten = alles beschikbaar)"
+    echo "Hoeveel van deze machine gaat naar de VPS-pool? (leeg = alles)"
     read -r -p "  vCPU-cores: " OFFER_VCPU </dev/tty
     read -r -p "  RAM in MB:  " OFFER_RAM </dev/tty
     read -r -p "  Disk in GB: " OFFER_DISK </dev/tty
 
     echo
-    echo "Netwerk voor je VPS'en:"
+    echo "Netwerk voor de VPS'en op deze node:"
     # Bridge/VLAN are Proxmox-only concepts (the Proxmox provider forces the NIC
     # bridge + 802.1q tag). On ESXi a VM's network is a *port group* and the
     # clone inherits it from the template, so we neither ask nor pass it there.
