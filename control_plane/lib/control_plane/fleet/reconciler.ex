@@ -10,7 +10,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   Each tick also drives billing: after reconciling node health it meters every
   active VPS into `usage_records` (see `ControlPlane.Billing.meter_active_vpses/0`),
-  which is how operators accrue payout for the resource-hours their nodes serve.
+  which is how we account for the resource-hours our own nodes actually serve.
 
   ## Crash policy
 

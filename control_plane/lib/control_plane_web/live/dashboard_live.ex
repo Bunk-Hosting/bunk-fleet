@@ -119,7 +119,6 @@ defmodule ControlPlaneWeb.DashboardLive do
           <tr>
             <th>Name</th>
             <th>Region</th>
-            <th>Tier</th>
             <th>Status</th>
             <th>Hypervisor</th>
             <th>vCPU (used/total)</th>
@@ -132,7 +131,6 @@ defmodule ControlPlaneWeb.DashboardLive do
           <tr :for={node <- @nodes}>
             <td>{node.name}</td>
             <td class="mono">{region_code(node.region)}</td>
-            <td><span class="badge">{node.tier}</span></td>
             <td class="status">
               <span class={"dot " <> status_color(node.status)}></span>{node.status}
             </td>

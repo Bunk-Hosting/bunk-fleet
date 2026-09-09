@@ -72,7 +72,7 @@ defmodule ControlPlane.BillingTest do
   describe "meter_active_vpses/1" do
     test "records usage for an active vps with seconds since last_metered_at" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       # Last metered one hour (3600s) before @now.
       last = DateTime.add(@now, -3600, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: last)
@@ -80,7 +80,7 @@ defmodule ControlPlane.BillingTest do
       assert Billing.meter_active_vpses(@now) == 1
 
       assert [record] = usage_records_for(vps.id)
-      assert record.owner_email == "operator@example.com"
+      assert record.owner_email == "nl1-ops@bunkhosting.nl"
       assert record.node_id == node.id
       assert record.seconds == 3600
       assert record.vcpu == vps.vcpu
@@ -91,7 +91,7 @@ defmodule ControlPlane.BillingTest do
 
     test "advances the vps last_metered_at to now" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -120, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: last)
 
@@ -102,7 +102,7 @@ defmodule ControlPlane.BillingTest do
 
     test "falls back to inserted_at when last_metered_at is nil" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       # Never metered; created 600s before @now.
       created = DateTime.add(@now, -600, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: nil, inserted_at: created)
@@ -114,7 +114,7 @@ defmodule ControlPlane.BillingTest do
 
     test "clamps negative elapsed (future watermark) to zero seconds" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       future = DateTime.add(@now, 300, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: future)
 
@@ -125,7 +125,7 @@ defmodule ControlPlane.BillingTest do
 
     test "skips non-active vpses" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
 
       for status <- [:queued, :provisioning, :failed, :deleting, :deleted] do
@@ -136,16 +136,17 @@ defmodule ControlPlane.BillingTest do
       assert Repo.aggregate(UsageRecord, :count) == 0
     end
 
-    test "skips active vpses whose node has no owner_email" do
+    test "meters a node without an owner_email, attributing it to the node name" do
       region = insert_region()
       node = insert_node(region, nil)
       last = DateTime.add(@now, -3600, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: last)
 
-      assert Billing.meter_active_vpses(@now) == 0
-      assert usage_records_for(vps.id) == []
-      # Left un-metered so it can be picked up once an owner is set.
-      assert Repo.get!(Vps, vps.id).last_metered_at == last
+      # Every node is our own capacity, so none may drop out of the cost picture.
+      # With no cost centre set the node's own name is the attribution key.
+      assert Billing.meter_active_vpses(@now) == 1
+      assert [record] = usage_records_for(vps.id)
+      assert record.owner_email == node.name
     end
 
     test "skips active vpses without a node" do
@@ -157,10 +158,10 @@ defmodule ControlPlane.BillingTest do
     end
   end
 
-  describe "compute_payout/2" do
-    test "computes the payout for a known usage window and rate" do
+  describe "resource_cost_for_owner/2" do
+    test "computes the resource cost for a known usage window and rate" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       # Meter exactly one hour of a 2 vCPU / 2048 MB (= 2 GB) / 20 GB VPS.
       last = DateTime.add(@now, -3600, :second)
       insert_vps(region, node,
@@ -178,16 +179,16 @@ defmodule ControlPlane.BillingTest do
       #                 = 3600 * (20.48 + 8.192 + 4.096) = 3600 * 32.768 = 117964.8
       # amount = 117964.8 / (3600*1024) = 117964.8 / 3686400 = 0.032
       window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
-      amount = Billing.compute_payout("operator@example.com", window)
+      amount = Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", window)
 
       assert Decimal.equal?(amount, Decimal.new("0.032"))
       # Rounded to the fixed money scale (6 dp).
       assert Decimal.to_string(amount) == "0.032000"
     end
 
-    test "compute_payout/2 and payout_summary/1 reconcile bit-for-bit" do
+    test "resource_cost_for_owner/2 and resource_cost_summary/1 reconcile bit-for-bit" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
 
       # Awkward sizes/durations so any per-record rounding drift would surface.
@@ -204,9 +205,9 @@ defmodule ControlPlane.BillingTest do
       assert Billing.meter_active_vpses(@now) == 2
 
       window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
-      total = Billing.compute_payout("operator@example.com", window)
+      total = Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", window)
 
-      [%{amount: summary_amount}] = Billing.payout_summary(window)
+      [%{amount: summary_amount}] = Billing.resource_cost_summary(window)
 
       # Same exact-numerator/divide-once helper, so identical to the byte.
       assert Decimal.to_string(summary_amount) == Decimal.to_string(total)
@@ -214,12 +215,12 @@ defmodule ControlPlane.BillingTest do
 
     test "is zero for an operator with no usage in the window" do
       window = {DateTime.add(@now, -3600, :second), @now}
-      assert Decimal.equal?(Billing.compute_payout("nobody@example.com", window), Decimal.new(0))
+      assert Decimal.equal?(Billing.resource_cost_for_owner("nobody@example.com", window), Decimal.new(0))
     end
 
     test "excludes records outside the window" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
       insert_vps(region, node, status: :active, last_metered_at: last)
 
@@ -227,12 +228,12 @@ defmodule ControlPlane.BillingTest do
 
       # Window entirely before the metered_at (@now): no records counted.
       window = {DateTime.add(@now, -7200, :second), DateTime.add(@now, -10, :second)}
-      assert Decimal.equal?(Billing.compute_payout("operator@example.com", window), Decimal.new(0))
+      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", window), Decimal.new(0))
     end
 
     test "window is half-open: [from, to) includes from-boundary, excludes to-boundary" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
       insert_vps(region, node, status: :active, last_metered_at: last)
 
@@ -241,18 +242,18 @@ defmodule ControlPlane.BillingTest do
 
       # `to == @now` must EXCLUDE the boundary record (metered_at < to).
       excl = {DateTime.add(@now, -10, :second), @now}
-      assert Decimal.equal?(Billing.compute_payout("operator@example.com", excl), Decimal.new(0))
+      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", excl), Decimal.new(0))
 
       # `from == @now` must INCLUDE the boundary record (metered_at >= from).
       incl = {@now, DateTime.add(@now, 10, :second)}
-      assert Decimal.equal?(Billing.compute_payout("operator@example.com", incl), Decimal.new("0.032"))
+      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", incl), Decimal.new("0.032"))
     end
   end
 
   describe "double-bill prevention" do
     test "a second immediate meter at the same `now` is a no-op (no double-bill)" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: last)
 
@@ -270,7 +271,7 @@ defmodule ControlPlane.BillingTest do
 
     test "advancing `now` accrues only the newly-elapsed seconds (no double-bill)" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
       vps = insert_vps(region, node, status: :active, last_metered_at: last)
 
@@ -286,13 +287,13 @@ defmodule ControlPlane.BillingTest do
 
     test "duplicate (vps_id, metered_at) insert is rejected by the unique index" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       vps = insert_vps(region, node, status: :active, last_metered_at: DateTime.add(@now, -60, :second))
 
       attrs = %{
         vps_id: vps.id,
         node_id: node.id,
-        owner_email: "operator@example.com",
+        owner_email: "nl1-ops@bunkhosting.nl",
         seconds: 60,
         vcpu: 2,
         ram_mb: 2048,
@@ -308,8 +309,8 @@ defmodule ControlPlane.BillingTest do
     end
   end
 
-  describe "payout_summary/1" do
-    test "groups payouts by operator" do
+  describe "resource_cost_summary/1" do
+    test "groups resource cost by node cost centre" do
       region = insert_region()
       node_a = insert_node(region, "alice@example.com")
       node_b = insert_node(region, "bob@example.com")
@@ -323,14 +324,14 @@ defmodule ControlPlane.BillingTest do
       assert Billing.meter_active_vpses(@now) == 3
 
       window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
-      summary = Billing.payout_summary(window)
+      summary = Billing.resource_cost_summary(window)
 
       assert length(summary) == 2
 
       alice = Enum.find(summary, &(&1.owner_email == "alice@example.com"))
       bob = Enum.find(summary, &(&1.owner_email == "bob@example.com"))
 
-      # Per-VPS hourly amount = 0.032 (see compute_payout test).
+      # Per-VPS hourly amount = 0.032 (see resource_cost_for_owner test).
       assert Decimal.equal?(alice.amount, Decimal.new("0.064"))
       assert Decimal.equal?(bob.amount, Decimal.new("0.032"))
       assert alice.records == 2
@@ -341,14 +342,14 @@ defmodule ControlPlane.BillingTest do
 
     test "is empty when there is no usage in the window" do
       window = {DateTime.add(@now, -3600, :second), @now}
-      assert Billing.payout_summary(window) == []
+      assert Billing.resource_cost_summary(window) == []
     end
   end
 
   describe "usage_for_owner/2" do
-    test "aggregates raw resource-seconds for an operator" do
+    test "aggregates raw resource-seconds for a cost centre" do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
       insert_vps(region, node,
         status: :active,
@@ -361,7 +362,7 @@ defmodule ControlPlane.BillingTest do
       assert Billing.meter_active_vpses(@now) == 1
 
       window = {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
-      usage = Billing.usage_for_owner("operator@example.com", window)
+      usage = Billing.usage_for_owner("nl1-ops@bunkhosting.nl", window)
 
       assert usage.records == 1
       assert usage.seconds == 3600
@@ -387,7 +388,7 @@ defmodule ControlPlane.BillingTest do
 
     setup do
       region = insert_region()
-      node = insert_node(region, "operator@example.com")
+      node = insert_node(region, "nl1-ops@bunkhosting.nl")
       %{region: region, node: node, user: user_fixture("a@example.com"), other: user_fixture("b@example.com")}
     end
 

@@ -18,7 +18,7 @@ import { AdminGuard } from "@/components/admin/admin-guard";
 import { adminApi, parseApiError, type AdminUser } from "@/lib/api";
 import { formatEuro } from "@/lib/utils";
 
-const ROLES = ["user", "operator", "admin"] as const;
+const ROLES = ["user", "admin"] as const;
 
 function UsersInner() {
   const { toast } = useToast();
@@ -39,7 +39,7 @@ function UsersInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function changeRole(u: AdminUser, role: "user" | "operator" | "admin") {
+  async function changeRole(u: AdminUser, role: "user" | "admin") {
     if (role === u.role) return;
     setBusy(u.id);
     try {
@@ -119,7 +119,7 @@ function UsersInner() {
                       <div className="text-xs text-muted-foreground">{u.email}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Select value={u.role} onValueChange={(v) => changeRole(u, v as "user" | "operator" | "admin")}>
+                      <Select value={u.role} onValueChange={(v) => changeRole(u, v as "user" | "admin")}>
                         <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {ROLES.map((r) => (

@@ -5,7 +5,7 @@ defmodule ControlPlane.Credits do
   `ledger_entries` log (integer cents; positive = credit, negative = charge).
 
   New users receive a signup bonus; creating a VPS charges a flat monthly price
-  by size. This is the *customer-facing* side only — operator payouts use the
+  by size. This is the *customer-facing* side only — internal cost accounting uses the
   separate per-resource-hour metering in `ControlPlane.Billing`.
   """
   import Ecto.Query

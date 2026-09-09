@@ -26,7 +26,6 @@ defmodule ControlPlane.Fleet.Node do
   schema "nodes" do
     field :name, :string
 
-    field :tier, Ecto.Enum, values: [:datacenter, :community], default: :community
     field :status, Ecto.Enum, values: [:pending, :online, :draining, :offline], default: :pending
     field :hypervisor, Ecto.Enum, values: [:proxmox, :esxi, :incus], default: :proxmox
 
@@ -70,7 +69,6 @@ defmodule ControlPlane.Fleet.Node do
     |> cast(attrs, [
       :name,
       :region_id,
-      :tier,
       :status,
       :hypervisor,
       :total_vcpu,

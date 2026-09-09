@@ -26,7 +26,6 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
     {:ok, {plaintext, _token}} =
       Enrollment.create_enroll_token(%{
         region_id: region.id,
-        tier: :community,
         ttl_seconds: 3600
       })
 
@@ -120,7 +119,6 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
       conn =
         post(conn, ~p"/admin/v1/enroll-tokens", %{
           "region_code" => region.code,
-          "tier" => "community",
           "ttl_seconds" => 3600
         })
 

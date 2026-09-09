@@ -18,12 +18,6 @@ defmodule ControlPlane.Fleet.Vps do
       values: [:queued, :provisioning, :active, :stopped, :paused, :failed, :deleting, :deleted],
       default: :queued
 
-    # Trust tier this VPS requires of its host node (O-24). A :datacenter VPS may
-    # only be placed on a :datacenter node; a :community VPS may use any node. Set
-    # server-side (from the package/SKU), never from the public create params, so a
-    # customer cannot self-select :datacenter.
-    field :tier, Ecto.Enum, values: [:datacenter, :community], default: :community
-
     # Requested spec.
     field :vcpu, :integer
     field :ram_mb, :integer
@@ -72,8 +66,7 @@ defmodule ControlPlane.Fleet.Vps do
       :provider_vm_id,
       :ip_address,
       :package_id,
-      :last_metered_at,
-      :tier
+      :last_metered_at
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> validate_length(:name, max: 100)

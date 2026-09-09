@@ -5,7 +5,7 @@ defmodule ControlPlane.Billing.UsageRecord do
 
   Each row says: for `seconds` seconds ending at `metered_at`, the given VPS of
   size `vcpu`/`ram_mb`/`disk_gb` ran on `node`, whose operator is `owner_email`.
-  `owner_email` is denormalized off the node at meter time so operator payouts
+  `owner_email` is denormalized off the node at meter time so cost reports
   can be aggregated (and grouped) directly from `usage_records`, and so the
   history stays correct even if the node or VPS is later removed.
   """

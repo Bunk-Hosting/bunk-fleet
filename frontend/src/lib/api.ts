@@ -206,7 +206,7 @@ interface BunkUser {
   id: string;
   email: string;
   name: string | null;
-  role: "user" | "admin" | "operator";
+  role: "user" | "admin";
   inserted_at?: string;
   totp_enabled?: boolean;
   confirmed_at?: string | null;
@@ -217,7 +217,7 @@ function transformUser(u: BunkUser): User {
     id: u.id,
     email: u.email,
     name: u.name || u.email,
-    role: u.role === "operator" ? "user" : u.role,
+    role: u.role,
     date_joined: u.inserted_at || "",
     is_active: true,
     totp_enabled: Boolean(u.totp_enabled),
@@ -363,7 +363,7 @@ export const vpsApi = {
 // ── Admin (old-stack surface — adapted later; endpoints may 404 on bunk-fleet) ──
 // ── Admin panel (session-authenticated, role :admin) ──────────────────────
 export interface AdminStats {
-  users: { total: number; user: number; operator: number; admin: number };
+  users: { total: number; user: number; admin: number };
   vpses: { total: number; active: number; stopped: number; provisioning: number; failed: number };
   nodes: { total: number; online: number; datacenter: number; community: number };
   credit_outstanding_cents: number;
@@ -372,7 +372,7 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
-  role: "user" | "operator" | "admin";
+  role: "user" | "admin";
   confirmed: boolean;
   two_factor: boolean;
   inserted_at: string;
@@ -383,7 +383,6 @@ export interface AdminVps {
   id: string;
   name: string;
   status: string;
-  tier: string;
   owner_email: string | null;
   node: string | null;
   region: string | null;
@@ -396,7 +395,6 @@ export interface AdminVps {
 export interface AdminNode {
   id: string;
   name: string;
-  tier: string;
   status: string;
   owner_email: string | null;
   region: string | null;
@@ -415,7 +413,7 @@ export const adminApi = {
   stats: async (): Promise<AdminStats> => (await api.get<AdminStats>("/beheer/stats")).data,
   users: async (): Promise<AdminUser[]> =>
     (await api.get<{ users: AdminUser[] }>("/beheer/users")).data.users,
-  setRole: (id: string, role: "user" | "operator" | "admin") =>
+  setRole: (id: string, role: "user" | "admin") =>
     api.patch<{ id: string; role: string }>(`/beheer/users/${id}`, { role }),
   addCredit: (id: string, amountCents: number) =>
     api.post<{ id: string; balance_cents: number }>(`/beheer/users/${id}/credit`, {
@@ -539,84 +537,6 @@ export const billingApi = {
       throw new Error("Facturen zijn nog niet beschikbaar.");
     },
     downloadUrl: (_id: string | number) => "#",
-  },
-};
-
-// ── Host onboarding (federation: "bring your own hardware") ──────────────
-// A plain user opts in via hostApi.activate() (promotes them to operator on the
-// control plane); thereafter they mint enroll tokens and see their own nodes +
-// earnings. The node/token/earnings endpoints live under /operator/* and are
-// role-gated, so they only work AFTER activation.
-export interface HostNode {
-  id: string;
-  name: string;
-  status: string;
-  tier: string;
-  // Datacenter nodes are shared company clusters (no earnings); community nodes
-  // belong to the operator and accrue payout.
-  shared: boolean;
-  hypervisor: string;
-  region: string | null;
-  total_vcpu: number;
-  total_ram_mb: number;
-  total_disk_gb: number;
-  available_vcpu: number;
-  available_ram_mb: number;
-  available_disk_gb: number;
-  last_heartbeat_at: string | null;
-}
-export interface HostRegion {
-  id: string;
-  code: string;
-  name: string;
-}
-export interface EnrollTokenResult {
-  enroll_token: string;
-  expires_at: string;
-  region: string;
-  tier: string;
-  install: string;
-}
-export interface HostEarnings {
-  from: string;
-  to: string;
-  amount: string;
-  seconds: number;
-  records: number;
-}
-
-export const hostApi = {
-  status: async (): Promise<{ is_host: boolean; is_admin?: boolean; role: string }> => {
-    const res = await api.get<{ is_host: boolean; is_admin?: boolean; role: string }>(
-      "/host/status"
-    );
-    return res.data;
-  },
-  activate: async (): Promise<{ is_host: boolean; role: string }> => {
-    const res = await api.post<{ is_host: boolean; role: string }>("/host/activate", {});
-    return res.data;
-  },
-  regions: async (): Promise<HostRegion[]> => {
-    const res = await api.get<{ regions: HostRegion[] }>("/host/regions");
-    return res.data.regions;
-  },
-  createEnrollToken: async (
-    regionCode: string,
-    tier: "community" | "datacenter" = "community",
-  ): Promise<EnrollTokenResult> => {
-    const res = await api.post<EnrollTokenResult>("/operator/enroll-tokens", {
-      region_code: regionCode,
-      tier,
-    });
-    return res.data;
-  },
-  nodes: async (): Promise<HostNode[]> => {
-    const res = await api.get<{ nodes: HostNode[] }>("/operator/nodes");
-    return res.data.nodes;
-  },
-  earnings: async (): Promise<HostEarnings> => {
-    const res = await api.get<HostEarnings>("/operator/earnings");
-    return res.data;
   },
 };
 

@@ -23,8 +23,7 @@ defmodule ControlPlane.Fleet.Scheduler do
           required(:region_id) => binary(),
           required(:vcpu) => non_neg_integer(),
           required(:ram_mb) => non_neg_integer(),
-          required(:disk_gb) => non_neg_integer(),
-          optional(:tier) => :datacenter | :community
+          required(:disk_gb) => non_neg_integer()
         }
 
   @doc """
@@ -81,10 +80,7 @@ defmodule ControlPlane.Fleet.Scheduler do
   # Load online nodes in the region that fit the request, locking the rows FOR
   # UPDATE so capacity decisions are serialized across concurrent schedulers.
   defp lock_candidates(repo, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb} = request) do
-    tiers = allowed_node_tiers(Map.get(request, :tier, :community))
-
     Fleet.online_nodes_in_region_query(request.region_id)
-    |> where([n], n.tier in ^tiers)
     |> where(
       [n],
       n.available_vcpu >= ^vcpu and
@@ -97,13 +93,6 @@ defmodule ControlPlane.Fleet.Scheduler do
     |> lock("FOR UPDATE")
     |> repo.all()
   end
-
-  # Trust ordering for placement (O-24): a :datacenter VPS demands a datacenter
-  # node (so a paid "secure" VPS never lands on untrusted bring-your-own
-  # hardware whose operator has full disk/RAM/console access); a :community VPS
-  # may use any node, including spare datacenter capacity.
-  defp allowed_node_tiers(:datacenter), do: [:datacenter]
-  defp allowed_node_tiers(_community), do: [:datacenter, :community]
 
   # Choose the least-loaded fitting node: the one that retains the most headroom
   # after the request is subtracted. We score by the sum of the fractions of each

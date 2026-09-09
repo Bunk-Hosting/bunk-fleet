@@ -115,7 +115,7 @@ function VpsInner() {
                       {v.vcpu} vCPU · {Math.round(v.ram_mb / 1024)} GB · {v.disk_gb} GB
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {v.node ?? "—"} <span className="text-muted-foreground">({v.tier})</span>
+                      {v.node ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">

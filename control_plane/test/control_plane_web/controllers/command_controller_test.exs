@@ -20,7 +20,6 @@ defmodule ControlPlaneWeb.CommandControllerTest do
     {:ok, {plaintext, _token}} =
       Enrollment.create_enroll_token(%{
         region_id: region.id,
-        tier: :community,
         ttl_seconds: 3600
       })
 

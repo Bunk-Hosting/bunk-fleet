@@ -6,7 +6,7 @@ defmodule ControlPlane.EnrollmentNetworkTest do
 
   defp token(code) do
     region = %Region{} |> Region.changeset(%{code: code, name: "R"}) |> Repo.insert!()
-    {:ok, {plaintext, _}} = Enrollment.create_enroll_token(%{region_id: region.id, tier: :community, ttl_seconds: 3600})
+    {:ok, {plaintext, _}} = Enrollment.create_enroll_token(%{region_id: region.id, ttl_seconds: 3600})
     plaintext
   end
 

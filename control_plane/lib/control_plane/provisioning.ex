@@ -57,10 +57,7 @@ defmodule ControlPlane.Provisioning do
     # Persist the VPS up front so that even a placement failure leaves a durable,
     # `:failed` record for the customer rather than rolling everything back.
     with {:ok, vps} <- Repo.insert(vps_changeset(attrs)) do
-      # Tier comes from the persisted VPS (server-authoritative), so the scheduler
-      # only ever sees a trusted value — a :datacenter VPS is never placed on a
-      # community node (O-24).
-      place_and_dispatch(vps, Map.put(req, :tier, vps.tier), attrs)
+      place_and_dispatch(vps, req, attrs)
     end
   end
 
@@ -111,10 +108,7 @@ defmodule ControlPlane.Provisioning do
           region_id: full[:region_id] || full["region_id"],
           vcpu: full[:vcpu] || full["vcpu"],
           ram_mb: full[:ram_mb] || full["ram_mb"],
-          disk_gb: full[:disk_gb] || full["disk_gb"],
-          # Tier from the persisted VPS (server-authoritative), so a :datacenter
-          # VPS is never placed on a community node (O-24).
-          tier: vps.tier
+          disk_gb: full[:disk_gb] || full["disk_gb"]
         }
 
         case place_and_dispatch(vps, req, full) do
@@ -889,10 +883,6 @@ defmodule ControlPlane.Provisioning do
       owner_email: attrs[:owner_email] || attrs["owner_email"],
       owner_id: attrs[:owner_id] || attrs["owner_id"],
       ip_address: attrs[:ip_address] || attrs["ip_address"],
-      # Server-set only (this builder is internal): falls back to the schema default
-      # :community. A package/SKU layer can request :datacenter; the public create
-      # params never reach here, so a customer can't self-select a tier (O-24).
-      tier: attrs[:tier] || attrs["tier"] || :community,
       status: :queued
     })
   end

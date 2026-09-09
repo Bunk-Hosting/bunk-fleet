@@ -1,6 +1,6 @@
 defmodule ControlPlane.Billing do
   @moduledoc """
-  Metering + operator-payout accounting for the fleet.
+  Metering + internal cost accounting for the fleet.
 
   ## Model (accrual via periodic snapshots)
 
@@ -8,8 +8,9 @@ defmodule ControlPlane.Billing do
   We meter via periodic "meter ticks" (driven by `ControlPlane.Fleet.Reconciler`):
   on each tick, for every active VPS, we record the seconds elapsed since it was
   last metered together with its resource size into a `usage_records` row, and
-  advance the VPS's `last_metered_at` watermark. Operator payouts then aggregate
-  `usage_records` per node-operator (`owner_email`) over a time window. Because we
+  advance the VPS's `last_metered_at` watermark. Internal cost reports then
+  aggregate `usage_records` per node cost-centre (`owner_email`) over a time
+  window, so we can see what each node's capacity actually served. Because we
   record an immutable resource-size snapshot per slice, resizing a VPS later does
   not retroactively change already-accrued usage.
 
@@ -23,7 +24,7 @@ defmodule ControlPlane.Billing do
     * `:disk_gb`— money per GB-of-disk-hour
 
   The unit of the `Decimal` (dollars, euros, credits, millicents, ...) is whatever
-  the operator configures; this module only does the arithmetic and returns a
+  the deployment configures; this module only does the arithmetic and returns a
   `Decimal` in the same unit, rounded to `@money_scale` (6) decimal places.
 
   IMPORTANT: configure rates as **strings** (or integers / `Decimal`s) — never
@@ -41,7 +42,8 @@ defmodule ControlPlane.Billing do
 
   Naively computing `(seconds/3600) * rate` per record rounds twice per record at
   Decimal context precision, accumulating error and making per-record sums (used
-  by `compute_payout/2`) disagree with grouped sums (`payout_summary/1`). Instead
+  by `resource_cost_for_owner/2`) disagree with grouped sums
+  (`resource_cost_summary/1`). Instead
   we accumulate an EXACT integer-scaled Decimal numerator per record and divide
   exactly once at the very end (by `3600 * 1024`, the seconds-per-hour times the
   MB-per-GB factor folded into the numerator), then round to `@money_scale`. Per
@@ -52,8 +54,8 @@ defmodule ControlPlane.Billing do
                 + disk_gb * rate.disk_gb * 1024 )
 
   so that `amount = round( Σ numerator / (3600 * 1024), @money_scale )`. Because
-  every payout path folds the same exact numerators, `compute_payout/2` and
-  `payout_summary/1` reconcile bit-for-bit.
+  every cost path folds the same exact numerators, `resource_cost_for_owner/2`
+  and `resource_cost_summary/1` reconcile bit-for-bit.
 
   ## Concurrency / single-instance assumption
 
@@ -85,7 +87,7 @@ defmodule ControlPlane.Billing do
   @money_scale 6
 
   # A node whose last heartbeat is older than this (or not :online) is treated as
-  # not delivering, so its VPSes are not metered for operator payout.
+  # not delivering, so its VPSes are not metered.
   @meter_node_staleness_seconds 180
 
   # Placeholder rates. These are NOT a business price — override in config
@@ -150,13 +152,12 @@ defmodule ControlPlane.Billing do
             not is_nil(c.vps_id),
         select: c.vps_id
 
-    # Candidate {vps_id => owner_email}: the operator to pay lives on the node. We
-    # resolve it here unlocked, then re-validate each VPS under a row lock below.
-    # Don't accrue operator payout while the node is offline or has gone silent:
-    # a VPS on a dead node isn't being delivered, so metering it would pay an
-    # operator for capacity they aren't providing (and let them earn by simply
-    # not reporting a teardown). Require the node currently :online AND heard from
-    # within the staleness window.
+    # Candidate {vps_id => cost_centre}: which node's capacity is carrying this
+    # VPS. We resolve it here unlocked, then re-validate each VPS under a row lock
+    # below. Don't accrue usage while the node is offline or has gone silent: a
+    # VPS on a dead node isn't actually being delivered, so metering it would
+    # overstate the capacity that node really provided. Require the node currently
+    # :online AND heard from within the staleness window.
     node_cutoff = DateTime.add(now, -@meter_node_staleness_seconds, :second)
 
     owner_by_vps =
@@ -164,21 +165,21 @@ defmodule ControlPlane.Billing do
         from v in Vps,
           join: n in Node,
           on: n.id == v.node_id,
-          # Datacenter nodes are our own clusters — never metered for payout — so
-          # skip them explicitly on top of the owner_email guard.
-          where:
-            v.status == :active and not is_nil(v.node_id) and not is_nil(n.owner_email) and
-              n.tier != :datacenter,
+          # Every node is our own capacity now, so every node is metered. The
+          # cost centre is the node's owner_email when set (which team/person
+          # inside Bunk runs it), falling back to the node name so a node minted
+          # without an owner still reports its consumption instead of vanishing
+          # from the cost picture.
+          where: v.status == :active and not is_nil(v.node_id),
           where: n.status == :online and n.last_heartbeat_at >= ^node_cutoff,
           where: v.id not in subquery(teardown_in_flight),
-          select: {v.id, n.owner_email}
+          select: {v.id, fragment("coalesce(nullif(?, ''), ?)", n.owner_email, n.name)}
       )
       |> Map.new()
 
     # Process in bounded batches of 1,000, each in its OWN short transaction. A
     # single insert_all over the whole active fleet blows Postgres's 65,535
-    # bind-parameter cap above ~7k VPSes (a total metering + operator-payout
-    # outage), and locking every active VPS at once stalls all provision / power /
+    # bind-parameter cap above ~7k VPSes (a total metering outage), and locking every active VPS at once stalls all provision / power /
     # delete finalisation for the entire tick. The UNIQUE (vps_id, metered_at)
     # index keeps each batch double-bill safe on its own.
     owner_by_vps
@@ -257,7 +258,7 @@ defmodule ControlPlane.Billing do
   record exactly on a boundary.
 
   Returns a map of resource-hours-equivalent integer sums (seconds * resource),
-  handy for reporting/debugging the inputs that feed `compute_payout/2`:
+  handy for reporting/debugging the inputs that feed `resource_cost_for_owner/2`:
 
       %{
         seconds: total_seconds,
@@ -286,8 +287,8 @@ defmodule ControlPlane.Billing do
   end
 
   @doc """
-  Computes the total payout owed to `owner_email` for usage in the half-open
-  window `{from, to}` (`metered_at >= from and metered_at < to`).
+  Computes the total resource cost attributed to `owner_email` (a node cost
+  centre) for usage in the half-open window `{from, to}` (`metered_at >= from and metered_at < to`).
 
   Returns a `Decimal` in the same money unit as the configured rates, rounded to
   `@money_scale` decimal places (see the moduledoc). The amount is:
@@ -297,9 +298,9 @@ defmodule ControlPlane.Billing do
   where each record's exact numerator is
   `seconds * (vcpu*rate.vcpu*1024 + ram_mb*rate.ram_gb + disk_gb*rate.disk_gb*1024)`.
   Numerators are summed exactly and divided exactly once, so this reconciles
-  bit-for-bit with `payout_summary/1`.
+  bit-for-bit with `resource_cost_summary/1`.
   """
-  def compute_payout(owner_email, {from, to}) do
+  def resource_cost_for_owner(owner_email, {from, to}) do
     rates = resource_hour_rates()
 
     Repo.one(
@@ -317,24 +318,25 @@ defmodule ControlPlane.Billing do
   end
 
   @doc """
-  Returns a per-operator payout summary for the half-open window `{from, to}`
-  (`metered_at >= from and metered_at < to`).
+  Returns a per-cost-centre resource summary for the half-open window
+  `{from, to}` (`metered_at >= from and metered_at < to`).
 
-  Lists one entry per operator that has any usage in the window:
+  Lists one entry per node cost-centre that has any usage in the window:
 
       [%{owner_email: ..., amount: %Decimal{}, seconds: integer, records: integer}, ...]
 
   `amount` is a `Decimal` in the configured money unit (see the moduledoc),
-  computed via the same exact-numerator/divide-once helper as `compute_payout/2`
-  (so a per-operator amount here equals `compute_payout(owner, window)` exactly),
-  ordered by descending amount then operator email for stable output.
+  computed via the same exact-numerator/divide-once helper as
+  `resource_cost_for_owner/2` (so a per-cost-centre amount here equals
+  `resource_cost_for_owner(owner, window)` exactly), ordered by descending amount
+  then cost-centre email for stable output.
   """
-  def payout_summary({from, to}) do
+  def resource_cost_summary({from, to}) do
     rates = resource_hour_rates()
 
-    # Aggregate per operator in SQL: the exact integer sums Σ(seconds*resource)
+    # Aggregate per cost-centre in SQL: the exact integer sums Σ(seconds*resource)
     # come back grouped, and only the (exact) Decimal money math runs in Elixir.
-    # This reconciles bit-for-bit with compute_payout/2 because the per-record
+    # This reconciles bit-for-bit with resource_cost_for_owner/2 because the per-record
     # numerator distributes — Σ s*(v*Rv*1024 + r*Rg + d*Rd*1024) equals
     # Rv*1024*Σ(s*v) + Rg*Σ(s*r) + Rd*1024*Σ(s*d) — and the rates/divide-once are
     # applied identically (see aggregate_numerator/2).
@@ -359,14 +361,14 @@ defmodule ControlPlane.Billing do
         records: row.records
       }
     end)
-    |> Enum.sort(&payout_order/2)
+    |> Enum.sort(&cost_order/2)
   end
 
   @doc """
   Customer-facing cost breakdown: what the owner of these VPSes is charged for
   usage in the half-open window `{from, to}` (`metered_at >= from and < to`).
 
-  Where the operator-payout functions key off the *node operator's* `owner_email`,
+  Where the internal cost functions key off the *node cost-centre's* `owner_email`,
   this keys off the *customer* who owns each VPS (`vpses.owner_id`), so a user sees
   only their own consumption. Returns:
 
@@ -446,7 +448,7 @@ defmodule ControlPlane.Billing do
   end
 
   # Stable ordering for the summary: largest amount first, ties broken by email.
-  defp payout_order(%{amount: a1, owner_email: e1}, %{amount: a2, owner_email: e2}) do
+  defp cost_order(%{amount: a1, owner_email: e1}, %{amount: a2, owner_email: e2}) do
     case Decimal.compare(a1, a2) do
       :gt -> true
       :lt -> false
@@ -481,7 +483,7 @@ defmodule ControlPlane.Billing do
   defp to_dec(%Decimal{} = d), do: d
   defp to_dec(i) when is_integer(i), do: Decimal.new(i)
 
-  # Single division + rounding step shared by both payout paths so they reconcile
+  # Single division + rounding step shared by both cost paths so they reconcile
   # bit-for-bit.
   defp finalize_amount(numerator) do
     numerator

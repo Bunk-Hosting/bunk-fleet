@@ -2,11 +2,11 @@ defmodule ControlPlaneWeb.Router do
   use ControlPlaneWeb, :router
 
   # This app was generated with --no-html, so `use Phoenix.Router` does not bring
-  # in the `live/3` macro; import it explicitly for the operator dashboard.
+  # in the `live/3` macro; import it explicitly for the admin dashboard.
   import Phoenix.LiveView.Router
   import ControlPlaneWeb.UserAuth
 
-  # Browser pipeline for the (single) LiveView operator dashboard.
+  # Browser pipeline for the (single) LiveView admin dashboard.
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -32,14 +32,14 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.RateLimit, bucket: "browser_auth", max: 20, window_ms: 60_000
   end
 
-  # Operator/admin LiveView dashboard.
-  # Operator/admin fleet dashboard — shows EVERY node + EVERY customer's VPS, so
+  # Admin LiveView dashboard.
+  # Admin fleet dashboard — shows EVERY node + EVERY customer's VPS, so
   # it must never be reachable unauthenticated or by a regular customer. Gated to
-  # staff (operator/admin), mirroring RequireOperator.
+  # staff (:admin), mirroring RequireAdmin.
   scope "/", ControlPlaneWeb do
     pipe_through [:browser, :require_authenticated]
 
-    live_session :operator_dashboard,
+    live_session :admin_dashboard,
       on_mount: [{ControlPlaneWeb.UserAuth, :ensure_staff}] do
       live "/", DashboardLive, :index
     end
@@ -70,23 +70,16 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.NodeAuth
   end
 
-  # Operator/admin API: JSON plus shared-secret admin-token bearer authentication.
+  # Admin API: JSON plus shared-secret admin-token bearer authentication.
   pipeline :admin_api do
     plug :accepts, ["json"]
     plug ControlPlaneWeb.Plugs.AdminAuth
   end
 
-  # End-user/operator API: JSON plus per-user session-token bearer authentication.
+  # End-user API: JSON plus per-user session-token bearer authentication.
   pipeline :user_api do
     plug :accepts, ["json"]
     plug ControlPlaneWeb.Plugs.ApiAuth
-  end
-
-  # Operator self-service API: authenticated *and* gated to the :operator/:admin role.
-  pipeline :operator_api do
-    plug :accepts, ["json"]
-    plug ControlPlaneWeb.Plugs.ApiAuth
-    plug ControlPlaneWeb.Plugs.RequireOperator
   end
 
   # Admin panel API: authenticated on the caller's OWN session token and gated to
@@ -175,11 +168,6 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/stop", VpsController, :stop
     post "/vpses/:id/console-ticket", ConsoleController, :create_ticket
 
-    # Self-service host onboarding (opt-in path; promotes :user -> :operator).
-    get "/host/status", HostController, :status
-    post "/host/activate", HostController, :activate
-    get "/host/regions", HostController, :regions
-
     # The caller's own prepaid wallet: balance, ledger movements, top-ups.
     get "/billing/wallet", BillingController, :wallet
 
@@ -193,15 +181,6 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :user_api_throttled
 
     post "/billing/topup", MollieController, :topup
-  end
-
-  # Operator self-service: onboard nodes + track earnings (role-gated).
-  scope "/api/v1/operator", ControlPlaneWeb do
-    pipe_through :operator_api
-
-    post "/enroll-tokens", OperatorController, :create_enroll_token
-    get "/nodes", OperatorController, :nodes
-    get "/earnings", OperatorController, :earnings
   end
 
   # Session-authenticated admin panel (role :admin). Powers the dashboard's admin
@@ -247,7 +226,7 @@ defmodule ControlPlaneWeb.Router do
     post "/commands/:id/result", CommandController, :result
   end
 
-  # Operator/admin API.
+  # Admin API.
   scope "/admin/v1", ControlPlaneWeb.Admin do
     pipe_through :admin_api
 

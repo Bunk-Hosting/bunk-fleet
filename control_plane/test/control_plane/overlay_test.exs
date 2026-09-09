@@ -6,7 +6,7 @@ defmodule ControlPlane.OverlayTest do
 
   defp enroll(code, wg) do
     region = %Region{} |> Region.changeset(%{code: code, name: "R"}) |> Repo.insert!()
-    {:ok, {pt, _}} = Enrollment.create_enroll_token(%{region_id: region.id, tier: :community, ttl_seconds: 3600})
+    {:ok, {pt, _}} = Enrollment.create_enroll_token(%{region_id: region.id, ttl_seconds: 3600})
     Enrollment.enroll(pt, %{hypervisor: "proxmox", wg_public_key: wg})
   end
 

@@ -21,7 +21,7 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   def stats(conn, _params) do
     by_role = count_by(from(u in User), :role)
     by_status = count_by(from(v in Vps), :status)
-    nodes = Repo.all(from n in Node, select: {n.status, n.tier})
+    node_statuses = Repo.all(from n in Node, select: n.status)
 
     outstanding =
       Repo.one(from e in LedgerEntry, select: coalesce(sum(e.amount_cents), 0)) || 0
@@ -30,7 +30,6 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       users: %{
         total: map_total(by_role),
         user: Map.get(by_role, :user, 0),
-        operator: Map.get(by_role, :operator, 0),
         admin: Map.get(by_role, :admin, 0)
       },
       vpses: %{
@@ -41,10 +40,8 @@ defmodule ControlPlaneWeb.Admin.PanelController do
         failed: Map.get(by_status, :failed, 0)
       },
       nodes: %{
-        total: length(nodes),
-        online: Enum.count(nodes, fn {s, _} -> s == :online end),
-        datacenter: Enum.count(nodes, fn {_, t} -> t == :datacenter end),
-        community: Enum.count(nodes, fn {_, t} -> t == :community end)
+        total: length(node_statuses),
+        online: Enum.count(node_statuses, &(&1 == :online))
       },
       credit_outstanding_cents: outstanding
     })
@@ -196,7 +193,6 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       id: v.id,
       name: v.name,
       status: v.status,
-      tier: v.tier,
       owner_email: v.owner_email,
       node: node_name(v),
       region: region_code(v),
@@ -212,7 +208,6 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     %{
       id: n.id,
       name: n.name,
-      tier: n.tier,
       status: n.status,
       owner_email: n.owner_email,
       region: region_code(n),

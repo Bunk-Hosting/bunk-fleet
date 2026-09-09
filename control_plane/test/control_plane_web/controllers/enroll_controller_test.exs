@@ -14,11 +14,10 @@ defmodule ControlPlaneWeb.EnrollControllerTest do
     %{region: region}
   end
 
-  defp create_enroll_token(region, tier \\ :community, ttl_seconds \\ 3600) do
+  defp create_enroll_token(region, ttl_seconds \\ 3600) do
     {:ok, {plaintext, token}} =
       Enrollment.create_enroll_token(%{
         region_id: region.id,
-        tier: tier,
         ttl_seconds: ttl_seconds
       })
 

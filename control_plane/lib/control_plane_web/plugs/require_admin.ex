@@ -4,7 +4,7 @@ defmodule ControlPlaneWeb.Plugs.RequireAdmin do
   already-authenticated `current_user` (see `ControlPlaneWeb.Plugs.ApiAuth`, which
   must run first) whose role is exactly `:admin`.
 
-  Anything less — `:operator`, `:user`, or a missing `current_user` — is halted
+  Anything less — `:user` or a missing `current_user` — is halted
   with `403 {"error": "forbidden"}`. This gates `/api/v1/admin/*` off the caller's
   own session token (unlike `/admin/v1/*`, which uses a shared secret).
   """

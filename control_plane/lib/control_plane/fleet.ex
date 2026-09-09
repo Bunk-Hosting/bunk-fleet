@@ -56,27 +56,14 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
-  Returns the nodes operated by `owner_email` (matching the payout-attribution
-  key on `nodes.owner_email`), region preloaded, newest first.
+  Returns the nodes attributed to the cost centre `owner_email` (matching
+  `nodes.owner_email`), region preloaded, newest first.
   """
   def list_nodes_for_owner(owner_email) do
     Repo.all(
       from n in Node,
         where: n.owner_email == ^owner_email,
         order_by: [desc: n.inserted_at],
-        preload: [:region]
-    )
-  end
-
-  @doc """
-  All datacenter-tier nodes — the shared company clusters ("standard locations").
-  They belong to no single operator and are visible to every admin.
-  """
-  def list_datacenter_nodes do
-    Repo.all(
-      from n in Node,
-        where: n.tier == :datacenter,
-        order_by: [asc: n.name],
         preload: [:region]
     )
   end
@@ -91,8 +78,8 @@ defmodule ControlPlane.Fleet do
   `{:error, :not_found}` for an unknown id.
 
   Note: the node's agent (if still running) keeps its persisted credentials, so
-  its next heartbeat will 401 against the now-missing node — the operator should
-  uninstall/stop the agent after removal.
+  its next heartbeat will 401 against the now-missing node — stop/uninstall the
+  agent on that machine after removal.
   """
   def delete_node(node_id) do
     case Repo.get(Node, node_id) do

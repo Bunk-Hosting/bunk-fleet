@@ -18,12 +18,10 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
 
   def create(conn, params) do
     with {:ok, %Region{} = region} <- resolve_region(params),
-         {:ok, tier} <- parse_tier(params),
          ttl_seconds <- parse_ttl(params),
          {:ok, {plaintext, enroll_token}} <-
            Enrollment.create_enroll_token(%{
              region_id: region.id,
-             tier: tier,
              ttl_seconds: ttl_seconds
            }) do
       conn
@@ -32,7 +30,6 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
         enroll_token: plaintext,
         expires_at: enroll_token.expires_at,
         region: region.code,
-        tier: tier,
         install: install_command(conn, plaintext)
       })
     else
@@ -40,11 +37,6 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "region_not_found"})
-
-      {:error, :invalid_tier} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "invalid_tier"})
 
       {:error, _changeset} ->
         conn
@@ -78,14 +70,6 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
   end
 
   defp resolve_region(_params), do: {:error, :region_not_found}
-
-  defp parse_tier(%{"tier" => tier}) when tier in ["datacenter", "community"] do
-    {:ok, String.to_existing_atom(tier)}
-  end
-
-  defp parse_tier(%{"tier" => _}), do: {:error, :invalid_tier}
-  # Default tier matches the Node schema default.
-  defp parse_tier(_params), do: {:ok, :community}
 
   defp parse_ttl(%{"ttl_seconds" => ttl}) when is_integer(ttl) and ttl > 0, do: ttl
 

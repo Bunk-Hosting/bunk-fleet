@@ -100,11 +100,10 @@ function NodesInner() {
                     <HardDrive className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium">{n.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      {n.region ?? "—"} · {n.owner_email ?? "gedeeld (datacenter)"}
+                      {n.region ?? "—"} · {n.owner_email ?? "geen kostenplaats"}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={n.tier === "datacenter" ? "default" : "secondary"}>{n.tier}</Badge>
                     <Badge variant={STATUS_VARIANT[n.status] ?? "outline"}>{n.status}</Badge>
                     <Button
                       variant="ghost"

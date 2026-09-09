@@ -133,13 +133,13 @@ defmodule ControlPlane.Accounts do
   end
 
   @doc """
-  Sets a user's `role` (`:user`/`:operator`/`:admin`).
+  Sets a user's `role` (`:user`/`:admin`).
 
   This is the authorized, server-side role-elevation path deliberately kept out of
   the registration changeset (a registrant can never request a role) — an admin
-  promotes a user to `:operator`/`:admin` here. Returns `{:ok, user}`.
+  promotes a user to `:admin` here. Returns `{:ok, user}`.
   """
-  def update_user_role(%User{} = user, role) when role in [:user, :operator, :admin] do
+  def update_user_role(%User{} = user, role) when role in [:user, :admin] do
     user
     |> Ecto.Changeset.change(role: role)
     |> Repo.update()

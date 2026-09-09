@@ -20,13 +20,13 @@ defmodule ControlPlane.Enrollment do
   @token_bytes 32
 
   @doc """
-  Mints a new single-use enroll token for `region_id` / `tier`, valid for
+  Mints a new single-use enroll token for `region_id`, valid for
   `ttl_seconds`.
 
   Returns `{:ok, {plaintext_token, %EnrollToken{}}}`. The plaintext token is the
   only copy ever returned — only its hash is persisted.
   """
-  def create_enroll_token(%{region_id: region_id, tier: tier, ttl_seconds: ttl_seconds} = attrs) do
+  def create_enroll_token(%{region_id: region_id, ttl_seconds: ttl_seconds} = attrs) do
     plaintext = generate_token()
     expires_at = DateTime.add(now(), ttl_seconds, :second)
 
@@ -35,9 +35,8 @@ defmodule ControlPlane.Enrollment do
       |> EnrollToken.changeset(%{
         token_hash: hash(plaintext),
         region_id: region_id,
-        tier: tier,
         expires_at: expires_at,
-        # Optional operator owner — nil for admin-minted tokens.
+        # Which admin minted this token (audit trail); nil for system-minted.
         owner_id: Map.get(attrs, :owner_id),
         owner_email: Map.get(attrs, :owner_email)
       })
@@ -50,20 +49,9 @@ defmodule ControlPlane.Enrollment do
   end
 
   @doc """
-  Mints an enroll token on behalf of an authenticated operator, binding it (and so
-  the node that redeems it) to that operator so their payouts can accrue.
-  """
-  def create_enroll_token_for_operator(%{id: owner_id, email: email}, attrs) do
-    attrs
-    |> Map.put(:owner_id, owner_id)
-    |> Map.put(:owner_email, email)
-    |> create_enroll_token()
-  end
-
-  @doc """
   Exchanges a valid (unused, unexpired) enroll token for a new node.
 
-  On success creates a `Node` in the token's region and tier, marks the token used,
+  On success creates a `Node` in the token's region, marks the token used,
   and returns `{:ok, %{node: node, agent_token: plaintext}}` where `agent_token` is
   the plaintext long-lived agent token (shown once). Only its hash is stored on the
   node.
@@ -142,13 +130,12 @@ defmodule ControlPlane.Enrollment do
     |> Node.changeset(%{
       name: "node-" <> short_id(),
       region_id: token.region_id,
-      tier: token.tier,
       hypervisor: hypervisor,
       status: :online,
       last_heartbeat_at: now(),
       agent_token_hash: hash(agent_token),
-      # Inherit the minting operator so metering/payouts accrue to them. Without
-      # this the node has no owner and `Billing.meter_active_vpses/1` skips it.
+      # Cost-centre attribution: which person/team inside Bunk this node belongs
+      # to. Optional — metering falls back to the node name when it's nil.
       owner_email: token.owner_email,
       # The worker's declared VPS IP range (nil for default-network workers).
       vps_gateway: Map.get(net, :gateway),

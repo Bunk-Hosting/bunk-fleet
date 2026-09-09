@@ -1,9 +1,12 @@
 defmodule ControlPlaneWeb.Admin.BillingController do
   @moduledoc """
-  Operator/admin API for metered usage and operator payouts.
+  Admin API for metered fleet usage: what each node cost centre's capacity
+  actually served over a window. This is internal cost accounting (how much of
+  our own hardware a period consumed), not customer billing — customers are
+  billed via subscriptions and the prepaid wallet.
 
-  `usage` (GET `/admin/v1/billing/usage?from=&to=`) returns the per-operator
-  payout summary for the half-open window `[from, to)` (records with
+  `usage` (GET `/admin/v1/billing/usage?from=&to=`) returns the per-cost-centre
+  resource summary for the half-open window `[from, to)` (records with
   `metered_at >= from and metered_at < to`, so adjacent windows tile without
   double-counting the boundary). `from`/`to` are ISO8601 datetimes (e.g.
   `2026-06-01T00:00:00Z`); both are required. `amount` is a money value in the
@@ -20,12 +23,12 @@ defmodule ControlPlaneWeb.Admin.BillingController do
 
   def usage(conn, params) do
     with {:ok, {from, to}} <- TimeWindow.parse(params, require: true) do
-      summary = Enum.map(Billing.payout_summary({from, to}), &payout_json/1)
+      summary = Enum.map(Billing.resource_cost_summary({from, to}), &cost_json/1)
 
       json(conn, %{
         from: DateTime.to_iso8601(from),
         to: DateTime.to_iso8601(to),
-        payouts: summary
+        cost_centres: summary
       })
     else
       {:error, :invalid_datetime} ->
@@ -40,7 +43,7 @@ defmodule ControlPlaneWeb.Admin.BillingController do
     end
   end
 
-  defp payout_json(%{owner_email: owner_email, amount: amount, seconds: seconds, records: records}) do
+  defp cost_json(%{owner_email: owner_email, amount: amount, seconds: seconds, records: records}) do
     %{
       owner_email: owner_email,
       amount: Decimal.to_string(amount),

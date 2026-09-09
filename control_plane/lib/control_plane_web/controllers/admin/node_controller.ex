@@ -20,7 +20,6 @@ defmodule ControlPlaneWeb.Admin.NodeController do
       name: node.name,
       region: region_code(node),
       status: node.status,
-      tier: node.tier,
       hypervisor: node.hypervisor,
       total_vcpu: node.total_vcpu,
       total_ram_mb: node.total_ram_mb,

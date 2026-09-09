@@ -60,7 +60,6 @@ function Overview() {
             <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="Totaal" value={stats.users.total} />
               <Stat label="Klanten" value={stats.users.user} />
-              <Stat label="Operators" value={stats.users.operator} />
               <Stat label="Admins" value={stats.users.admin} />
             </CardContent>
           </Card>

@@ -1,6 +1,6 @@
 defmodule ControlPlane.Accounts.User do
   @moduledoc """
-  A human identity (operator/user/admin) that authenticates to the control-plane
+  A human identity (customer or staff) that authenticates to the control-plane
   API with an email + password and acts as `conn.assigns.current_user`.
 
   Only the pbkdf2 `hashed_password` is persisted; the plaintext `password` is a
@@ -17,7 +17,7 @@ defmodule ControlPlane.Accounts.User do
     field :email, :string
     field :hashed_password, :string, redact: true
     field :password, :string, virtual: true, redact: true
-    field :role, Ecto.Enum, values: [:user, :operator, :admin], default: :user
+    field :role, Ecto.Enum, values: [:user, :admin], default: :user
     field :name, :string
     field :confirmed_at, :utc_datetime
     field :totp_secret, :binary, redact: true
@@ -38,7 +38,7 @@ defmodule ControlPlane.Accounts.User do
   def registration_changeset(user, attrs) do
     user
     # SECURITY: never cast :role from self-registration input — everyone signs up
-    # as the default :user. Role elevation (:operator/:admin) is an explicit,
+    # as the default :user. Role elevation (:admin) is an explicit,
     # authorized server-side action, not something a registrant can request.
     |> cast(attrs, [:email, :password, :name])
     |> validate_email()
