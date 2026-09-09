@@ -133,8 +133,11 @@ if config_env() == :prod do
       from_email: System.get_env("MAIL_FROM_ADDRESS") || "noreply@#{host}",
       from_name: System.get_env("MAIL_FROM_NAME") || "Bunk Hosting"
   else
-    require Logger
-    Logger.warning("SMTP_HOST is not set — confirmation/reset/low-balance emails will NOT be delivered.")
+    # NOT Logger.warning/1 here: config/runtime.exs runs before the :logger
+    # application's console backend is attached, so a Logger call at this point
+    # is silently dropped — verified empirically, it never reaches `docker logs`.
+    # IO.puts to stderr is the only thing guaranteed to show up this early.
+    IO.puts(:stderr, "[warning] SMTP_HOST is not set — confirmation/reset/low-balance emails will NOT be delivered.")
     config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Local
   end
 
