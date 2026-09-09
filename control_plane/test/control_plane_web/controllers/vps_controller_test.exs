@@ -33,9 +33,13 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     |> Repo.insert!()
   end
 
+  # Confirmed because create tests spend the signup bonus (see the package price
+  # comment below) — the bonus is granted on confirmation, not at registration.
   defp user_fixture(email) do
     {:ok, user} = Accounts.register_user(%{email: email, password: @password, name: "U"})
-    user
+    {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
+    {:ok, confirmed} = Accounts.confirm_user(token)
+    confirmed
   end
 
   # The size-based create charges the matching package's price (O-9), so create

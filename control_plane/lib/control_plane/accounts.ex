@@ -9,7 +9,7 @@ defmodule ControlPlane.Accounts do
   """
   import Ecto.Query, warn: false
 
-  alias ControlPlane.Repo
+  alias ControlPlane.{Credits, Notifier, Repo}
   alias ControlPlane.Accounts.{User, UserToken}
 
   @doc """
@@ -119,16 +119,141 @@ defmodule ControlPlane.Accounts do
   Registers a new user from `attrs` (`email`, `password`, optionally `name`/`role`).
 
   Returns `{:ok, user}` or `{:error, changeset}` (e.g. duplicate email, short
-  password).
+  password). The signup bonus is granted on email confirmation (`confirm_user/1`),
+  NOT here — crediting it at registration is what let a throwaway, unverified
+  address farm free wallet balance (misuse case O-7).
   """
   def register_user(attrs) do
     case %User{} |> User.registration_changeset(attrs) |> Repo.insert() do
       {:ok, user} = ok ->
-        ControlPlane.Credits.grant_signup_bonus(user.id)
+        deliver_user_confirmation_instructions(user)
         ok
 
       error ->
         error
+    end
+  end
+
+  ## Email confirmation
+
+  @doc """
+  Mints a fresh single-use confirmation token for `user` and emails it. Any
+  earlier unconsumed confirmation token for this user is invalidated first, so
+  only the most recently sent link works (resending a confirmation email must
+  not leave two live links).
+
+  A no-op returning `{:error, :already_confirmed}` for an already-confirmed user
+  — resending a confirmation link (or a delayed double-click on "resend") must
+  never re-grant the signup bonus or re-send a stale email.
+  """
+  def deliver_user_confirmation_instructions(%User{confirmed_at: confirmed}) when not is_nil(confirmed),
+    do: {:error, :already_confirmed}
+
+  def deliver_user_confirmation_instructions(%User{} = user) do
+    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["confirm"]))
+    {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
+    Repo.insert!(user_token)
+    Notifier.deliver_confirmation_instructions(user, encoded_token)
+    {:ok, encoded_token}
+  end
+
+  @doc """
+  Confirms a user from a raw confirmation `token`, atomically stamping
+  `confirmed_at`, burning every outstanding confirm token for that user (so the
+  same link can't be replayed), and granting the one-time signup bonus — all in
+  one transaction so a crediting failure can never leave the account confirmed
+  without its bonus, or vice versa.
+
+  Returns `{:ok, user}` or `{:error, :invalid_token}` for a malformed, unknown,
+  already-used, or expired token.
+  """
+  def confirm_user(token) when is_binary(token) do
+    with {:ok, query} <- UserToken.verify_email_token_query(token, "confirm"),
+         %User{} = user <- Repo.one(query) do
+      confirm_changeset = Ecto.Changeset.change(user, confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
+
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:user, confirm_changeset)
+      |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, ["confirm"]))
+      |> Ecto.Multi.run(:bonus, fn _repo, %{user: confirmed_user} ->
+        Credits.grant_signup_bonus(confirmed_user.id)
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{user: confirmed_user}} -> {:ok, confirmed_user}
+        {:error, _step, _reason, _changes} -> {:error, :invalid_token}
+      end
+    else
+      _ -> {:error, :invalid_token}
+    end
+  end
+
+  def confirm_user(_token), do: {:error, :invalid_token}
+
+  ## Password reset
+
+  @doc """
+  Mints a single-use password-reset token for `user` and emails it, invalidating
+  any earlier unconsumed reset token first (so requesting a new link kills the
+  old one). Returns `{:ok, encoded_token}` — see `request_password_reset/1` for
+  the enumeration-safe entry point callers should actually use; this function's
+  caller learns whether the account exists (only appropriate once you already
+  hold a `%User{}`, e.g. an admin-initiated reset).
+  """
+  def deliver_user_reset_password_instructions(%User{} = user) do
+    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["reset_password"]))
+    {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
+    Repo.insert!(user_token)
+    Notifier.deliver_reset_password_instructions(user, encoded_token)
+    {:ok, encoded_token}
+  end
+
+  @doc """
+  Enumeration-safe entry point for "forgot password": looks up `email` and, if
+  found, sends a reset link. Always returns `:ok` regardless of whether the
+  address matches an account, so the caller's response can't be used to probe
+  which emails are registered.
+  """
+  def request_password_reset(email) when is_binary(email) do
+    case get_user_by_email(String.downcase(email)) do
+      %User{} = user -> deliver_user_reset_password_instructions(user)
+      nil -> :ok
+    end
+
+    :ok
+  end
+
+  def request_password_reset(_email), do: :ok
+
+  @doc """
+  Returns the user for a valid, unexpired, unused password-reset `token`, or
+  `nil`.
+  """
+  def get_user_by_reset_password_token(token) when is_binary(token) do
+    with {:ok, query} <- UserToken.verify_email_token_query(token, "reset_password"),
+         %User{} = user <- Repo.one(query) do
+      user
+    else
+      _ -> nil
+    end
+  end
+
+  def get_user_by_reset_password_token(_token), do: nil
+
+  @doc """
+  Resets `user`'s password to `attrs["password"]` and, in the same transaction,
+  burns the reset token AND every session token (a password reset is exactly the
+  "I think someone else has my credentials" moment — leaving old sessions alive
+  would defeat the point). Returns `{:ok, user}` or `{:error, changeset}`.
+  """
+  def reset_user_password(%User{} = user, attrs) do
+    Ecto.Multi.new()
+    |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
+    |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, ["reset_password", "session"]))
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, :user, changeset, _changes} -> {:error, changeset}
     end
   end
 

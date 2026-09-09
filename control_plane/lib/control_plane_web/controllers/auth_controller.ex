@@ -2,10 +2,14 @@ defmodule ControlPlaneWeb.AuthController do
   @moduledoc """
   End-user/operator authentication API.
 
-    * `POST   /api/v1/auth/register` — create a user, return it plus a session token.
-    * `POST   /api/v1/auth/login`    — exchange email + password for a session token.
-    * `GET    /api/v1/auth/me`       — (authenticated) the current user.
-    * `DELETE /api/v1/auth/logout`   — (authenticated) revoke the presented session.
+    * `POST   /api/v1/auth/register`            — create a user, return it plus a session token.
+    * `POST   /api/v1/auth/login`               — exchange email + password for a session token.
+    * `GET    /api/v1/auth/me`                  — (authenticated) the current user.
+    * `DELETE /api/v1/auth/logout`               — (authenticated) revoke the presented session.
+    * `POST   /api/v1/auth/confirm`              — exchange an email-confirmation token for a confirmed account.
+    * `POST   /api/v1/auth/confirm/resend`       — (authenticated) re-send the confirmation email.
+    * `POST   /api/v1/auth/password-reset`       — request a reset email (always 200; anti-enumeration).
+    * `POST   /api/v1/auth/password-reset/confirm` — exchange a reset token + new password for a changed password.
 
   Session tokens are returned as URL-safe Base64 (no padding) and expected back the
   same way in the `Authorization: Bearer <token>` header (see
@@ -99,6 +103,76 @@ defmodule ControlPlaneWeb.AuthController do
   def me(conn, _params) do
     json(conn, %{user: user_json(conn.assigns.current_user)})
   end
+
+  @doc "Confirms an account from the token in a `?token=` verification link."
+  def confirm(conn, %{"token" => token}) when is_binary(token) do
+    case Accounts.confirm_user(token) do
+      {:ok, user} ->
+        json(conn, %{user: user_json(user)})
+
+      {:error, :invalid_token} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_token", detail: "Deze link is ongeldig of verlopen."})
+    end
+  end
+
+  def confirm(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "token is required"})
+
+  @doc """
+  Re-sends the confirmation email to the authenticated (already logged-in but
+  unconfirmed) user. Authenticated rather than taking a bare email, so this
+  can't be used to spam an arbitrary address.
+  """
+  def resend_confirmation(conn, _params) do
+    case Accounts.deliver_user_confirmation_instructions(conn.assigns.current_user) do
+      {:ok, _token} ->
+        json(conn, %{detail: "ok"})
+
+      {:error, :already_confirmed} ->
+        conn |> put_status(:conflict) |> json(%{error: "already_confirmed"})
+    end
+  end
+
+  @doc """
+  Requests a password-reset email. Always returns 200 with an identical body
+  whether or not `email` matches an account — the anti-enumeration contract is
+  "if the address exists, a link was sent", so this endpoint must never leak
+  which branch it took via status code, timing-sensitive DB work, or body shape.
+  """
+  def request_password_reset(conn, %{"email" => email}) when is_binary(email) do
+    :ok = Accounts.request_password_reset(email)
+    json(conn, %{detail: "ok"})
+  end
+
+  def request_password_reset(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "email is required"})
+
+  @doc "Exchanges a password-reset token + new password for a changed password."
+  def reset_password(conn, %{"token" => token, "password" => password} = params)
+      when is_binary(token) and is_binary(password) do
+    case Accounts.get_user_by_reset_password_token(token) do
+      nil ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_token", detail: "Deze link is ongeldig of verlopen."})
+
+      user ->
+        case Accounts.reset_user_password(user, %{"password" => params["password"]}) do
+          {:ok, _user} ->
+            json(conn, %{detail: "ok"})
+
+          {:error, changeset} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{errors: changeset_errors(changeset)})
+        end
+    end
+  end
+
+  def reset_password(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "token and password are required"})
 
   def logout(conn, _params) do
     # Extract from header OR the HttpOnly cookie so a cookie-based browser session

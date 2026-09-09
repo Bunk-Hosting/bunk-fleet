@@ -60,4 +60,15 @@ config :control_plane, :payment,
   beneficiary: "Bunk Hosting",
   bic: "BUNKNL2A"
 
+# Transactional email (confirmation, password reset, low-balance warnings). The
+# adapter is per-env (dev.exs/test.exs/runtime.exs); this just sets the sender
+# identity, with dev-safe placeholders overridden by runtime.exs in prod.
+config :control_plane, :mail,
+  from_email: System.get_env("MAIL_FROM_ADDRESS", "noreply@bunkhosting.nl"),
+  from_name: System.get_env("MAIL_FROM_NAME", "Bunk Hosting")
+
+# We use Swoosh's SMTP adapter (gen_smtp), not its HTTP-API adapters, so the
+# HTTP client pool Swoosh would otherwise start is pure overhead — disable it.
+config :swoosh, :api_client, false
+
 import_config "#{config_env()}.exs"

@@ -57,6 +57,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_status_stopped: "De VPS is al gestopt.",
   invalid_status_queued: "De VPS wordt nog voorbereid.",
   invalid_status_provisioning: "De VPS wordt nog aangemaakt.",
+  already_confirmed: "Je account is al bevestigd.",
+  invalid_token: "Deze link is ongeldig of verlopen.",
+  rate_limited: "Te veel pogingen. Probeer het over een minuutje opnieuw.",
 };
 
 /**
@@ -221,6 +224,7 @@ function transformUser(u: BunkUser): User {
     date_joined: u.inserted_at || "",
     is_active: true,
     totp_enabled: Boolean(u.totp_enabled),
+    confirmed_at: u.confirmed_at ?? null,
   };
 }
 
@@ -280,16 +284,26 @@ export const authApi = {
     return { data: transformUser(res.data.user) };
   },
 
-  // bunk-fleet has no email-verification / password-reset endpoints yet, so these
-  // REJECT instead of faking success — the UI must never tell a user their
-  // password changed or their email was verified when nothing happened.
-  verifyEmail: (_token: string) =>
-    Promise.reject(new Error("E-mailverificatie is nog niet beschikbaar.")),
-  // Safe to resolve regardless: this never claims a completed change and the
-  // anti-enumeration contract is "if the address exists, a link was sent".
-  requestPasswordReset: (_email: string) => Promise.resolve({ data: { detail: "ok" } }),
-  confirmPasswordReset: (_token: string, _password: string, _passwordConfirm: string) =>
-    Promise.reject(new Error("Wachtwoord opnieuw instellen is nog niet beschikbaar.")),
+  verifyEmail: (token: string) =>
+    api.post<{ user: BunkUser }>("/auth/confirm", { token }),
+
+  // Re-sends the confirmation email to the AUTHENTICATED current user (the
+  // backend deliberately doesn't take a bare email here, so this can't be used
+  // to spam an arbitrary address).
+  resendConfirmation: () => api.post<{ detail: string }>("/auth/confirm/resend", {}),
+
+  // The backend always returns 200 with an identical body whether or not `email`
+  // matches an account — anti-enumeration contract is "if the address exists, a
+  // link was sent", so there is nothing to branch on here either.
+  requestPasswordReset: (email: string) =>
+    api.post<{ detail: string }>("/auth/password-reset", { email }),
+
+  confirmPasswordReset: (token: string, password: string, passwordConfirm: string) =>
+    api.post<{ detail: string }>("/auth/password-reset/confirm", {
+      token,
+      password,
+      password_confirmation: passwordConfirm,
+    }),
 
   totp: {
     setup: () => api.get<{ secret: string; qr_data_url: string }>("/auth/totp/setup"),

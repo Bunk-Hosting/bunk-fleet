@@ -125,4 +125,97 @@ defmodule ControlPlane.AccountsTest do
       assert Accounts.get_user_by_session_token(t_other)
     end
   end
+
+  describe "email confirmation" do
+    test "register_user sends a confirmation email but grants no bonus yet" do
+      user = register_fixture(%{email: "confirm1@example.com"})
+      assert is_nil(user.confirmed_at)
+      assert ControlPlane.Credits.balance_cents(user.id) == 0
+    end
+
+    test "confirm_user/1 stamps confirmed_at and grants the signup bonus exactly once" do
+      user = register_fixture(%{email: "confirm2@example.com"})
+      {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
+
+      assert {:ok, confirmed} = Accounts.confirm_user(token)
+      assert confirmed.confirmed_at
+      assert ControlPlane.Credits.balance_cents(user.id) == ControlPlane.Credits.signup_bonus_cents()
+
+      # The token is single-use: replaying it (e.g. a link opened twice) must not
+      # re-grant the bonus.
+      assert {:error, :invalid_token} = Accounts.confirm_user(token)
+      assert ControlPlane.Credits.balance_cents(user.id) == ControlPlane.Credits.signup_bonus_cents()
+    end
+
+    test "confirm_user/1 rejects an unknown or malformed token" do
+      assert {:error, :invalid_token} = Accounts.confirm_user("not-a-real-token")
+    end
+
+    test "deliver_user_confirmation_instructions/1 invalidates the previous token on resend" do
+      user = register_fixture(%{email: "confirm3@example.com"})
+      {:ok, old_token} = Accounts.deliver_user_confirmation_instructions(user)
+      {:ok, new_token} = Accounts.deliver_user_confirmation_instructions(user)
+
+      assert {:error, :invalid_token} = Accounts.confirm_user(old_token)
+      assert {:ok, _} = Accounts.confirm_user(new_token)
+    end
+
+    test "deliver_user_confirmation_instructions/1 refuses an already-confirmed user" do
+      user = register_fixture(%{email: "confirm4@example.com"})
+      {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
+      {:ok, confirmed} = Accounts.confirm_user(token)
+
+      assert {:error, :already_confirmed} = Accounts.deliver_user_confirmation_instructions(confirmed)
+    end
+  end
+
+  describe "password reset" do
+    test "request_password_reset/1 always returns :ok, matching or not" do
+      register_fixture(%{email: "reset1@example.com"})
+      assert :ok = Accounts.request_password_reset("reset1@example.com")
+      assert :ok = Accounts.request_password_reset("nobody-at-all@example.com")
+    end
+
+    test "get_user_by_reset_password_token/1 resolves a valid token, nil otherwise" do
+      user = register_fixture(%{email: "reset2@example.com"})
+      {:ok, token} = Accounts.deliver_user_reset_password_instructions(user)
+
+      assert %User{id: id} = Accounts.get_user_by_reset_password_token(token)
+      assert id == user.id
+      assert is_nil(Accounts.get_user_by_reset_password_token("garbage"))
+    end
+
+    test "reset_user_password/2 changes the password and revokes every session, including the reset token" do
+      user = register_fixture(%{email: "reset3@example.com"})
+      session_token = Accounts.generate_user_session_token(user)
+      {:ok, reset_token} = Accounts.deliver_user_reset_password_instructions(user)
+
+      assert {:ok, updated} = Accounts.reset_user_password(user, %{"password" => "brand-new-pw-123"})
+      assert User.valid_password?(updated, "brand-new-pw-123")
+      refute User.valid_password?(updated, @valid_password)
+
+      # Old session is dead...
+      refute Accounts.get_user_by_session_token(session_token)
+      # ...and so is the reset token itself (can't be replayed).
+      assert is_nil(Accounts.get_user_by_reset_password_token(reset_token))
+    end
+
+    test "reset_user_password/2 rejects a too-short password without touching sessions" do
+      user = register_fixture(%{email: "reset4@example.com"})
+      session_token = Accounts.generate_user_session_token(user)
+
+      assert {:error, changeset} = Accounts.reset_user_password(user, %{"password" => "short"})
+      assert %{password: [_ | _]} = errors_on(changeset)
+      assert Accounts.get_user_by_session_token(session_token)
+    end
+
+    test "a fresh reset request invalidates the previous reset link" do
+      user = register_fixture(%{email: "reset5@example.com"})
+      {:ok, old_token} = Accounts.deliver_user_reset_password_instructions(user)
+      {:ok, new_token} = Accounts.deliver_user_reset_password_instructions(user)
+
+      assert is_nil(Accounts.get_user_by_reset_password_token(old_token))
+      assert Accounts.get_user_by_reset_password_token(new_token)
+    end
+  end
 end

@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/layout/sidebar";
+import { UnconfirmedEmailBanner } from "@/components/layout/unconfirmed-email-banner";
 import { UserProvider, useUser } from "@/contexts/UserContext";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </div>
       <Sidebar user={user} />
       <div className="relative z-0 md:pl-64">
-        <main className="p-4 md:p-8">{children}</main>
+        <main className="p-4 md:p-8">
+          <UnconfirmedEmailBanner user={user} />
+          {children}
+        </main>
       </div>
     </div>
   );

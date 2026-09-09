@@ -48,3 +48,7 @@ config :control_plane,
 # against the Ecto SQL sandbox and the explicit reconciliation tests. Tests
 # exercise the logic directly (and a short-interval Reconciler when needed).
 config :control_plane, start_reconciler: false
+
+# Capture sent mail in the test process's mailbox (assert_email_sent/1) instead
+# of hitting any real adapter.
+config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Test

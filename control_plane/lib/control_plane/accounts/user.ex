@@ -69,6 +69,18 @@ defmodule ControlPlane.Accounts.User do
     |> validate_length(:password, min: 12, max: 72)
   end
 
+  @doc """
+  Changeset for setting a new password (password reset / change), independent of
+  registration — it never touches `:email` or `:role`, so this is the only field
+  a caller can move via this path.
+  """
+  def password_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:password])
+    |> validate_password()
+    |> hash_password()
+  end
+
   defp hash_password(changeset) do
     password = get_change(changeset, :password)
 

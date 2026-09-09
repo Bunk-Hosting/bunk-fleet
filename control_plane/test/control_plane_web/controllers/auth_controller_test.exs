@@ -165,4 +165,119 @@ defmodule ControlPlaneWeb.AuthControllerTest do
       assert build_conn() |> put_token(t2) |> get(~p"/api/v1/auth/me") |> json_response(401)
     end
   end
+
+  describe "POST /api/v1/auth/confirm" do
+    setup [:register_user]
+
+    test "confirms the account and returns it", %{conn: conn, user: user} do
+      {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
+
+      out = post(conn, ~p"/api/v1/auth/confirm", %{"token" => token})
+      body = json_response(out, 200)
+      assert body["user"]["confirmed_at"]
+    end
+
+    test "422s an invalid or expired token", %{conn: conn} do
+      out = post(conn, ~p"/api/v1/auth/confirm", %{"token" => "garbage"})
+      assert json_response(out, 422)["error"] == "invalid_token"
+    end
+
+    test "422s a missing token", %{conn: conn} do
+      assert post(conn, ~p"/api/v1/auth/confirm", %{}) |> json_response(422)
+    end
+  end
+
+  describe "POST /api/v1/auth/confirm/resend" do
+    setup [:register_user]
+
+    test "requires authentication", %{conn: conn} do
+      assert conn |> post(~p"/api/v1/auth/confirm/resend", %{}) |> json_response(401)
+    end
+
+    test "sends another confirmation email for an unconfirmed user", %{conn: conn, user: user} do
+      token = Accounts.generate_user_session_token(user) |> Base.url_encode64(padding: false)
+
+      out = conn |> put_token(token) |> post(~p"/api/v1/auth/confirm/resend", %{})
+      assert json_response(out, 200)["detail"] == "ok"
+    end
+
+    test "409s for an already-confirmed user", %{conn: conn, user: user} do
+      {:ok, confirm_token} = Accounts.deliver_user_confirmation_instructions(user)
+      {:ok, confirmed} = Accounts.confirm_user(confirm_token)
+      session = Accounts.generate_user_session_token(confirmed) |> Base.url_encode64(padding: false)
+
+      out = conn |> put_token(session) |> post(~p"/api/v1/auth/confirm/resend", %{})
+      assert json_response(out, 409)["error"] == "already_confirmed"
+    end
+  end
+
+  describe "POST /api/v1/auth/password-reset" do
+    setup [:register_user]
+
+    test "always returns 200, whether or not the email exists (anti-enumeration)", %{conn: conn} do
+      exists = post(conn, ~p"/api/v1/auth/password-reset", %{"email" => @email})
+      unknown = post(build_conn(), ~p"/api/v1/auth/password-reset", %{"email" => "nobody@example.com"})
+
+      assert json_response(exists, 200) == json_response(unknown, 200)
+    end
+
+    test "429s after too many requests from one client (tighter than the general auth bucket)", %{
+      conn: conn
+    } do
+      # The configured limit is 5/min: the first 5 are served...
+      for _ <- 1..5, do: post(conn, ~p"/api/v1/auth/password-reset", %{"email" => @email})
+      # ...and the 6th is rejected with 429.
+      out = post(conn, ~p"/api/v1/auth/password-reset", %{"email" => @email})
+      assert json_response(out, 429)["error"] == "rate_limited"
+    end
+  end
+
+  describe "POST /api/v1/auth/password-reset/confirm" do
+    setup [:register_user]
+
+    test "resets the password with a valid token", %{conn: conn, user: user} do
+      {:ok, token} = Accounts.deliver_user_reset_password_instructions(user)
+
+      out =
+        post(conn, ~p"/api/v1/auth/password-reset/confirm", %{
+          "token" => token,
+          "password" => "a-brand-new-password-123"
+        })
+
+      assert json_response(out, 200)["detail"] == "ok"
+
+      login =
+        conn
+        |> post(~p"/api/v1/auth/login", %{"email" => @email, "password" => "a-brand-new-password-123"})
+
+      assert json_response(login, 200)["token"]
+    end
+
+    test "422s an invalid token", %{conn: conn} do
+      out =
+        post(conn, ~p"/api/v1/auth/password-reset/confirm", %{
+          "token" => "garbage",
+          "password" => "a-brand-new-password-123"
+        })
+
+      assert json_response(out, 422)["error"] == "invalid_token"
+    end
+
+    test "422s a too-short password without burning the token", %{conn: conn, user: user} do
+      {:ok, token} = Accounts.deliver_user_reset_password_instructions(user)
+
+      out = post(conn, ~p"/api/v1/auth/password-reset/confirm", %{"token" => token, "password" => "short"})
+      assert json_response(out, 422)["errors"]
+
+      # The token survives a rejected attempt, so the user can retry with a
+      # stronger password using the SAME link.
+      retry =
+        post(conn, ~p"/api/v1/auth/password-reset/confirm", %{
+          "token" => token,
+          "password" => "a-brand-new-password-123"
+        })
+
+      assert json_response(retry, 200)["detail"] == "ok"
+    end
+  end
 end

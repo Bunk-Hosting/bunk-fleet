@@ -89,6 +89,12 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e CONSOLE_SSH_PUBLIC_KEY \
   -e CONSOLE_SSH_USER \
   -e MOLLIE_API_KEY \
+  -e SMTP_HOST \
+  -e SMTP_PORT \
+  -e SMTP_USERNAME \
+  -e SMTP_PASSWORD \
+  -e MAIL_FROM_ADDRESS \
+  -e MAIL_FROM_NAME \
   "$IMG" >/dev/null
 echo "STARTED $CPNAME on :4000"
 

@@ -113,6 +113,31 @@ if config_env() == :prod do
     config :control_plane, max_vpses_per_owner: String.to_integer(max)
   end
 
+  # Transactional email (confirmation, password reset, low-balance warning) via
+  # SMTP. When SMTP_HOST is unset we deliberately do NOT crash the boot — mirrors
+  # how MOLLIE_API_KEY/TURNSTILE_SECRET_KEY degrade — but mail genuinely will not
+  # be delivered (Swoosh.Adapters.Local just stores it in the release's memory),
+  # so this is loud in the boot log rather than a silent no-op.
+  if smtp_host = System.get_env("SMTP_HOST") do
+    config :control_plane, ControlPlane.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: smtp_host,
+      port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+      username: System.get_env("SMTP_USERNAME"),
+      password: System.get_env("SMTP_PASSWORD"),
+      tls: :if_available,
+      auth: :if_available,
+      retries: 2
+
+    config :control_plane, :mail,
+      from_email: System.get_env("MAIL_FROM_ADDRESS") || "noreply@#{host}",
+      from_name: System.get_env("MAIL_FROM_NAME") || "Bunk Hosting"
+  else
+    require Logger
+    Logger.warning("SMTP_HOST is not set — confirmation/reset/low-balance emails will NOT be delivered.")
+    config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Local
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

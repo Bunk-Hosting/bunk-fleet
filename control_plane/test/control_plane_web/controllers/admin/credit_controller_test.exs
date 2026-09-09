@@ -7,9 +7,14 @@ defmodule ControlPlaneWeb.Admin.CreditControllerTest do
 
   defp auth(conn), do: put_req_header(conn, "authorization", "Bearer " <> @admin_token)
 
+  # The signup bonus is granted on email confirmation, not at registration (see
+  # Accounts.confirm_user/1) — confirm so these tests see the same balance a real
+  # onboarded customer would.
   defp register(email) do
     {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})
-    u
+    {:ok, token} = Accounts.deliver_user_confirmation_instructions(u)
+    {:ok, confirmed} = Accounts.confirm_user(token)
+    confirmed
   end
 
   test "admin tops up a wallet", %{conn: conn} do

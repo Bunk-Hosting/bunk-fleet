@@ -124,6 +124,14 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.RateLimit, bucket: "topup", max: 15, window_ms: 60_000
   end
 
+  # Password-reset requests fan out a real email to a caller-supplied address —
+  # tighter than the general :auth_public bucket, since flooding this is a way to
+  # mail-bomb a stranger's inbox, not just brute-force a login.
+  pipeline :password_reset_throttle do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "password_reset", max: 5, window_ms: 60_000
+  end
+
   # Public webhook: still no auth (Mollie can't authenticate), but rate-limited so
   # it can't be flooded to amplify outbound get_payment fetches / hammer Mollie.
   # 120/min/ip is far above Mollie's real callback rate for one merchant.
@@ -146,8 +154,22 @@ defmodule ControlPlaneWeb.Router do
     post "/auth/register", AuthController, :register
     post "/auth/login", AuthController, :login
 
+    # Email-confirmation link exchange (token IS the credential; no session needed).
+    post "/auth/confirm", AuthController, :confirm
+
+    # Password-reset link exchange (token IS the credential).
+    post "/auth/password-reset/confirm", AuthController, :reset_password
+
     # Public, read-only VPS package catalog.
     get "/packages", PackageController, :index
+  end
+
+  # "Forgot password" request gets its own tighter bucket — see
+  # :password_reset_throttle above.
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :password_reset_throttle
+
+    post "/auth/password-reset", AuthController, :request_password_reset
   end
 
   scope "/api/v1", ControlPlaneWeb do
@@ -161,6 +183,10 @@ defmodule ControlPlaneWeb.Router do
     get "/auth/totp/setup", AuthController, :totp_setup
     post "/auth/totp/setup", AuthController, :totp_confirm
     delete "/auth/totp/disable", AuthController, :totp_disable
+
+    # Re-send the confirmation email (authenticated, so it can't spam an arbitrary
+    # address — see AuthController.resend_confirmation/2).
+    post "/auth/confirm/resend", AuthController, :resend_confirmation
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
@@ -256,6 +282,7 @@ defmodule ControlPlaneWeb.Router do
       pipe_through [:fetch_session, :protect_from_forgery]
 
       live_dashboard "/dashboard", metrics: ControlPlaneWeb.Telemetry
+      forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
   end
 end

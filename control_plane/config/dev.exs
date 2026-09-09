@@ -52,6 +52,10 @@ config :control_plane, ControlPlaneWeb.Endpoint,
 # Enable dev routes for dashboard and mailbox
 config :control_plane, dev_routes: true
 
+# Store outgoing mail in memory and view it at /dev/mailbox instead of sending
+# anything real — never wire a live SMTP relay into dev.
+config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Local
+
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
 

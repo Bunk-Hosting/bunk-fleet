@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ArrowLeft, MailCheck, Server } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
@@ -169,7 +170,15 @@ function LoginForm() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Wachtwoord</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Wachtwoord</Label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Wachtwoord vergeten?
+                    </Link>
+                  </div>
                   <Input
                     id="password"
                     type="password"

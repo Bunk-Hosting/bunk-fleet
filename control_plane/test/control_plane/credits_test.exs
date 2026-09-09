@@ -3,9 +3,14 @@ defmodule ControlPlane.CreditsTest do
 
   alias ControlPlane.{Accounts, Credits}
 
+  # The signup bonus is granted on email confirmation, not at registration (see
+  # Accounts.confirm_user/1) — go through the real confirmation flow so these
+  # tests exercise the actual path a credited user takes, not a shortcut.
   defp user(email) do
     {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})
-    u
+    {:ok, token} = Accounts.deliver_user_confirmation_instructions(u)
+    {:ok, confirmed} = Accounts.confirm_user(token)
+    confirmed
   end
 
   test "new user receives the signup bonus" do

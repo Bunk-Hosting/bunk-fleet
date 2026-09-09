@@ -5,7 +5,7 @@ defmodule ControlPlane.Subscriptions do
 
   alias ControlPlane.Repo
   alias ControlPlane.Subscriptions.Subscription
-  alias ControlPlane.{Credits, Fleet, Provisioning}
+  alias ControlPlane.{Accounts, Credits, Fleet, Notifier, Provisioning}
   alias ControlPlane.Fleet.Vps
 
   # A VPS in one of these states is gone (or never came up); its subscription must
@@ -146,8 +146,10 @@ defmodule ControlPlane.Subscriptions do
         %{acc | charged: acc.charged + 1, resumed: acc.resumed + resumed}
 
       {:error, :insufficient_credits} ->
+        retry_date = Date.add(today, 1)
         suspended = maybe_suspend(sub)
-        mark_past_due(sub, Date.add(today, 1))
+        mark_past_due(sub, retry_date)
+        unless was_past_due, do: notify_past_due(sub, retry_date)
         %{acc | suspended: acc.suspended + suspended}
 
       # Another settler already claimed this period (multi-instance race) — no-op.
@@ -232,6 +234,18 @@ defmodule ControlPlane.Subscriptions do
   end
 
   defp maybe_suspend(_sub), do: 0
+
+  # Only sent on the FIRST insufficient-credit tick for a subscription (guarded by
+  # `was_past_due` at the call site), not on every retry — otherwise a customer
+  # who stays broke for a week gets the same warning once a day. Never raises:
+  # Notifier already swallows and logs mail-delivery failures, so a dead SMTP
+  # relay can't turn a normal suspend into a settle_due error.
+  defp notify_past_due(%Subscription{} = sub, retry_date) do
+    case Accounts.get_user(sub.owner_id) do
+      nil -> :ok
+      user -> Notifier.deliver_low_balance_warning(user, sub.vps.name, retry_date)
+    end
+  end
 
   # Resume a VPS we previously suspended, now that the owner has paid again.
   defp maybe_resume(%Subscription{vps: %Vps{status: :stopped}} = sub) do
