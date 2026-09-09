@@ -4,9 +4,18 @@ This document is the contract between the Go **bunk-agent** running on each
 worker node and the Elixir **control plane**. It defines the transport, the
 message set, and the security model.
 
+> **Status: partly aspirational.** The message *set* below matches the
+> implementation, but the transport and identity sections describe a design we
+> have not built. What actually ships today: enrollment and steady state both
+> run over plain **HTTPS request/response**, steady state is a **long-poll** for
+> commands plus a periodic heartbeat (not a persistent bidirectional stream),
+> and a node authenticates with a **per-node bearer token** minted at enrollment
+> — there is no mTLS, no CSR, and no CA bundle. Sections marked *(designed)*
+> are not in the code. Do not assume mTLS exists.
+
 ## Transport
 
-- **Agents dial OUT.** Worker nodes live behind operator NAT/firewalls and are
+- **Agents dial OUT.** Worker nodes may live behind NAT/firewalls and are
   never dialed *into*. The agent always initiates the connection to the control
   plane, which keeps the protocol NAT-friendly with no inbound ports.
 - **Enrollment** happens once, over **HTTPS** (request/response), using a
@@ -35,26 +44,26 @@ message set, and the security model.
 
 | Field             | Type     | Notes                                              |
 | ----------------- | -------- | -------------------------------------------------- |
-| `enrollment_token`| string   | One-time token issued to the operator. Single-use. |
-| `hostname`        | string   | Operator-reported node hostname.                   |
-| `hypervisor`      | enum     | `proxmox` \| `incus`.                              |
+| `enrollment_token`| string   | One-time token minted by an admin. Single-use.     |
+| `hostname`        | string   | Agent-reported node hostname.                      |
+| `hypervisor`      | enum     | `proxmox` \| `esxi`.                               |
 | `agent_version`   | string   | bunk-agent build version.                          |
-| `advertised_region`| string  | Region the operator claims for this node.          |
-| `csr`             | bytes    | PEM CSR; the node's private key never leaves it.   |
+| `advertised_region`| string  | Region the agent claims for this node.             |
+| `csr`             | bytes    | *(designed)* PEM CSR; key never leaves the node.   |
 
 **Response — `cp→agent`**
 
 | Field             | Type     | Notes                                              |
 | ----------------- | -------- | -------------------------------------------------- |
 | `node_id`         | uuid     | Durable control-plane identity for this node.      |
-| `client_cert`     | bytes    | Signed mTLS client certificate (node identity).    |
-| `ca_bundle`       | bytes    | CA chain the agent uses to verify the control plane.|
+| `client_cert`     | bytes    | *(designed)* Signed mTLS client cert. Today: a per-node bearer `agent_token`. |
+| `ca_bundle`       | bytes    | *(designed)* CA chain for verifying the control plane.|
 | `assigned_region` | string   | Authoritative region assignment.                   |
 | `channel_endpoint`| string   | URL/host:port for the persistent channel.          |
-| `trust_tier`      | enum     | `datacenter` \| `community`.                        |
 
 After a successful `Enroll`, the one-time token is burned and the node uses its
-mTLS identity for all subsequent connections.
+per-node agent token (bearer) for all subsequent calls. Only the token's hash is
+stored control-plane side.
 
 ---
 
@@ -66,7 +75,7 @@ mTLS identity for all subsequent connections.
 | --------------------- | ------ | ---------------------------------------------- |
 | `node_id`             | uuid   | Identity of the reporting node.                |
 | `seq`                 | uint64 | Monotonic sequence number.                     |
-| `hypervisor`          | enum   | `proxmox` \| `incus`.                          |
+| `hypervisor`          | enum   | `proxmox` \| `esxi`.                          |
 | `capacity_total`      | object | `{ vcpu, ram_mb, disk_gb }` — physical totals. |
 | `capacity_available`  | object | `{ vcpu, ram_mb, disk_gb }` — schedulable now. |
 | `health`              | enum   | `healthy` \| `degraded` \| `draining`.         |
@@ -128,8 +137,8 @@ its `CommandResult`. One of the following payloads:
 
 - **mTLS identity per node.** Each node holds a unique client certificate issued
   at enrollment; the agent's private key never leaves the node. The control
-  plane authenticates every channel and HTTPS call by certificate, binding it to
-  a `node_id` and `trust_tier`.
+  plane authenticates every HTTPS call by bearer token today, binding it to a
+  `node_id`; certificate identity is *(designed)*, not built.
 - **One-time enrollment tokens.** Tokens are single-use and short-lived; they
   bootstrap identity only and grant no standing access.
 - **Least privilege.** A node may only act on VMs/VPS instances the control
@@ -137,6 +146,7 @@ its `CommandResult`. One of the following payloads:
   enumerate or affect other nodes' workloads.
 - **Control-plane authentication.** The agent verifies the control plane against
   the `ca_bundle` from enrollment, preventing impersonation of the orchestrator.
-- **Trust tiers** (`datacenter` vs `community`) feed scheduling and placement
-  policy; lower-trust community nodes are additionally gated by reputation and
-  operator deposit.
+- **No node trust tiers.** Every node is Bunk's own hardware, so there is no
+  untrusted class of node to fence off. The boundary that matters is between
+  *tenants*, and it is enforced in the control plane (owner-scoped queries,
+  server-set VPS ownership, CP-allocated console IPs), not by node class.
