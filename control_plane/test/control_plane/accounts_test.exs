@@ -98,7 +98,12 @@ defmodule ControlPlane.AccountsTest do
 
     test "the token is stored hashed, not in plaintext", %{user: user} do
       token = Accounts.generate_user_session_token(user)
-      stored = Repo.one(ControlPlane.Accounts.UserToken)
+
+      # Scoped to the "session" context: registration also mints a "confirm"
+      # token for the same user, so an unscoped query would see two rows.
+      stored =
+        Repo.one!(from t in ControlPlane.Accounts.UserToken, where: t.user_id == ^user.id and t.context == "session")
+
       assert stored.token == :crypto.hash(:sha256, token)
       refute stored.token == token
     end
