@@ -119,14 +119,31 @@ if config_env() == :prod do
   # be delivered (Swoosh.Adapters.Local just stores it in the release's memory),
   # so this is loud in the boot log rather than a silent no-op.
   if smtp_host = System.get_env("SMTP_HOST") do
+    smtp_port = String.to_integer(System.get_env("SMTP_PORT") || "587")
+
+    # Two mutually exclusive TLS modes, picked from the port (override with
+    # SMTP_SSL): 465 is implicit SSL — the socket is encrypted before the SMTP
+    # conversation starts — while 587 connects in the clear and upgrades via
+    # STARTTLS. Sending 465 traffic with the 587 settings just hangs, so this is
+    # derived rather than left to a default that silently fits only one of them.
+    smtp_ssl =
+      case System.get_env("SMTP_SSL") do
+        v when v in ["1", "true"] -> true
+        v when v in ["0", "false"] -> false
+        _ -> smtp_port == 465
+      end
+
     config :control_plane, ControlPlane.Mailer,
       adapter: Swoosh.Adapters.SMTP,
       relay: smtp_host,
-      port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
+      port: smtp_port,
       username: System.get_env("SMTP_USERNAME"),
       password: System.get_env("SMTP_PASSWORD"),
-      tls: :if_available,
-      auth: :if_available,
+      ssl: smtp_ssl,
+      tls: if(smtp_ssl, do: :never, else: :always),
+      # Fail loudly on a rejected credential instead of silently sending
+      # unauthenticated (which every relay worth using would then bounce).
+      auth: :always,
       retries: 2
 
     config :control_plane, :mail,
