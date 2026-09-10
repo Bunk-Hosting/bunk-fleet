@@ -5,6 +5,11 @@ defmodule ControlPlane.Notifier do
   subscription can't be charged. Delivery goes through `ControlPlane.Mailer`
   (Swoosh) — see its moduledoc for how the adapter varies per environment.
 
+  Every message is multipart: the branded HTML body from
+  `ControlPlane.Notifier.Templates` plus a plain-text alternative. The text part
+  is not a formality — some clients render it by preference, and a mail with no
+  text alternative scores worse with spam filters.
+
   Every `deliver_*/2` call is wrapped so a mail failure (SMTP down, misconfigured
   relay) never raises into the caller: registration, confirmation, and the
   billing settle loop must all complete regardless of whether the email actually
@@ -16,6 +21,7 @@ defmodule ControlPlane.Notifier do
 
   alias ControlPlane.Accounts.User
   alias ControlPlane.Mailer
+  alias ControlPlane.Notifier.Templates
 
   @doc "Sends the 'confirm your account' email with a link carrying `token`."
   def deliver_confirmation_instructions(%User{} = user, token) do
@@ -27,12 +33,14 @@ defmodule ControlPlane.Notifier do
       """
       Hoi#{name_suffix(user)},
 
-      Bevestig je e-mailadres om je Bunk Hosting account te activeren:
+      Bevestig je e-mailadres om je Bunk Hosting account te activeren en je
+      welkomstkrediet te ontvangen:
 
       #{url}
 
       Deze link is 24 uur geldig. Heb je geen account aangemaakt? Dan kun je deze e-mail negeren.
-      """
+      """,
+      Templates.confirmation(user.name, url)
     )
   end
 
@@ -53,7 +61,8 @@ defmodule ControlPlane.Notifier do
 
       Deze link is 1 uur geldig. Heb je dit niet aangevraagd? Dan kun je deze e-mail
       negeren — je wachtwoord blijft ongewijzigd.
-      """
+      """,
+      Templates.reset_password(user.name, url)
     )
   end
 
@@ -81,17 +90,24 @@ defmodule ControlPlane.Notifier do
 
       Blijft het saldo te laag, dan blijft de VPS gepauzeerd totdat je opwaardeert —
       er wordt niets verwijderd.
-      """
+      """,
+      Templates.low_balance(
+        user.name,
+        vps_name,
+        Calendar.strftime(retry_date, "%d-%m-%Y"),
+        top_up_url
+      )
     )
   end
 
-  defp deliver(to_email, subject, body_text) do
+  defp deliver(to_email, subject, body_text, body_html) do
     email =
       new()
       |> to(to_email)
       |> from({from_name(), from_email()})
       |> subject(subject)
       |> text_body(body_text)
+      |> html_body(body_html)
 
     case Mailer.deliver(email) do
       {:ok, _metadata} ->

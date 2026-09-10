@@ -1,0 +1,42 @@
+  <h1 style="margin:0 0 8px;font-family:'Manrope',Arial,sans-serif;font-size:26px;font-weight:800;color:#e2e2e8;letter-spacing:-0.5px;">
+    Je saldo is te laag
+  </h1>
+  <p style="margin:0 0 28px;font-size:14px;color:#f5a524;font-weight:500;letter-spacing:0.5px;text-transform:uppercase;">
+    VPS gepauzeerd
+  </p>
+
+  <p style="margin:0 0 20px;font-size:15px;color:#c8ccd8;line-height:1.7;">
+    Hoi<%= name %>, we konden de maandelijkse kosten voor je VPS
+    <strong style="color:#e2e2e8;"><%= vps_name %></strong> niet afschrijven omdat je saldo te laag is.
+    Om dataverlies te voorkomen hebben we de VPS gepauzeerd &mdash; er draait niets meer op,
+    maar <strong style="color:#e2e2e8;">er is niets verwijderd</strong>.
+  </p>
+
+  <!-- CTA Button -->
+  <table cellpadding="0" cellspacing="0" border="0" style="margin:32px 0;">
+    <tr>
+      <td style="border-radius:8px;background:linear-gradient(90deg,#006af2,#00dbe7);">
+        <a href="<%= url %>" style="display:inline-block;padding:14px 32px;font-family:'Inter',Arial,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;letter-spacing:0.2px;">
+          Saldo opwaarderen &rarr;
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Info box -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+    <tr>
+      <td style="background-color:#111318;border-radius:8px;border:1px solid #1f2937;padding:16px 20px;">
+        <p style="margin:0;font-size:13px;color:#8c90a1;line-height:1.6;">
+          Waardeer je op vóór <strong style="color:#bec6e0;"><%= retry_date %></strong>, dan proberen we
+          het automatisch opnieuw en zetten we de VPS weer aan. Blijft het saldo te laag, dan blijft de
+          VPS gepauzeerd tot je opwaardeert &mdash; er wordt niets verwijderd.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <p style="margin:0;font-size:12px;color:#555a6e;line-height:1.6;">
+    Werkt de knop niet? Kopieer dan deze link:<br />
+    <a href="<%= url %>" style="color:#006af2;text-decoration:none;word-break:break-all;"><%= url %></a>
+  </p>

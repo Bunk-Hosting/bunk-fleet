@@ -1,0 +1,37 @@
+  <h1 style="margin:0 0 8px;font-family:'Manrope',Arial,sans-serif;font-size:26px;font-weight:800;color:#e2e2e8;letter-spacing:-0.5px;">
+    Bevestig je e-mailadres
+  </h1>
+  <p style="margin:0 0 28px;font-size:14px;color:#00dbe7;font-weight:500;letter-spacing:0.5px;text-transform:uppercase;">
+    Één stap te gaan
+  </p>
+
+  <p style="margin:0 0 20px;font-size:15px;color:#c8ccd8;line-height:1.7;">
+    Hoi<%= name %>, bedankt voor je registratie bij Bunk Hosting! Klik op de knop hieronder om je e-mailadres te bevestigen en je welkomstkrediet te activeren.
+  </p>
+
+  <!-- CTA Button -->
+  <table cellpadding="0" cellspacing="0" border="0" style="margin:32px 0;">
+    <tr>
+      <td style="border-radius:8px;background:linear-gradient(90deg,#006af2,#00dbe7);">
+        <a href="<%= url %>" style="display:inline-block;padding:14px 32px;font-family:'Inter',Arial,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;letter-spacing:0.2px;">
+          E-mailadres bevestigen &rarr;
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Info box -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+    <tr>
+      <td style="background-color:#111318;border-radius:8px;border:1px solid #1f2937;padding:16px 20px;">
+        <p style="margin:0;font-size:13px;color:#8c90a1;line-height:1.6;">
+          Deze link is <strong style="color:#bec6e0;">24 uur geldig</strong>. Als je geen account hebt aangemaakt bij Bunk Hosting, kun je deze e-mail negeren.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <p style="margin:0;font-size:12px;color:#555a6e;line-height:1.6;">
+    Werkt de knop niet? Kopieer dan deze link:<br />
+    <a href="<%= url %>" style="color:#006af2;text-decoration:none;word-break:break-all;"><%= url %></a>
+  </p>
