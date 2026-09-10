@@ -18,6 +18,16 @@ defmodule ControlPlane.CreditsTest do
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
   end
 
+  test "the signup bonus is granted at most once, whatever the caller does" do
+    u = user("c1b@bunk.test")
+    assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
+
+    # A pre-confirmation-era account carries a bonus but no confirmed_at, so
+    # confirming later must not top it up a second time.
+    assert {:ok, nil} = Credits.grant_signup_bonus(u.id)
+    assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
+  end
+
   test "charge debits when affordable, rejects when not, and is atomic" do
     u = user("c2@bunk.test")
     assert {:ok, _} = Credits.charge(u.id, 300, "vps_charge", "x")

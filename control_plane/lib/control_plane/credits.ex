@@ -44,9 +44,27 @@ defmodule ControlPlane.Credits do
     |> Repo.insert()
   end
 
-  @doc "Grants the one-time welcome credit. Best-effort: never blocks registration."
+  @doc """
+  Grants the one-time welcome credit, at most once per user.
+
+  "One-time" is enforced against the ledger rather than assumed from the call
+  site, because there are now two eras of account: users created before email
+  confirmation existed were credited at registration and still have a NULL
+  `confirmed_at`, so the moment one of them confirms their address,
+  `Accounts.confirm_user/1` would hand them a second €10. Returns `{:ok, nil}`
+  when a bonus is already on the ledger, which callers treat as success.
+  """
   def grant_signup_bonus(user_id) do
-    add_entry(user_id, @signup_bonus_cents, "signup_bonus", "Welkomstkrediet")
+    already_granted? =
+      Repo.exists?(
+        from e in LedgerEntry, where: e.user_id == ^user_id and e.kind == "signup_bonus"
+      )
+
+    if already_granted? do
+      {:ok, nil}
+    else
+      add_entry(user_id, @signup_bonus_cents, "signup_bonus", "Welkomstkrediet")
+    end
   end
 
   @doc """
