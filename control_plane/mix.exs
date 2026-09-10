@@ -47,6 +47,9 @@ defmodule ControlPlane.MixProject do
       {:req, "~> 0.5"},
       {:swoosh, "~> 1.16"},
       {:gen_smtp, "~> 1.2"},
+      # Used directly by config/runtime.exs for the SMTP CA bundle — it arrives
+      # transitively via req/finch too, but a direct use deserves a direct dep.
+      {:castore, "~> 1.0"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
       # LiveViewTest DOM assertions (phoenix_live_view 1.2+) need an HTML parser.
