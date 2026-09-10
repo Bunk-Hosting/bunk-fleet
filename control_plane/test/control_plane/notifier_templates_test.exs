@@ -51,16 +51,16 @@ defmodule ControlPlane.Notifier.TemplatesTest do
 
   describe "escaping" do
     test "a name containing markup cannot inject into the body" do
-      html = Templates.confirmation(~s(<script>alert("x")</script>), @url)
+      html = Templates.confirmation(~S|<script>alert("x")</script>|, @url)
 
       refute html =~ "<script>"
       assert html =~ "&lt;script&gt;"
     end
 
     test "a name containing a quote cannot break out of an attribute" do
-      html = Templates.confirmation(~s(Stijn" onmouseover="evil()), @url)
+      html = Templates.confirmation(~S|Stijn" onmouseover="evil|, @url)
 
-      refute html =~ ~s(onmouseover="evil)
+      refute html =~ ~S|onmouseover="evil|
       assert html =~ "&quot;"
     end
 
