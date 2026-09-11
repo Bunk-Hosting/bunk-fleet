@@ -71,13 +71,18 @@ The network, as deployed:
 | `vmbr2` | **the customer VPS network**, `10.10.0.0/19` | **`bridge-ports none`** |
 
 The Proxmox host carries exactly one address — `192.168.1.70/24`. There is no
-public address anywhere on it. `vmbr2`, the bridge every customer VPS sits on,
-has no physical uplink at all; the OpenWRT VM straddles all three bridges and
-NATs VPS traffic outbound through the LAN to the ISP router.
+public address anywhere on it, and it has no address on `vmbr2` at all.
 
-So a customer VPS can reach the internet, and nothing on the internet can reach
-it. The only public ingress to the whole estate is the Cloudflare tunnel, which
-serves the web app over HTTP — not raw SSH to a customer's machine.
+The gateway for the customer network is not on the host: it is on the OpenWRT VM,
+which straddles all three bridges. `eth2` holds `10.10.0.1/19`, the `vps`
+firewall zone forwards to `wan`, and `wan` masquerades. So the outbound half of
+the network genuinely works — a customer VPS reaches the internet, and the
+control plane on the mgmt network reaches the VPS (there is a `mgmt -> vps`
+forwarding), which is why the browser console works today.
+
+The inbound half does not exist. There is no `wan -> vps` forwarding, no DNAT, no
+public address. The only public ingress to the whole estate is the Cloudflare
+tunnel, which serves the web app over HTTP — not raw SSH to a customer's machine.
 
 Meanwhile `vpses.ip_address` holds `10.10.0.20`, `10.10.0.21`, and the dashboard
 hands the customer that address as their SSH endpoint, port 22, user `root`. It
@@ -91,6 +96,12 @@ to hand a second customer a second port.
 What this means: **the product as deployed cannot deliver what a VPS is.** No
 SSH from outside, no website, no game server, nothing a buyer would assume. The
 browser console is the only way in, and it runs through the control plane.
+
+Note also what this makes true of a *second* node: the console works here only
+because the control plane and the VPS network meet at one router. A node in
+another building has no such shared router, so the console needs a path that does
+not depend on the control plane being able to open a connection to the VPS —
+see §3.8.
 
 It also explains a hole in the cost model: `ROADMAP.md` budgets €0.75/month per
 IPv4, and there are none.
@@ -184,20 +195,39 @@ encrypted, scheduled, with a restore that has actually been run. Restore to a
 *different* node is also the cheapest failover story available at this size —
 worth designing for from the start even if it is operated manually at first.
 
-### 3.4 The IP pool is not scoped to a network
+### 3.4 The IP pool is not scoped to a network — **done**
 
-`IpPool.used_ips/2` collects every VPS address in the system and filters by
-numeric range. That is correct only while every node uses a distinct range — but
-the *default* range is the same for every node.
+`IpPool.used_ips/2` collected every VPS address in the system and filtered by
+numeric range. That was correct only while every node used a distinct range — but
+the *default* range was the same for every node, so the second node to enrol with
+default settings would have shared the first one's pool and then collided on the
+fleet-wide unique index.
 
-Two nodes on that default share one address pool: no duplicates (the filter sees
-them), but the pool exhausts fleet-wide instead of per network, and two isolated
-L2 segments that could each legitimately use `10.10.0.20` are treated as one flat
-network. It breaks the day a second node enrols with default settings, and
-nothing currently documents that each node needs a unique subnet.
+Closed by `ControlPlane.Fleet.Subnets`: `10.10.0.0/16` is carved into 64 `/22`
+blocks and enrolment hands each node the lowest free one, behind an advisory
+lock. Allocation is scoped to the node, and the unique index is now
+`(node_id, ip_address)` — the same address on two nodes is two different hosts,
+not a conflict. A node that declares a complete network of its own still keeps
+it; a half-declared one is rejected rather than silently overridden.
 
-Fix: scope allocation to the node's own network rather than to a numeric window
-over the global table.
+### 3.8 The console has no path to a remote node
+
+The browser console SSHes from the control plane to `vpses.ip_address`. That
+works today only because the control plane and the customer network meet at the
+OpenWRT VM. A node in another building — which is the entire point of the second
+node — has a private VPS subnet behind its own NAT, and the control plane has no
+route to it and no public address of its own to be dialled back on.
+
+The WireGuard overlay in the codebase does not solve this: keys and addresses are
+handed out at enrolment, but nothing listens on UDP 51820 anywhere, and the
+endpoint it would advertise (`app.bunkhosting.nl:51820`) points at Cloudflare,
+which does not carry UDP.
+
+The path that does work is the one the agent already uses: outbound HTTPS. On
+request, the control plane sends the node's agent a short-lived connect token;
+the agent dials back over WSS and relays bytes to the VPS's SSH port. It works
+behind NAT, behind CGNAT and on a school network, needs no inbound port on the
+node, and removes the overlay from the console's dependency list entirely.
 
 ### 3.5 Scheduler: what to add, and what not to
 
