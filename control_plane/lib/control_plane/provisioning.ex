@@ -164,7 +164,7 @@ defmodule ControlPlane.Provisioning do
       {:ok, %{node: node}} ->
         # IP allocation, the VPS update and the command insert run in ONE
         # transaction. Allocation takes a per-node advisory lock and the
-        # `vpses_active_ip_uidx` unique index is the DB backstop, so two
+        # `vpses_active_node_ip_uidx` unique index is the DB backstop, so two
         # concurrent creates on the same node can never share an address.
         multi =
           Multi.new()

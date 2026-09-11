@@ -15,7 +15,7 @@ defmodule ControlPlane.Enrollment do
   import Ecto.Query, warn: false
 
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{EnrollToken, Node}
+  alias ControlPlane.Fleet.{EnrollToken, Node, Subnets}
 
   @token_bytes 32
 
@@ -66,17 +66,69 @@ defmodule ControlPlane.Enrollment do
 
     Repo.transaction(fn ->
       with %EnrollToken{} = token <- fetch_valid_token(token_plaintext),
-           {:ok, node} <- create_node(token, hypervisor, agent_token, net),
+           {:ok, vps_network} <- resolve_vps_network(net),
+           {:ok, node} <- create_node(token, hypervisor, agent_token, vps_network),
            {:ok, node, overlay} <- maybe_register_overlay(node, wg),
            {:ok, _token} <- consume_token(token) do
         %{node: node, agent_token: agent_token, overlay: overlay}
       else
+        {:error, :supernet_exhausted} -> Repo.rollback(:supernet_exhausted)
         _ -> Repo.rollback(:invalid_token)
       end
     end)
   end
 
   def enroll(_token_plaintext, _attrs), do: {:error, :invalid_token}
+
+  # The node's VPS network. An agent that declared a complete network at
+  # enrollment keeps it — that is the escape hatch for an operator whose machine
+  # already has a subnet it must live on. Everyone else is handed the lowest free
+  # block of the fleet supernet, so two nodes can never be told to use the same
+  # addresses. Runs inside the enrollment transaction, behind the advisory lock,
+  # because "the lowest free block" is only true until someone else takes it.
+  defp resolve_vps_network(declared) when is_map(declared) do
+    fields = %{
+      vps_gateway: Map.get(declared, :gateway),
+      # JSON gives the prefix as a number, but an agent that sends "22" means the
+      # same thing and must not be treated as "declared nothing".
+      vps_cidr_prefix: normalize_prefix(Map.get(declared, :cidr_prefix)),
+      vps_range_start: Map.get(declared, :range_start),
+      vps_range_end: Map.get(declared, :range_end)
+    }
+
+    # All four or none. A half-declared network is a misconfigured agent, and
+    # quietly handing it an auto-assigned block instead would put its VPSes on a
+    # subnet its own bridge does not carry — so let Node.changeset reject it and
+    # the operator see the enrollment fail.
+    if Enum.any?(fields, fn {_k, v} -> not is_nil(v) end) do
+      {:ok, fields}
+    else
+      auto_vps_network()
+    end
+  end
+
+  defp resolve_vps_network(_declared), do: auto_vps_network()
+
+  defp auto_vps_network do
+    :ok = Subnets.lock(Repo)
+
+    case Subnets.next_free_block(Repo) do
+      {:ok, _index, block} -> {:ok, block}
+      {:error, :supernet_exhausted} = error -> error
+    end
+  end
+
+  defp normalize_prefix(prefix) when is_integer(prefix) and prefix >= 1 and prefix <= 32,
+    do: prefix
+
+  defp normalize_prefix(prefix) when is_binary(prefix) do
+    case Integer.parse(prefix) do
+      {n, ""} -> normalize_prefix(n)
+      _ -> nil
+    end
+  end
+
+  defp normalize_prefix(_), do: nil
 
   # Assigns the node an overlay IP + records its wg key when it supplied one;
   # old agents without WireGuard simply get no overlay.
@@ -137,11 +189,12 @@ defmodule ControlPlane.Enrollment do
       # Cost-centre attribution: which person/team inside Bunk this node belongs
       # to. Optional — metering falls back to the node name when it's nil.
       owner_email: token.owner_email,
-      # The worker's declared VPS IP range (nil for default-network workers).
-      vps_gateway: Map.get(net, :gateway),
-      vps_cidr_prefix: Map.get(net, :cidr_prefix),
-      vps_range_start: Map.get(net, :range_start),
-      vps_range_end: Map.get(net, :range_end)
+      # The node's VPS network: its own if the agent declared one, else the block
+      # the control plane carved for it (see resolve_vps_network/1).
+      vps_gateway: net.vps_gateway,
+      vps_cidr_prefix: net.vps_cidr_prefix,
+      vps_range_start: net.vps_range_start,
+      vps_range_end: net.vps_range_end
     })
     |> Repo.insert()
   end

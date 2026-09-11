@@ -180,7 +180,7 @@ defmodule ControlPlaneWeb.VpsController do
       # is a staff-only override (admin controller sets it); letting a customer set
       # it bypasses IpPool.allocate — they could pin a co-tenant's or the gateway's
       # IP (conflict/MITM) and, because ip_address stays nil, slip past the
-      # vpses_active_ip_uidx uniqueness backstop. Force allocation via the pool.
+      # vpses_active_node_ip_uidx uniqueness backstop. Force allocation via the pool.
     }
   end
 

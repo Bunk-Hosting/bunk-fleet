@@ -79,7 +79,7 @@ defmodule ControlPlane.Fleet.Vps do
     |> assoc_constraint(:region)
     |> assoc_constraint(:node)
     |> assoc_constraint(:user)
-    |> unique_constraint(:ip_address, name: :vpses_active_ip_uidx)
+    |> unique_constraint(:ip_address, name: :vpses_active_node_ip_uidx)
   end
 
   # Hard platform bounds on the requested spec. The lower bounds (> 0) are a
