@@ -151,6 +151,128 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     end
   end
 
+  # --- restore points --------------------------------------------------------
+
+  describe "backups" do
+    defp done_backup(vps) do
+      %ControlPlane.Backups.VpsBackup{}
+      |> ControlPlane.Backups.VpsBackup.changeset(%{
+        vps_id: vps.id,
+        node_id: vps.node_id,
+        status: :done,
+        volid: "local:backup/vzdump-qemu-#{System.unique_integer([:positive])}.vma.zst",
+        started_at: DateTime.utc_now() |> DateTime.add(-3600) |> DateTime.truncate(:second),
+        finished_at: DateTime.utc_now() |> DateTime.add(-3500) |> DateTime.truncate(:second)
+      })
+      |> Repo.insert!()
+    end
+
+    test "lists the owner's restore points", %{conn: conn, region: region, user: user} do
+      mine = create_vps_for(user, region, "mine")
+      done_backup(mine)
+
+      assert %{"backups" => [backup]} =
+               conn
+               |> auth(user)
+               |> get(~p"/api/v1/vpses/#{mine.id}/backups")
+               |> json_response(200)
+
+      assert backup["status"] == "done"
+      # The volid is the node's internal handle on a file; no business of a
+      # customer's and not in the response.
+      refute Map.has_key?(backup, "volid")
+    end
+
+    test "another user's restore points are not found", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
+      theirs = create_vps_for(other, region, "theirs")
+      done_backup(theirs)
+
+      assert conn
+             |> auth(user)
+             |> get(~p"/api/v1/vpses/#{theirs.id}/backups")
+             |> json_response(404)
+    end
+
+    test "restoring puts the VPS into :restoring", %{conn: conn, region: region, user: user} do
+      mine = create_vps_for(user, region, "mine")
+      {:ok, active} = mine |> Vps.changeset(%{status: :active}) |> Repo.update()
+      {:ok, _} = active |> Ecto.Changeset.change(provider_vm_id: "106") |> Repo.update()
+      point = done_backup(active)
+
+      assert %{"vps" => vps} =
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses/#{active.id}/backups/#{point.id}/restore")
+               |> json_response(202)
+
+      assert vps["status"] == "restoring"
+    end
+
+    test "restoring from another user's backup is not found", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
+      mine = create_vps_for(user, region, "mine")
+
+      {:ok, mine} =
+        mine |> Ecto.Changeset.change(status: :active, provider_vm_id: "106") |> Repo.update()
+
+      theirs = create_vps_for(other, region, "theirs")
+      point = done_backup(theirs)
+
+      assert conn
+             |> auth(user)
+             |> post(~p"/api/v1/vpses/#{mine.id}/backups/#{point.id}/restore")
+             |> json_response(404)
+    end
+
+    test "restoring a VPS that has no guest yet says so, rather than 500", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      # Still provisioning: no guest on the node to restore onto. Both "no guest"
+      # and "wrong status" are true here; the API answers with the one that tells
+      # the customer something.
+      mine = create_vps_for(user, region, "mine")
+      point = done_backup(mine)
+
+      assert %{"error" => "not_provisioned"} =
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses/#{mine.id}/backups/#{point.id}/restore")
+               |> json_response(409)
+    end
+
+    test "restoring a VPS that is being deleted is a conflict", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      mine = create_vps_for(user, region, "mine")
+
+      {:ok, deleting} =
+        mine
+        |> Ecto.Changeset.change(status: :deleting, provider_vm_id: "106")
+        |> Repo.update()
+
+      point = done_backup(deleting)
+
+      assert %{"error" => "invalid_status_deleting"} =
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses/#{deleting.id}/backups/#{point.id}/restore")
+               |> json_response(409)
+    end
+  end
+
   # --- auth gate -------------------------------------------------------------
 
   test "rejects unauthenticated requests", %{conn: conn} do

@@ -27,8 +27,9 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 	}
 
 	var p struct {
-		VMID  string `json:"vm_id"`
-		VolID string `json:"volid"`
+		VMID       string `json:"vm_id"`
+		VolID      string `json:"volid"`
+		StartAfter bool   `json:"start_after"`
 	}
 	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
 		logger.Error("backup: bad payload", "id", cmd.ID, "err", err)
@@ -67,5 +68,37 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 		}
 
 		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done"})
+
+	case transport.CmdRestoreBackup:
+		// Loud on purpose: this overwrites a customer's disk, and the log is the
+		// only record on the node of when it happened and from what.
+		logger.Warn("restoring vm from backup — the current disk will be replaced",
+			"id", cmd.ID, "vm_id", p.VMID, "volid", p.VolID)
+
+		if err := backups.RestoreVM(ctx, p.VMID, p.VolID); err != nil {
+			logger.Error("restore failed", "id", cmd.ID, "vm_id", p.VMID, "err", err)
+			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+				Status: "failed", VMID: p.VMID, Error: err.Error(),
+			})
+			return
+		}
+
+		if p.StartAfter {
+			// The guest was running before; leave it running after. A failure to
+			// start is not a failed restore — the disk is back and the customer
+			// can start it themselves — but it is worth saying out loud.
+			if err := prov.PowerOn(ctx, p.VMID); err != nil {
+				logger.Error("restored, but could not start the guest again",
+					"id", cmd.ID, "vm_id", p.VMID, "err", err)
+				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+					Status: "failed", VMID: p.VMID,
+					Error: "restored from backup, but starting it again failed: " + err.Error(),
+				})
+				return
+			}
+		}
+
+		logger.Info("restore done", "id", cmd.ID, "vm_id", p.VMID, "started", p.StartAfter)
+		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
 	}
 }

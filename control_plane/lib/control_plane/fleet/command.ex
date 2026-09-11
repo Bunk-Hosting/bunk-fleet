@@ -27,7 +27,11 @@ defmodule ControlPlane.Fleet.Command do
         # VPS itself — they act on archives beside it — so they finalise into
         # `vps_backups` rather than into the VPS's status.
         :backup,
-        :delete_backup
+        :delete_backup,
+        # Rolling a guest back to an archive. Unlike the other two this DOES
+        # change the VPS — it overwrites its disk — so it finalises into the
+        # VPS's status as well as the backup row.
+        :restore_backup
       ]
 
     field :payload, :map, default: %{}

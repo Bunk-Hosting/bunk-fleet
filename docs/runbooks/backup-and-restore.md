@@ -16,11 +16,20 @@ guests it runs with `vzdump` in snapshot mode — the guest keeps running — to
 own storage, nightly, two kept per VPS. Customers see them as restore points on
 `GET /api/v1/vpses/:id/backups`, failures included.
 
+Restoring is a button on the VPS page: pick a restore point, confirm, and the
+node stops the guest, runs `qmrestore --force`, and starts it again if it was
+running. The VPS sits in `restoring` meanwhile, which blocks everything else on
+it — including a second restore over the same disk.
+
 **Not protected:** those archives sit on the same node as the VPS they came
 from. They cover a customer who broke their own machine; they do not cover a node
-losing its storage. And restoring one is currently a manual `qmrestore` on the
-node — there is no button. Say both out loud to anyone asking what they are
-buying.
+losing its storage. Say that out loud to anyone asking what they are buying.
+
+**What a restore costs the customer:** everything written since the backup was
+taken. The control plane does not quietly take a safety copy first — that would
+double the time, can fail for space on the node, and with two archives kept it
+would push out the older restore point they might actually have wanted. The
+confirmation says so before the button does anything.
 
 ## How it works
 

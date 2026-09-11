@@ -817,6 +817,57 @@ defmodule ControlPlane.Provisioning do
     multi
   end
 
+  # A restore overwrote the guest's disk. Put the VPS back into the state the
+  # customer had it in — running if it was running — and out of :restoring, which
+  # has been blocking everything else on this machine.
+  defp finalize_vps(multi, %Command{kind: :restore_backup, vps_id: vps_id, payload: p}, :done, _r)
+       when not is_nil(vps_id) do
+    target = if p["start_after"], do: :active, else: :stopped
+
+    Multi.run(multi, :vps, fn repo, _changes ->
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
+
+      if vps.status == :restoring do
+        # Reset the meter watermark: the VPS was not serving anyone while its
+        # disk was being overwritten, and metering charges `now - last_metered_at`.
+        attrs = %{status: target}
+        changeset = Vps.changeset(vps, attrs)
+
+        changeset =
+          if target == :active,
+            do:
+              Ecto.Changeset.put_change(
+                changeset,
+                :last_metered_at,
+                DateTime.utc_now() |> DateTime.truncate(:second)
+              ),
+            else: changeset
+
+        repo.update(changeset)
+      else
+        # Something else moved it — a delete that raced the restore. Leave it be.
+        {:ok, vps}
+      end
+    end)
+  end
+
+  defp finalize_vps(multi, %Command{kind: :restore_backup, vps_id: vps_id}, :failed, result)
+       when not is_nil(vps_id) do
+    Logger.error("restore failed for vps #{vps_id}: #{inspect(result["error"])}")
+
+    # Out of :restoring either way: leaving it there would block the customer
+    # from touching their own machine forever over a failure that already
+    # happened. :stopped, not :active — after a failed qmrestore the disk may be
+    # half-written, and starting it automatically is the wrong default.
+    Multi.run(multi, :vps, fn repo, _changes ->
+      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
+
+      if vps.status == :restoring,
+        do: vps |> Vps.changeset(%{status: :stopped}) |> repo.update(),
+        else: {:ok, vps}
+    end)
+  end
+
   # Non-provision/non-delete commands (or those without an associated VPS) only
   # update the command itself.
   defp finalize_vps(multi, _command, _outcome, _result), do: multi

@@ -9,6 +9,7 @@ const statusConfig: Record<
   STOPPED: { variant: "secondary", label: "Gestopt" },
   PENDING: { variant: "warning", label: "In wachtrij" },
   PROVISIONING: { variant: "warning", label: "Wordt aangemaakt" },
+  RESTORING: { variant: "warning", label: "Back-up terugzetten" },
   ERROR: { variant: "destructive", label: "Fout" },
   DELETING: { variant: "warning", label: "Wordt verwijderd" },
   DELETED: { variant: "outline", label: "Verwijderd" },

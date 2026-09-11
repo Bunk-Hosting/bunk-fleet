@@ -143,3 +143,44 @@ func storageOf(volid string) (string, error) {
 func isNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "status 404")
 }
+
+// RestoreVM overwrites the guest's disk from an archive.
+//
+// The guest is stopped first — `qmrestore` refuses to touch a running VM, and
+// for good reason: it is replacing the disk underneath it. It is left stopped
+// afterwards. Whether it should be running again is the control plane's
+// decision, because only it knows what state the customer had it in.
+//
+// This destroys whatever is on the disk now. Everything that makes that safe —
+// ownership, an archive that belongs to this VPS, a customer who was told — has
+// happened before the command reached here.
+func (c *Client) RestoreVM(ctx context.Context, id, volid string) error {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return fmt.Errorf("proxmox: restore: %q is not a vmid", id)
+	}
+	if _, err := storageOf(volid); err != nil {
+		return err
+	}
+
+	if err := c.PowerOff(ctx, id); err != nil {
+		return fmt.Errorf("proxmox: restore vm %d: stopping it first: %w", vmid, err)
+	}
+
+	form := url.Values{
+		"vmid":    {strconv.Itoa(vmid)},
+		"archive": {volid},
+		// force: the guest exists and is exactly what we mean to replace.
+		"force": {"1"},
+	}
+
+	var task taskResponse
+	path := fmt.Sprintf("/nodes/%s/qmrestore", c.cfg.Node)
+	if err := c.doJSON(ctx, http.MethodPost, path, form, &task); err != nil {
+		return fmt.Errorf("proxmox: qmrestore vm %d: %w", vmid, err)
+	}
+	if err := c.waitTask(ctx, task.Data); err != nil {
+		return fmt.Errorf("proxmox: qmrestore vm %d: %w", vmid, err)
+	}
+	return nil
+}

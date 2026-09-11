@@ -126,6 +126,7 @@ const STATUS_MAP: Record<string, VpsStatus> = {
   paused: "STOPPED",
   queued: "PENDING",
   provisioning: "PROVISIONING",
+  restoring: "RESTORING",
   failed: "ERROR",
   deleting: "DELETING",
   deleted: "DELETED",
@@ -327,6 +328,15 @@ export const packagesApi = {
 };
 
 // ── VPS ───────────────────────────────────────────────────────────────
+export interface VpsBackup {
+  id: string;
+  status: "pending" | "running" | "done" | "failed";
+  size_bytes: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
 export interface BunkRegion {
   id: string;
   code: string;
@@ -394,6 +404,16 @@ export const vpsApi = {
       },
     };
   },
+
+  /** A VPS's restore points, newest first. Failures are listed too — they are news. */
+  backups: async (id: string): Promise<VpsBackup[]> =>
+    (await api.get<{ backups: VpsBackup[] }>(`/vpses/${id}/backups`)).data.backups,
+  /**
+   * Roll a VPS back to one of its restore points. Destructive: everything
+   * written since that backup is gone.
+   */
+  restore: (id: string, backupId: string) =>
+    api.post(`/vpses/${id}/backups/${backupId}/restore`),
 
   delete: (id: string) => api.delete(`/vpses/${id}`),
   start: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/start`),

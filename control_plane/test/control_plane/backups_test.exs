@@ -253,6 +253,128 @@ defmodule ControlPlane.BackupsTest do
     end
   end
 
+  describe "restoring" do
+    defp restorable_backup(machine) do
+      backup(machine, %{
+        status: :done,
+        volid: "local:backup/vzdump-qemu-106-2026_09_11.vma.zst",
+        started_at: ago(3600),
+        finished_at: ago(3500)
+      })
+    end
+
+    test "a running VPS goes to :restoring and is told to come back running" do
+      r = region()
+      machine = vps(r, node_in(r))
+      point = restorable_backup(machine)
+
+      {:ok, restoring} = Backups.restore(machine, point.id)
+
+      assert restoring.status == :restoring
+      assert [command] = commands_for(machine.id, :restore_backup)
+      assert command.payload["volid"] == point.volid
+      assert command.payload["start_after"] == true
+    end
+
+    test "a stopped VPS is left stopped afterwards" do
+      r = region()
+      machine = vps(r, node_in(r), %{status: :stopped})
+      point = restorable_backup(machine)
+
+      {:ok, _} = Backups.restore(machine, point.id)
+
+      assert [command] = commands_for(machine.id, :restore_backup)
+      assert command.payload["start_after"] == false
+    end
+
+    test "a second restore is refused while the first is running" do
+      # Both would tell the node to overwrite the same disk, and the second would
+      # land on a machine halfway through being replaced.
+      r = region()
+      machine = vps(r, node_in(r))
+      point = restorable_backup(machine)
+
+      {:ok, restoring} = Backups.restore(machine, point.id)
+
+      assert {:error, {:invalid_status, :restoring}} = Backups.restore(restoring, point.id)
+      assert length(commands_for(machine.id, :restore_backup)) == 1
+    end
+
+    test "another customer's backup is not found, not forbidden" do
+      # Whether some other VPS's backup exists is none of this caller's business.
+      r = region()
+      node = node_in(r)
+      mine = vps(r, node)
+      theirs = vps(r, node)
+      point = restorable_backup(theirs)
+
+      assert {:error, :not_found} = Backups.restore(mine, point.id)
+    end
+
+    test "a failed backup is not a restore point" do
+      r = region()
+      machine = vps(r, node_in(r))
+      point = backup(machine, %{status: :failed, error: "storage full", started_at: ago(3600)})
+
+      assert {:error, :backup_not_restorable} = Backups.restore(machine, point.id)
+    end
+
+    test "a backup with no archive behind it is not a restore point" do
+      r = region()
+      machine = vps(r, node_in(r))
+      point = backup(machine, %{status: :done, volid: nil, started_at: ago(3600)})
+
+      assert {:error, :backup_not_restorable} = Backups.restore(machine, point.id)
+    end
+
+    test "a VPS that is not up or down cannot be restored onto" do
+      r = region()
+      machine = vps(r, node_in(r), %{status: :provisioning})
+      point = restorable_backup(machine)
+
+      assert {:error, {:invalid_status, :provisioning}} = Backups.restore(machine, point.id)
+    end
+
+    test "an unknown backup is not found" do
+      r = region()
+      machine = vps(r, node_in(r))
+
+      assert {:error, :not_found} = Backups.restore(machine, Ecto.UUID.generate())
+    end
+
+    test "a finished restore puts a running VPS back to running" do
+      r = region()
+      machine = vps(r, node_in(r))
+      point = restorable_backup(machine)
+      {:ok, _} = Backups.restore(machine, point.id)
+      [command] = commands_for(machine.id, :restore_backup)
+
+      {:ok, _} = ControlPlane.Provisioning.apply_result(command, %{"status" => "done"})
+
+      assert Repo.get!(Vps, machine.id).status == :active
+    end
+
+    test "a failed restore leaves the VPS stopped, not stuck in :restoring" do
+      # Stopped rather than active: after a failed qmrestore the disk may be
+      # half-written, and starting it automatically is the wrong default. Stuck
+      # in :restoring would be worse still — the customer could not touch their
+      # own machine over a failure that already happened.
+      r = region()
+      machine = vps(r, node_in(r))
+      point = restorable_backup(machine)
+      {:ok, _} = Backups.restore(machine, point.id)
+      [command] = commands_for(machine.id, :restore_backup)
+
+      {:ok, _} =
+        ControlPlane.Provisioning.apply_result(command, %{
+          "status" => "failed",
+          "error" => "archive is corrupt"
+        })
+
+      assert Repo.get!(Vps, machine.id).status == :stopped
+    end
+  end
+
   describe "retention" do
     test "keeps the newest and queues deletion of the rest" do
       r = region()

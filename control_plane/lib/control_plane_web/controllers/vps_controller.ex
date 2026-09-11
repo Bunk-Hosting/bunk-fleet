@@ -144,6 +144,27 @@ defmodule ControlPlaneWeb.VpsController do
     }
   end
 
+  @doc """
+  Rolls an owned VPS back to one of its own restore points.
+
+  Destructive: everything written since that backup is gone. The VPS goes to
+  `:restoring` until the node reports back, which blocks every other action on it
+  — including a second restore over the same disk.
+  """
+  def restore(conn, %{"id" => id, "backup_id" => backup_id}) do
+    with {:ok, uuid} <- valid_id(id),
+         {:ok, backup_uuid} <- valid_id(backup_id),
+         %Vps{} = vps <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, uuid),
+         {:ok, restoring} <- Backups.restore(vps, backup_uuid) do
+      conn |> put_status(:accepted) |> json(%{vps: vps_json(restoring)})
+    else
+      {:error, {:invalid_status, status}} -> error(conn, :conflict, "invalid_status_#{status}")
+      {:error, :backup_not_restorable} -> error(conn, :conflict, "backup_not_restorable")
+      {:error, :not_provisioned} -> error(conn, :conflict, "not_provisioned")
+      _ -> not_found(conn)
+    end
+  end
+
   @doc "Starts an owned, stopped VPS. 404 if not owned (existence is never leaked)."
   def start(conn, params), do: power(conn, params, &Provisioning.start_vps/1)
 

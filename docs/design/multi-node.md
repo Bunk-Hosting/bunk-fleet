@@ -220,8 +220,11 @@ as the VPS**, so a node losing its storage loses both. Moving them off-node, and
 restoring to a *different* node, remains the cheapest failover story available at
 this size and is the next step here.
 
-Restoring is also not built yet: an archive exists and can be restored by hand
-through Proxmox, but there is no button and no command for it.
+Restoring is built: a button on the VPS page, a `:restore_backup` command, and a
+`:restoring` status that blocks every other action on the machine while its disk
+is being overwritten — including a second restore, which would race the first.
+A failed restore leaves the VPS stopped rather than running, because after a
+half-written `qmrestore` starting it automatically is the wrong default.
 
 The rehearsal also ran on the machine the backup came from, which proves the
 archive is restorable but not that recovery works with that machine gone.

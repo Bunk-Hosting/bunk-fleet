@@ -47,6 +47,9 @@ const (
 	CmdBackup CommandKind = "backup"
 	// CmdDeleteBackup removes one archive by the handle a backup produced.
 	CmdDeleteBackup CommandKind = "delete_backup"
+	// CmdRestoreBackup overwrites a guest's disk from an archive. Payload carries
+	// the target id, the archive, and whether to start the guest afterwards.
+	CmdRestoreBackup CommandKind = "restore_backup"
 	// CmdConsoleConnect asks the agent to bridge one browser console to a VPS on
 	// this node. Unlike the verbs above it changes nothing and reports no result:
 	// it is a request to open a connection, delivered on the command poll because

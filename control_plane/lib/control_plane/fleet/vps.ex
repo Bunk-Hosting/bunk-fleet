@@ -15,7 +15,21 @@ defmodule ControlPlane.Fleet.Vps do
     field :name, :string
 
     field :status, Ecto.Enum,
-      values: [:queued, :provisioning, :active, :stopped, :paused, :failed, :deleting, :deleted],
+      values: [
+        :queued,
+        :provisioning,
+        :active,
+        :stopped,
+        :paused,
+        # Being rolled back to a backup. A state of its own rather than reusing
+        # :provisioning, because the disk is being overwritten with older data
+        # and every other action on this VPS has to wait — including a second
+        # restore, which would race the first over the same disk.
+        :restoring,
+        :failed,
+        :deleting,
+        :deleted
+      ],
       default: :queued
 
     # Requested spec.

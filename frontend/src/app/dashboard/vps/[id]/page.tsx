@@ -32,12 +32,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi } from "@/lib/api";
+import type { VpsBackup } from "@/lib/api";
 import { formatDate, getOsLabel } from "@/lib/utils";
 import type { Vps, VpsCredentials, VpsStatus } from "@/lib/types";
 
 const TRANSITIONAL_STATUSES: VpsStatus[] = [
   "PENDING",
   "PROVISIONING",
+  // A restore takes minutes and ends by itself; polling is what turns the page
+  // back into a working VPS without the customer reloading it.
+  "RESTORING",
   "DELETING",
 ];
 const POLL_INTERVAL_MS = 10_000;
@@ -52,6 +56,9 @@ export default function VpsDetailPage() {
 
   const [vps, setVps] = useState<Vps | null>(null);
   const [credentials, setCredentials] = useState<VpsCredentials | null>(null);
+  const [backups, setBackups] = useState<VpsBackup[]>([]);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [credentialsLoading, setCredentialsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -81,6 +88,43 @@ export default function VpsDetailPage() {
     },
     [id, toast]
   );
+
+  const fetchBackups = useCallback(async () => {
+    try {
+      setBackups(await vpsApi.backups(id));
+    } catch {
+      // Restore points are a panel on a page, not the page: failing to load them
+      // should not bury the rest of it under an error.
+    }
+  }, [id]);
+
+  const restoreBackup = async (backup: VpsBackup) => {
+    setRestoring(backup.id);
+    setConfirmRestore(null);
+    try {
+      await vpsApi.restore(id, backup.id);
+      toast({
+        title: "Terugzetten gestart",
+        description:
+          "Je VPS is even niet bereikbaar terwijl de schijf wordt teruggezet. " +
+          "Zodra dat klaar is komt hij vanzelf terug.",
+      });
+      await fetchVps(true);
+      await fetchBackups();
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      toast({
+        title: "Terugzetten mislukt",
+        description:
+          status === 409
+            ? "Deze VPS is nu ergens anders mee bezig. Probeer het zo opnieuw."
+            : "Kon het terugzetten niet starten.",
+        variant: "destructive",
+      });
+    } finally {
+      setRestoring(null);
+    }
+  };
 
   const fetchCredentials = async () => {
     if (credentials) {
@@ -112,7 +156,8 @@ export default function VpsDetailPage() {
 
   useEffect(() => {
     fetchVps();
-  }, [fetchVps]);
+    fetchBackups();
+  }, [fetchVps, fetchBackups]);
 
   // Poll zolang de VPS in een overgangsstatus zit, of kort na een
   // start/stop-actie zodat de nieuwe status zichtbaar wordt.
@@ -502,7 +547,86 @@ export default function VpsDetailPage() {
             </div>
           </CardContent>
         </Card>
+        {/* Restore points */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <HardDrive className="h-5 w-5" />
+              Back-ups
+            </CardTitle>
+            <CardDescription>
+              Elke nacht wordt een kopie van je schijf gemaakt; de laatste twee
+              bewaren we. Ze staan op dezelfde machine als je VPS — genoeg om
+              terug te gaan als je zelf iets sloopt, niet om een kapotte machine
+              te overleven.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {backups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nog geen back-up. De eerste volgt vannacht.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {backups.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="font-medium">
+                        {b.finished_at
+                          ? formatDate(b.finished_at)
+                          : b.started_at
+                            ? `Bezig sinds ${formatDate(b.started_at)}`
+                            : "In de wachtrij"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {b.status === "failed"
+                          ? `Mislukt — ${b.error ?? "onbekende fout"}`
+                          : b.size_bytes
+                            ? `${(b.size_bytes / 1024 ** 3).toFixed(1)} GB`
+                            : "—"}
+                      </p>
+                    </div>
+                    {b.status === "done" && (
+                      <ConfirmDialog
+                        open={confirmRestore === b.id}
+                        onOpenChange={(open) => setConfirmRestore(open ? b.id : null)}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              restoring !== null ||
+                              !(vps.status === "ACTIVE" || vps.status === "STOPPED")
+                            }
+                          >
+                            {restoring === b.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Terugzetten"
+                            )}
+                          </Button>
+                        }
+                        title="Back-up terugzetten?"
+                        description={`Je schijf wordt vervangen door de kopie van ${
+                          b.finished_at ? formatDate(b.finished_at) : "deze back-up"
+                        }. Alles wat je sindsdien hebt veranderd is weg en komt niet terug.`}
+                        confirmLabel="Terugzetten"
+                        variant="destructive"
+                        loading={restoring === b.id}
+                        onConfirm={() => restoreBackup(b)}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
     </div>
   );
 }

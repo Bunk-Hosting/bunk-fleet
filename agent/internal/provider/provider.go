@@ -117,6 +117,11 @@ type Backups interface {
 	// DeleteBackup removes an archive by the handle BackupVM returned. Deleting
 	// one that is already gone is success.
 	DeleteBackup(ctx context.Context, volid string) error
+
+	// RestoreVM overwrites the guest's disk with an archive, replacing whatever
+	// is there now. The guest is left stopped; the caller decides whether to
+	// start it, because only the caller knows what state the customer had it in.
+	RestoreVM(ctx context.Context, id, volid string) error
 }
 
 // Backup is what a provider hands back after archiving a guest.

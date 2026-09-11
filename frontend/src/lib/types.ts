@@ -16,6 +16,7 @@ export type VpsStatus =
   | "PROVISIONING"
   | "ACTIVE"
   | "STOPPED"
+  | "RESTORING"
   | "DELETING"
   | "DELETED"
   | "ERROR";

@@ -178,6 +178,75 @@ defmodule ControlPlane.Backups do
     end
   end
 
+  @doc """
+  Rolls a VPS back to `backup_id`.
+
+  Destructive and deliberately narrow: the archive must belong to this VPS, must
+  have completed, and must still have a handle on a file. The VPS goes to
+  `:restoring` for the duration, which blocks every other action on it —
+  including a second restore, which would race the first over the same disk.
+
+  What the customer loses is everything written since the backup was taken. The
+  control plane does not take a safety copy first: that would double the time,
+  can fail for space on the node, and with two archives kept it would push out
+  the older restore point the customer might actually have wanted. Saying so
+  plainly before the button is pressed is the honest guard, not a hidden one.
+  """
+  def restore(%Vps{} = vps, backup_id) do
+    with %VpsBackup{} = backup <- Repo.get(VpsBackup, backup_id),
+         :ok <- restorable(vps, backup) do
+      Multi.new()
+      |> Multi.run(:vps, fn repo, _ ->
+        # FOR UPDATE, and re-check the status inside the lock: two restores
+        # dispatched at once would otherwise both pass the check above and both
+        # tell the node to overwrite the same disk.
+        locked = repo.one!(from v in Vps, where: v.id == ^vps.id, lock: "FOR UPDATE")
+
+        if locked.status in [:active, :stopped] do
+          locked |> Vps.changeset(%{status: :restoring}) |> repo.update()
+        else
+          {:error, {:invalid_status, locked.status}}
+        end
+      end)
+      |> Multi.insert(:command, fn %{vps: locked} ->
+        Command.changeset(%Command{}, %{
+          node_id: locked.node_id,
+          vps_id: locked.id,
+          kind: :restore_backup,
+          status: :pending,
+          payload: %{
+            "vm_id" => locked.provider_vm_id,
+            "volid" => backup.volid,
+            # What to leave the guest as afterwards. A VPS that was running
+            # before a restore should be running after it.
+            "start_after" => vps.status == :active
+          }
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{vps: restoring}} -> {:ok, restoring}
+        {:error, _step, reason, _changes} -> {:error, reason}
+      end
+    else
+      nil -> {:error, :not_found}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp restorable(%Vps{} = vps, %VpsBackup{} = backup) do
+    cond do
+      # Not found rather than forbidden: whether some other customer's backup
+      # exists is none of this caller's business.
+      backup.vps_id != vps.id -> {:error, :not_found}
+      backup.status != :done -> {:error, :backup_not_restorable}
+      is_nil(backup.volid) -> {:error, :backup_not_restorable}
+      is_nil(vps.node_id) or is_nil(vps.provider_vm_id) -> {:error, :not_provisioned}
+      vps.status not in [:active, :stopped] -> {:error, {:invalid_status, vps.status}}
+      true -> :ok
+    end
+  end
+
   @doc "A VPS's restore points, newest first. Failures included — they are news."
   def list_for_vps(vps_id) do
     Repo.all(

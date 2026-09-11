@@ -369,7 +369,7 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
 		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
 
-	case transport.CmdBackup, transport.CmdDeleteBackup:
+	case transport.CmdBackup, transport.CmdDeleteBackup, transport.CmdRestoreBackup:
 		handleBackupCommand(ctx, logger, prov, cp, cmd)
 
 	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
