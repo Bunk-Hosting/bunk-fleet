@@ -118,68 +118,15 @@ if config_env() == :prod do
   # how MOLLIE_API_KEY/TURNSTILE_SECRET_KEY degrade — but mail genuinely will not
   # be delivered (Swoosh.Adapters.Local just stores it in the release's memory),
   # so this is loud in the boot log rather than a silent no-op.
-  if smtp_host = System.get_env("SMTP_HOST") do
-    smtp_port = String.to_integer(System.get_env("SMTP_PORT") || "587")
-
-    # Two mutually exclusive TLS modes, picked from the port (override with
-    # SMTP_SSL): 465 is implicit SSL — the socket is encrypted before the SMTP
-    # conversation starts — while 587 connects in the clear and upgrades via
-    # STARTTLS. Sending 465 traffic with the 587 settings just hangs, so this is
-    # derived rather than left to a default that silently fits only one of them.
-    smtp_ssl =
-      case System.get_env("SMTP_SSL") do
-        v when v in ["1", "true"] -> true
-        v when v in ["0", "false"] -> false
-        _ -> smtp_port == 465
-      end
-
-    # Erlang's :ssl does NOT read the OS trust store the way Python or curl do,
-    # while gen_smtp defaults to verify_peer — so with no explicit CA bundle every
-    # send dies with {:options, :incompatible, [verify: :verify_peer, cacerts:
-    # :undefined]}. Prefer castore's pinned bundle over whatever the base image
-    # happens to ship; fall back to the OS store, and never let this raise during
-    # config evaluation, because that would take the whole boot down over mail.
-    cacertfile =
-      System.get_env("SMTP_CACERTFILE") ||
-        try do
-          CAStore.file_path()
-        rescue
-          _ -> "/etc/ssl/certs/ca-certificates.crt"
-        end
-
-    ca_opts = [
-      verify: :verify_peer,
-      cacertfile: cacertfile,
-      depth: 4,
-      server_name_indication: String.to_charlist(smtp_host),
-      customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
-    ]
-
-    # WHERE those options go differs per mode and gen_smtp silently ignores the
-    # wrong key — verified against the live relay, not inferred: an implicit-SSL
-    # socket (465) reads them from :sockopts, a STARTTLS upgrade (587) from
-    # :tls_options. It's either/or, never both: :sockopts is passed to a plain
-    # gen_tcp connect in the STARTTLS case, where SSL options are an error.
-    tls_config =
-      if smtp_ssl do
-        [ssl: true, tls: :never, sockopts: ca_opts]
-      else
-        [ssl: false, tls: :always, tls_options: ca_opts]
-      end
-
+  if System.get_env("SMTP_HOST") do
+    # The TLS-mode/CA-bundle derivation is deliberately NOT inline here: it is
+    # subtle (port decides :sockopts vs :tls_options, and gen_smtp ignores the
+    # wrong one without a word) and therefore lives in a tested module. Calling
+    # it at this point is safe — modules are loaded before runtime.exs is
+    # evaluated — and it needs no running application.
     config :control_plane,
            ControlPlane.Mailer,
-           [
-             adapter: Swoosh.Adapters.SMTP,
-             relay: smtp_host,
-             port: smtp_port,
-             username: System.get_env("SMTP_USERNAME"),
-             password: System.get_env("SMTP_PASSWORD"),
-             # Fail loudly on a rejected credential instead of silently sending
-             # unauthenticated (which every relay worth using would then bounce).
-             auth: :always,
-             retries: 2
-           ] ++ tls_config
+           ControlPlane.Mailer.Config.smtp_options_from_system_env()
 
     config :control_plane, :mail,
       from_email: System.get_env("MAIL_FROM_ADDRESS") || "noreply@#{host}",
