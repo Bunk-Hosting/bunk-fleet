@@ -60,4 +60,23 @@ defmodule ControlPlane.Console.HostKeys do
   end
 
   def verify(_vps_id, _fingerprint), do: false
+
+  @doc """
+  Forgets the pinned key for a VPS, so the next console connection pins afresh.
+
+  Called when the disk is legitimately replaced — a restore from backup. The
+  guest's host key goes back to whatever it was when the archive was taken, which
+  TOFU would otherwise read as exactly the attack it exists to catch, locking the
+  customer out of the console they just used to fix their machine.
+
+  Only ever driven by an action the customer asked for. Nothing an operator or a
+  node can say clears a pin.
+  """
+  def forget(vps_id) do
+    {count, _} =
+      Repo.update_all(from(v in Vps, where: v.id == ^vps_id), set: [ssh_host_key: nil])
+
+    Logger.info("console: cleared pinned host key for vps #{vps_id} after a disk restore")
+    {:ok, count}
+  end
 end

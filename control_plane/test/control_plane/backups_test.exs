@@ -354,6 +354,39 @@ defmodule ControlPlane.BackupsTest do
       assert Repo.get!(Vps, machine.id).status == :active
     end
 
+    test "a finished restore forgets the pinned SSH host key" do
+      # The disk is older, so the guest's host key is older. TOFU would read that
+      # as exactly the attack it exists to catch and refuse the console — locking
+      # the customer out of what they would use to check the restore worked.
+      r = region()
+      machine = vps(r, node_in(r))
+      {:ok, _} = machine |> Ecto.Changeset.change(ssh_host_key: "SHA256:old") |> Repo.update()
+      point = restorable_backup(machine)
+      {:ok, _} = Backups.restore(machine, point.id)
+      [command] = commands_for(machine.id, :restore_backup)
+
+      {:ok, _} = ControlPlane.Provisioning.apply_result(command, %{"status" => "done"})
+
+      assert is_nil(Repo.get!(Vps, machine.id).ssh_host_key)
+    end
+
+    test "a failed restore keeps the pin, because nothing was replaced" do
+      r = region()
+      machine = vps(r, node_in(r))
+      {:ok, _} = machine |> Ecto.Changeset.change(ssh_host_key: "SHA256:old") |> Repo.update()
+      point = restorable_backup(machine)
+      {:ok, _} = Backups.restore(machine, point.id)
+      [command] = commands_for(machine.id, :restore_backup)
+
+      {:ok, _} =
+        ControlPlane.Provisioning.apply_result(command, %{
+          "status" => "failed",
+          "error" => "archive is corrupt"
+        })
+
+      assert Repo.get!(Vps, machine.id).ssh_host_key == "SHA256:old"
+    end
+
     test "a failed restore leaves the VPS stopped, not stuck in :restoring" do
       # Stopped rather than active: after a failed qmrestore the disk may be
       # half-written, and starting it automatically is the wrong default. Stuck

@@ -843,6 +843,12 @@ defmodule ControlPlane.Provisioning do
               ),
             else: changeset
 
+        # The disk is older, so the guest's SSH host key is older too. TOFU would
+        # read that as exactly the attack it exists to catch and refuse the
+        # console — locking the customer out of the thing they would use to check
+        # the restore worked. Forget the pin; the next connection pins afresh.
+        ControlPlane.Console.HostKeys.forget(vps.id)
+
         repo.update(changeset)
       else
         # Something else moved it — a delete that raced the restore. Leave it be.
