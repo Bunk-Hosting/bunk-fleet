@@ -57,25 +57,47 @@ The cost model in `ROADMAP.md` (€0.47–0.62 per sellable GB RAM) assumes the
 reference machine: 2× Xeon, 256 GB, 8× 1.92 TB. On the current box those numbers
 do not hold, because the fixed cost is spread over a fraction of the capacity.
 
-### 1.3 Customers get a private address
+### 1.3 A customer cannot reach their own VPS
 
-`vpses.ip_address` holds `10.10.0.20`, `10.10.0.21` — RFC1918. The VPS network is
-`10.10.0.0/19` behind the OpenWRT VM.
+This is the largest finding in this document, and it is an infrastructure fact
+rather than a missing feature.
 
-There is **no public-IP concept anywhere in the control plane**: no allocation,
-no floating IP, no port-forward, no DNAT. And the dashboard hands the customer
-that private address as their SSH endpoint (`ip_address`, port 22, user `root`).
+The network, as deployed:
 
-Either port-forwarding is configured by hand on the router — untracked by the
-platform, and unworkable past a handful of VPSes — or a customer cannot reach
-their own server from the internet. I could not verify the router's rules (no
-guest agent on VM 100), so this needs a definitive answer before anything else
-is prioritised.
+| bridge | what | uplink |
+|---|---|---|
+| `vmbr0` | LAN, `192.168.1.0/24`, gateway `192.168.1.1` (the ISP router) | physical NIC |
+| `vmbr1` | management, `192.168.10.0/24` — control plane, tunnel | none |
+| `vmbr2` | **the customer VPS network**, `10.10.0.0/19` | **`bridge-ports none`** |
 
-For a VPS product this is not a missing feature so much as a missing half of the
-product. It also lands squarely on the multi-region plan: public addressing is
-per-region by nature, and how it is solved determines what a second region even
-means.
+The Proxmox host carries exactly one address — `192.168.1.70/24`. There is no
+public address anywhere on it. `vmbr2`, the bridge every customer VPS sits on,
+has no physical uplink at all; the OpenWRT VM straddles all three bridges and
+NATs VPS traffic outbound through the LAN to the ISP router.
+
+So a customer VPS can reach the internet, and nothing on the internet can reach
+it. The only public ingress to the whole estate is the Cloudflare tunnel, which
+serves the web app over HTTP — not raw SSH to a customer's machine.
+
+Meanwhile `vpses.ip_address` holds `10.10.0.20`, `10.10.0.21`, and the dashboard
+hands the customer that address as their SSH endpoint, port 22, user `root`. It
+is unroutable from anywhere outside this one Proxmox host.
+
+There is also no public-IP concept in the control plane — no allocation, no
+floating IP, no port-forward, no DNAT — so even if the upstream router were
+forwarding ports by hand, the platform would neither know about it nor be able
+to hand a second customer a second port.
+
+What this means: **the product as deployed cannot deliver what a VPS is.** No
+SSH from outside, no website, no game server, nothing a buyer would assume. The
+browser console is the only way in, and it runs through the control plane.
+
+It also explains a hole in the cost model: `ROADMAP.md` budgets €0.75/month per
+IPv4, and there are none.
+
+This outranks everything else here, including the single-chassis problem in §1.1.
+A machine that no customer can connect to does not become sellable by being made
+redundant.
 
 ### 1.4 No backups
 
@@ -260,13 +282,19 @@ to change to support a second region. That part is genuinely done.
 
 ## 5. Order of work
 
-**First — stop sharing a chassis.** Control plane and Postgres onto their own
-machine. Encrypted off-host copy of `.env.prod`. One rehearsed restore with a
-measured time.
+**First — make the VPS reachable.** Until a customer can connect to what they
+bought, nothing else on this list changes whether the product can be sold. This
+needs an uplink that carries public addresses: a colocated machine with routed
+space, or a provider that hands out addresses per server. It is a hosting
+decision before it is a code decision, and §6.1 is the fork.
 
-**Then — make the product whole.** Settle public addressing (§6) and implement
-it. Ship backups. These are what stand between the current state and being able
-to take a paying customer seriously.
+**Then — stop sharing a chassis.** Control plane and Postgres onto their own
+machine. Encrypted off-host copy of `.env.prod`. One rehearsed restore with a
+measured time. In practice this probably falls out of the move above: the
+machine that gets a real uplink is unlikely to be the one under a desk.
+
+**Then — ship backups.** The remaining thing standing between this and taking a
+paying customer seriously.
 
 **Then — make the fleet real.** A second resource node on proper hardware, the
 per-network IP fix, node drain, region selection in the UI.
@@ -283,10 +311,14 @@ all of them.
 
 ## 6. Decisions needed before code
 
-1. **Do customers get a public IPv4?** This is the fork in the road. If yes: where
-   does the address space come from at each site, and what does that cost per
-   address? If no: what *is* the access path, and does the product still match
-   what "a VPS" means to a buyer? Everything in §3.2 and most of §4 waits on this.
+1. **Where does the public address space come from?** No longer "do customers get
+   a public IPv4" — §1.3 settles that they currently cannot, because the estate
+   has no public address and the VPS bridge has no uplink. The open question is
+   which route out of that: colocation with a routed subnet (a /29 or larger, so
+   the platform allocates from a pool per site), a provider that assigns an
+   address per machine, or an IPv6-first offering with shared IPv4 ingress. Each
+   implies a different model in §3.2 and a different promise to the customer.
+   Everything else waits on this.
 2. **Where does the control plane move to?** Own hardware at a colo, or a small
    VM at another provider. The second is faster and cheaper; the first keeps
    everything under one roof.
