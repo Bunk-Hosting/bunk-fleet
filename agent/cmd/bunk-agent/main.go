@@ -59,6 +59,7 @@ func run(logger *slog.Logger) error {
 		cp.SetCredentials(st.NodeID, st.AgentToken)
 		logger.Info("loaded persisted enrollment", "node_id", st.NodeID)
 		applyOverlay(logger, st)
+		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
 	} else if cfg.EnrollToken != "" {
 		wgPriv, wgPub, kerr := generateWGKey()
 		if kerr != nil {
@@ -90,10 +91,19 @@ func run(logger *slog.Logger) error {
 			st.OverlayIP = resp.Overlay.OverlayIP
 			st.OverlayCIDR = resp.Overlay.OverlayCIDR
 		}
+		if resp.VpsNetwork != nil {
+			st.VpsGateway = resp.VpsNetwork.Gateway
+			st.VpsCidrPrefix = resp.VpsNetwork.CidrPrefix
+			logger.Info("control plane assigned the VPS network",
+				"gateway", resp.VpsNetwork.Gateway,
+				"prefix", resp.VpsNetwork.CidrPrefix,
+				"range", resp.VpsNetwork.RangeStart+"-"+resp.VpsNetwork.RangeEnd)
+		}
 		if err := saveState(statePath, st); err != nil {
 			logger.Warn("could not persist enrollment; a restart will need a fresh token", "err", err)
 		}
 		applyOverlay(logger, st)
+		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
 	} else {
 		logger.Warn("no enroll token and no persisted state; heartbeats will fail until credentials are set")
 	}

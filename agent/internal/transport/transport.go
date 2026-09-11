@@ -74,6 +74,18 @@ type EnrollResponse struct {
 	AgentToken string `json:"agent_token"`
 	// Overlay carries the WireGuard hub parameters when the overlay is enabled.
 	Overlay *Overlay `json:"overlay,omitempty"`
+	// VpsNetwork is the customer network this node must serve. The control plane
+	// assigns it when the agent did not declare one, so it is not necessarily
+	// what was sent — it is what the control plane will address VPSes on.
+	VpsNetwork *AssignedNetwork `json:"vps_network,omitempty"`
+}
+
+// AssignedNetwork is the VPS network the control plane holds for this node.
+type AssignedNetwork struct {
+	Gateway    string `json:"gateway"`
+	CidrPrefix int    `json:"cidr_prefix"`
+	RangeStart string `json:"range_start"`
+	RangeEnd   string `json:"range_end"`
 }
 
 // Overlay holds the WireGuard hub parameters returned at enrollment.

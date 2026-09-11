@@ -19,6 +19,11 @@ type persistedState struct {
 	Endpoint     string `json:"endpoint,omitempty"`
 	OverlayIP    string `json:"overlay_ip,omitempty"`
 	OverlayCIDR  string `json:"overlay_cidr,omitempty"`
+
+	// The customer network the control plane assigned this node. Persisted so a
+	// restart reconfigures the bridge without re-enrolling.
+	VpsGateway    string `json:"vps_gateway,omitempty"`
+	VpsCidrPrefix int    `json:"vps_cidr_prefix,omitempty"`
 }
 
 // loadState reads persisted state; ok is false when none (or incomplete) exist.

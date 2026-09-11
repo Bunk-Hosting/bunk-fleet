@@ -79,6 +79,12 @@ type Config struct {
 	Offer OfferConfig
 	// VpsNetwork configures the network VPSes are attached to and addressed on.
 	VpsNetwork VpsNetworkConfig
+
+	// ManageNetwork lets the agent configure the VPS bridge, IPv4 forwarding and
+	// outbound NAT itself from the network the control plane assigned. Operators
+	// who run their own networking set BUNK_MANAGE_NETWORK=0 and are then
+	// responsible for making the assigned gateway and subnet work.
+	ManageNetwork bool
 }
 
 // envOr returns the environment variable named key, or def if unset/empty.
@@ -185,6 +191,9 @@ func Load() (Config, error) {
 		vpsCidrPrefix = fs.Int("vps-cidr-prefix", envInt("BUNK_VPS_CIDR_PREFIX", 0, &envErrs), "CIDR prefix length for VPS IPs (e.g. 24)")
 		vpsRangeStart = fs.String("vps-range-start", envOr("BUNK_VPS_RANGE_START", ""), "first assignable VPS IP")
 		vpsRangeEnd   = fs.String("vps-range-end", envOr("BUNK_VPS_RANGE_END", ""), "last assignable VPS IP")
+
+		manageNetwork = fs.Bool("manage-network", envBool("BUNK_MANAGE_NETWORK", true, &envErrs),
+			"configure the VPS bridge, forwarding and outbound NAT from the assigned network")
 	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -209,6 +218,7 @@ func Load() (Config, error) {
 			RangeStart: *vpsRangeStart,
 			RangeEnd:   *vpsRangeEnd,
 		},
+		ManageNetwork: *manageNetwork,
 		Proxmox: ProxmoxConfig{
 			Host:        *pveHost,
 			Node:        *pveNode,

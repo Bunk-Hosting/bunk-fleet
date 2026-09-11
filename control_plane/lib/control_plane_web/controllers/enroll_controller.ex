@@ -22,12 +22,30 @@ defmodule ControlPlaneWeb.EnrollController do
 
     case Enrollment.enroll(token, attrs) do
       {:ok, %{node: node, agent_token: agent_token} = result} ->
-        body = %{node_id: node.id, agent_token: agent_token}
+        # The agent needs its VPS network back: the control plane may have
+        # assigned the block rather than taken the agent's word for it, and the
+        # agent is what configures the bridge and NAT from it.
+        body = %{
+          node_id: node.id,
+          agent_token: agent_token,
+          vps_network: %{
+            gateway: node.vps_gateway,
+            cidr_prefix: node.vps_cidr_prefix,
+            range_start: node.vps_range_start,
+            range_end: node.vps_range_end
+          }
+        }
+
         body = if result[:overlay], do: Map.put(body, :overlay, result.overlay), else: body
 
         conn
         |> put_status(:ok)
         |> json(body)
+
+      {:error, :supernet_exhausted} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{error: "supernet_exhausted"})
 
       {:error, :invalid_token} ->
         conn

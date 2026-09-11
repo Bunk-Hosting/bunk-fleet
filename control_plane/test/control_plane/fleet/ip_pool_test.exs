@@ -74,6 +74,7 @@ defmodule ControlPlane.Fleet.IpPoolTest do
     test "a node without a recorded range still uses the global default" do
       r = region()
       node = plain_node(r)
+
       assert {:ok, %{ip: "10.10.0.20", config: "ip=10.10.0.20/19,gw=10.10.0.1"}} =
                IpPool.allocate(node)
     end
@@ -103,7 +104,10 @@ defmodule ControlPlane.Fleet.IpPoolTest do
 
     test "exhausts only when the node's own range is full" do
       r = region()
-      node = node_with_range(r, %{vps_range_start: "192.168.50.10", vps_range_end: "192.168.50.11"})
+
+      node =
+        node_with_range(r, %{vps_range_start: "192.168.50.10", vps_range_end: "192.168.50.11"})
+
       vps_with_ip(r, "192.168.50.10", node)
       vps_with_ip(r, "192.168.50.11", node)
 
