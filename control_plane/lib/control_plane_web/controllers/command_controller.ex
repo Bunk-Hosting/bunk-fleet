@@ -80,12 +80,20 @@ defmodule ControlPlaneWeb.CommandController do
   defp error_message(reason) when is_atom(reason), do: to_string(reason)
   defp error_message(_reason), do: "unprocessable_entity"
 
+  # An allow-list, not the raw params: the agent's report is persisted into
+  # `commands.result` and read back by the finalisers, so anything accepted here
+  # is something the control plane will later act on. Every field a command kind
+  # can report has to be named — a backup that reports an archive the control
+  # plane then drops is a backup nobody can find.
   defp result_attrs(params) do
     %{
       "status" => params["status"],
       "vm_id" => params["vm_id"],
       "ip" => params["ip"],
-      "error" => params["error"]
+      "error" => params["error"],
+      # Backups: where the node put the archive, and how big it is.
+      "volid" => params["volid"],
+      "size_bytes" => params["size_bytes"]
     }
   end
 end

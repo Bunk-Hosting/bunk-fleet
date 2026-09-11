@@ -201,6 +201,58 @@ defmodule ControlPlane.BackupsTest do
     end
   end
 
+  describe "the whole round trip" do
+    test "a backup the node reports is recorded with its archive and size" do
+      # The agent's report goes through the command-result endpoint, which
+      # allow-lists fields. A backup that reports an archive the control plane
+      # then drops is a backup nobody can find — which is exactly what happened
+      # the first time this ran in production.
+      r = region()
+      node = node_in(r)
+      machine = vps(r, node)
+
+      %{started: 1} = Backups.run_due()
+
+      command =
+        Repo.one!(from c in Command, where: c.vps_id == ^machine.id and c.kind == :backup)
+
+      {:ok, _} =
+        ControlPlane.Provisioning.apply_result(command, %{
+          "status" => "done",
+          "vm_id" => machine.provider_vm_id,
+          "volid" => "local:backup/vzdump-qemu-106-2026_09_11-23_29_13.vma.zst",
+          "size_bytes" => 1_503_729_407
+        })
+
+      assert [saved] = Backups.list_for_vps(machine.id)
+      assert saved.status == :done
+      assert saved.volid == "local:backup/vzdump-qemu-106-2026_09_11-23_29_13.vma.zst"
+      assert saved.size_bytes == 1_503_729_407
+    end
+
+    test "a backup the node could not take is recorded as failed, VPS untouched" do
+      # A failed backup must never make a running VPS look broken.
+      r = region()
+      machine = vps(r, node_in(r))
+
+      %{started: 1} = Backups.run_due()
+
+      command =
+        Repo.one!(from c in Command, where: c.vps_id == ^machine.id and c.kind == :backup)
+
+      {:ok, _} =
+        ControlPlane.Provisioning.apply_result(command, %{
+          "status" => "failed",
+          "error" => "no space left on device"
+        })
+
+      assert [%{status: :failed, error: "no space left on device"}] =
+               Backups.list_for_vps(machine.id)
+
+      assert Repo.get!(Vps, machine.id).status == :active
+    end
+  end
+
   describe "retention" do
     test "keeps the newest and queues deletion of the rest" do
       r = region()
