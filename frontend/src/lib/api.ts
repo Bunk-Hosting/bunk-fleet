@@ -473,6 +473,13 @@ export const adminApi = {
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
   nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
+  /**
+   * Close a node to new VPSes. Everything already on it keeps running and keeps
+   * being served — this is what you reach for before maintenance, not a way to
+   * take a machine down.
+   */
+  nodeDrain: (id: string) => api.post(`/beheer/nodes/${id}/drain`),
+  nodeResume: (id: string) => api.post(`/beheer/nodes/${id}/resume`),
 };
 
 // Billing — adapted to bunk-fleet. The overview is derived live from the

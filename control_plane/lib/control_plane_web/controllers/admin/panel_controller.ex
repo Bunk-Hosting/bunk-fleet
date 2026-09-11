@@ -161,6 +161,29 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     json(conn, %{nodes: Enum.map(Fleet.list_nodes(), &node_json/1)})
   end
 
+  @doc """
+  Closes a node to new VPSes, or reopens it.
+
+  The thing you reach for before maintenance, or when a machine is misbehaving:
+  the scheduler stops placing there while everything already on it keeps running
+  and keeps being served. Emptying it afterwards is deliberate and manual.
+  """
+  def drain_node(conn, %{"id" => id}), do: node_transition(conn, id, &Fleet.drain_node/1)
+
+  def resume_node(conn, %{"id" => id}), do: node_transition(conn, id, &Fleet.resume_node/1)
+
+  defp node_transition(conn, id, change) do
+    with {:ok, node_id} <- Ecto.UUID.cast(id),
+         {:ok, node} <- change.(node_id) do
+      json(conn, %{node: node_json(Repo.preload(node, :region))})
+    else
+      :error -> error(conn, :not_found, "not_found")
+      {:error, :not_found} -> error(conn, :not_found, "not_found")
+      {:error, {:invalid_status, status}} -> error(conn, :conflict, "invalid_status_#{status}")
+      {:error, _reason} -> error(conn, :unprocessable_entity, "invalid_node")
+    end
+  end
+
   def delete_node(conn, %{"id" => id}) do
     case Ecto.UUID.cast(id) do
       {:ok, node_id} ->

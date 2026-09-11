@@ -34,6 +34,7 @@ function NodesInner() {
   const [loading, setLoading] = useState(true);
 
   const [removing, setRemoving] = useState<string | null>(null);
+  const [draining, setDraining] = useState<string | null>(null);
 
   const load = () =>
     adminApi
@@ -41,6 +42,36 @@ function NodesInner() {
       .then(setNodes)
       .catch(() => toast({ title: "Fout", description: "Kon nodes niet laden.", variant: "destructive" }))
       .finally(() => setLoading(false));
+
+  const toggleDrain = async (n: AdminNode) => {
+    const closing = n.status !== "draining";
+    setDraining(n.id);
+    try {
+      if (closing) {
+        await adminApi.nodeDrain(n.id);
+        toast({
+          title: "Node afgesloten",
+          description: `${n.name} krijgt geen nieuwe VPS'en meer. Wat er draait blijft draaien.`,
+        });
+      } else {
+        await adminApi.nodeResume(n.id);
+        toast({ title: "Node weer in gebruik", description: n.name });
+      }
+      await load();
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      toast({
+        title: closing ? "Afsluiten mislukt" : "Heropenen mislukt",
+        description:
+          status === 409
+            ? "Deze node is offline — die komt vanzelf terug zodra hij weer meldt."
+            : "Kon de status niet wijzigen.",
+        variant: "destructive",
+      });
+    } finally {
+      setDraining(null);
+    }
+  };
 
   const removeNode = async (n: AdminNode) => {
     if (!window.confirm(`Node "${n.name}" definitief verwijderen uit de fleet?`)) return;
@@ -105,6 +136,26 @@ function NodesInner() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={STATUS_VARIANT[n.status] ?? "outline"}>{n.status}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1 px-2 text-xs"
+                      title={
+                        n.status === "draining"
+                          ? "Node weer openstellen voor nieuwe VPS'en"
+                          : "Geen nieuwe VPS'en meer plaatsen; wat er draait blijft draaien"
+                      }
+                      disabled={draining === n.id}
+                      onClick={() => toggleDrain(n)}
+                    >
+                      {draining === n.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : n.status === "draining" ? (
+                        "Heropenen"
+                      ) : (
+                        "Afsluiten"
+                      )}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"

@@ -238,6 +238,8 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/stop", PanelController, :vps_stop
     delete "/vpses/:id", PanelController, :vps_delete
     get "/nodes", PanelController, :nodes
+    post "/nodes/:id/drain", PanelController, :drain_node
+    post "/nodes/:id/resume", PanelController, :resume_node
     delete "/nodes/:id", PanelController, :delete_node
   end
 
@@ -282,6 +284,9 @@ defmodule ControlPlaneWeb.Router do
     resources "/regions", RegionController, only: [:index, :create]
     post "/enroll-tokens", EnrollTokenController, :create
     get "/nodes", NodeController, :index
+    # Take a node out of service without taking anything from the VPSes on it.
+    post "/nodes/:id/drain", NodeController, :drain
+    post "/nodes/:id/resume", NodeController, :resume
     get "/vpses", VpsController, :index
     post "/vpses", VpsController, :create
     delete "/vpses/:id", VpsController, :delete

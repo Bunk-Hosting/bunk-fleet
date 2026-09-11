@@ -1,6 +1,7 @@
 defmodule ControlPlaneWeb.Admin.NodeController do
   @moduledoc """
-  Operator/admin API for inspecting fleet nodes.
+  Operator/admin API for inspecting fleet nodes and taking them in and out of
+  service.
 
   Protected by `ControlPlaneWeb.Plugs.AdminAuth` (shared-secret admin token).
   """
@@ -8,10 +9,38 @@ defmodule ControlPlaneWeb.Admin.NodeController do
 
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
+  alias ControlPlane.Repo
 
   def index(conn, _params) do
     nodes = Enum.map(Fleet.list_nodes(), &node_json/1)
     json(conn, %{nodes: nodes})
+  end
+
+  @doc """
+  Closes a node to new VPSes. Existing ones keep running and keep being served.
+  """
+  def drain(conn, %{"id" => id}), do: transition(conn, id, &Fleet.drain_node/1)
+
+  @doc "Reopens a drained node."
+  def resume(conn, %{"id" => id}), do: transition(conn, id, &Fleet.resume_node/1)
+
+  defp transition(conn, id, change) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         {:ok, node} <- change.(uuid) do
+      json(conn, %{node: node_json(Repo.preload(node, :region))})
+    else
+      :error ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+
+      {:error, {:invalid_status, status}} ->
+        conn |> put_status(:conflict) |> json(%{error: "invalid_status_#{status}"})
+
+      {:error, _changeset} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_node"})
+    end
   end
 
   defp node_json(%Node{} = node) do

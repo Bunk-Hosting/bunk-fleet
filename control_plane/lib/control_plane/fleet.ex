@@ -69,6 +69,54 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Closes a node to new VPSes without taking anything away from the ones on it.
+
+  This is what you do before maintenance, before removing a node, or when a
+  machine is misbehaving: the scheduler stops placing there (it only considers
+  `:online` nodes), while the node keeps heartbeating, keeps serving its existing
+  customers, and keeps accepting start/stop/delete/console work for them.
+
+  Emptying it afterwards is deliberate and manual — moving a customer's VPS is not
+  something to trigger by changing a status field.
+  """
+  def drain_node(node_id) do
+    set_node_status(node_id, :draining, [:online, :offline, :pending])
+  end
+
+  @doc """
+  Reopens a drained node to new VPSes.
+
+  Goes back to `:online` rather than to whatever it was: a node that is being
+  reopened is one someone has just looked at, and its next heartbeat — thirty
+  seconds away at most — settles the question either way.
+  """
+  def resume_node(node_id) do
+    set_node_status(node_id, :online, [:draining])
+  end
+
+  defp set_node_status(node_id, status, from) do
+    case Repo.get(Node, node_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Node{status: current} = node when current != status ->
+        if current in from do
+          node
+          |> Node.mark_online_changeset(%{status: status})
+          |> Repo.update()
+          |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+        else
+          {:error, {:invalid_status, current}}
+        end
+
+      %Node{} = node ->
+        # Already there. Draining a draining node is not an error; it is the
+        # state the caller asked for.
+        {:ok, node}
+    end
+  end
+
+  @doc """
   Removes a node from the fleet.
 
   Refuses with `{:error, :node_has_vpses}` while the node still hosts any live
@@ -237,7 +285,11 @@ defmodule ControlPlane.Fleet do
     attrs =
       totals
       |> Map.put(:last_heartbeat_at, now())
-      |> Map.put(:status, :online)
+      # A draining node is still alive and still serving the VPSes it has — it is
+      # only closed to new ones. Stamping :online here would undo an operator's
+      # drain within thirty seconds, silently, which is how a node you are trying
+      # to empty fills back up while you watch.
+      |> Map.put(:status, if(node.status == :draining, do: :draining, else: :online))
       |> maybe_init_available(node, totals)
 
     # PERF: only a real status transition (offline/pending -> online) or the
@@ -246,7 +298,8 @@ defmodule ControlPlane.Fleet do
     # — otherwise every node's heartbeat forces every connected dashboard to a
     # full reload (O(nodes x dashboards) per interval). Capacity changes are
     # broadcast by the scheduler, and offline transitions by the reconciler.
-    transition? = node.status != :online or is_nil(node.available_vcpu)
+    transition? =
+      node.status not in [:online, :draining] or is_nil(node.available_vcpu)
 
     node
     |> Node.mark_online_changeset(attrs)
