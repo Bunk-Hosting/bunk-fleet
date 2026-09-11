@@ -172,15 +172,22 @@ func (c *Client) RestoreVM(ctx context.Context, id, volid string) error {
 		"archive": {volid},
 		// force: the guest exists and is exactly what we mean to replace.
 		"force": {"1"},
+		// Leave it down. Whether it should be running again is the control
+		// plane's call, because only it knows what the customer had.
+		"start": {"0"},
 	}
 
+	// The guest-create endpoint, not /qmrestore: `qmrestore` is a CLI command
+	// with no API route of its own (PVE answers 501 for it — learned the hard
+	// way against a live node). Creating a guest *with* an `archive` parameter
+	// is how the API spells a restore.
 	var task taskResponse
-	path := fmt.Sprintf("/nodes/%s/qmrestore", c.cfg.Node)
+	path := fmt.Sprintf("/nodes/%s/qemu", c.cfg.Node)
 	if err := c.doJSON(ctx, http.MethodPost, path, form, &task); err != nil {
-		return fmt.Errorf("proxmox: qmrestore vm %d: %w", vmid, err)
+		return fmt.Errorf("proxmox: restore vm %d: %w", vmid, err)
 	}
 	if err := c.waitTask(ctx, task.Data); err != nil {
-		return fmt.Errorf("proxmox: qmrestore vm %d: %w", vmid, err)
+		return fmt.Errorf("proxmox: restore vm %d: %w", vmid, err)
 	}
 	return nil
 }
