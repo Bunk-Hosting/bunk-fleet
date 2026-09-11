@@ -98,7 +98,18 @@ after any migration that changes shape, and write down what it cost.
 
 | date | archive | restored | wall clock | notes |
 |---|---|---|---|---|
-| 2026-09-11 | first backup | users/vpses/ledger verified against live | see below | rehearsed on the control-plane host itself, so it proves the archive is complete and restorable — not that recovery works with that host gone |
+| 2026-09-11 | `bunk-20260911T181736Z` (23.9 kB) | users 3, vpses 6, ledger 3903c, schema 20260911090000 — all matching live | **21 s** (backup itself: 1 s) | rehearsed on the control-plane host |
 
-The gap in that last line is real and worth closing: the next rehearsal should
-restore somewhere that is not the machine the backup came from.
+Those counts were compared against the live database, not just read back out of
+the thing that produced them.
+
+The 21 seconds is decrypt + `pg_restore` on a database this size. It will grow
+roughly with the data and is not the number that matters for an outage: the
+recovery path above also stops the service and needs someone to notice. Treat it
+as the floor, not the RTO.
+
+One gap, deliberately left visible: this rehearsal ran on the machine the backup
+came from, so it proves the archive is complete and restorable — not that
+recovery works with that machine gone. The next one should restore somewhere
+else, which also forces the question of whether `backup.key` is genuinely
+reachable from somewhere else.

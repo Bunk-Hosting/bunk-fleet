@@ -35,6 +35,11 @@ case "$name" in
   *..*|*/*) echo "refusing name: $raw" >&2; exit 2 ;;
 esac
 
+# Append-only means append-only. Without this, a key that cannot delete can
+# still overwrite yesterday's backup with a byte of garbage under the same name,
+# which destroys it just as thoroughly.
+[ -e "$DEST/$name" ] && { echo "refusing to overwrite $name" >&2; exit 5; }
+
 tmp="$(mktemp "$DEST/.incoming.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 chmod 600 "$tmp"
@@ -46,7 +51,9 @@ size=$(stat -c %s "$tmp")
 [ "$size" -gt 0 ] || { echo "empty upload" >&2; exit 3; }
 [ "$size" -lt "$MAX_BYTES" ] || { echo "upload hit the $MAX_BYTES byte cap" >&2; exit 4; }
 
-mv "$tmp" "$DEST/$name"
+# -n: two uploads racing the same name must not both "succeed".
+mv -n "$tmp" "$DEST/$name"
+[ -e "$tmp" ] && { echo "refusing to overwrite $name" >&2; exit 5; }
 trap - EXIT
 chmod 400 "$DEST/$name"
 
