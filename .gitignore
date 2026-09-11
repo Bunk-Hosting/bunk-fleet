@@ -1,4 +1,8 @@
 *.env.prod
+# Backups too: deploy-prod.sh writes .env.prod.bak-<timestamp> beside the real
+# file, and a secrets backup is exactly as committable as the secret itself.
+.env.prod.*
+*.env.prod.*
 .e2e*
 .e2e_vps_id
 .enroll_token
