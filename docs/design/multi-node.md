@@ -160,14 +160,17 @@ assumes.
 
 Only after that does a second *resource* node make the fleet meaningfully bigger.
 
-### 3.1 Let the customer choose a region
+### 3.1 Let the customer choose a region — **done**
 
-Smaller than it sounds. The backend already places per region; the frontend sends
-`region_code: "nl-1"` hardcoded in `src/lib/api.ts`.
+The backend already placed per region; the frontend sent `region_code: "nl-1"` as
+a literal. Closed by `GET /api/v1/regions` (only regions with an online node that
+has capacity), a picker that appears when there is more than one answer, and
+automatic placement when the customer expresses no preference — scored by the
+same headroom measure the scheduler uses between nodes, so "automatic" means the
+emptiest machine in the fleet. A region that is named but unknown stays an error;
+only the absence of one means anywhere.
 
-What is missing: a public endpoint listing selectable regions, a picker in the
-order flow, and — the part worth thinking about — what "no preference" should
-mean. Proposal:
+The original proposal, kept because the reasoning still holds:
 
 - The customer picks a region, or picks "no preference".
 - With no preference, the platform picks the region with the most free capacity,
@@ -210,7 +213,7 @@ lock. Allocation is scoped to the node, and the unique index is now
 not a conflict. A node that declares a complete network of its own still keeps
 it; a half-declared one is rejected rather than silently overridden.
 
-### 3.8 The console has no path to a remote node
+### 3.8 The console has no path to a remote node — **done**
 
 The browser console SSHes from the control plane to `vpses.ip_address`. That
 works today only because the control plane and the customer network meet at the
@@ -228,6 +231,21 @@ request, the control plane sends the node's agent a short-lived connect token;
 the agent dials back over WSS and relays bytes to the VPS's SSH port. It works
 behind NAT, behind CGNAT and on a school network, needs no inbound port on the
 node, and removes the overlay from the console's dependency list entirely.
+
+Built as `ControlPlane.Console.Relay`. Every console goes this way, including on
+the node the control plane can still reach directly — one path is testable, two
+paths diverge and the rarely-used one breaks on the day it is needed. Verified
+end to end against the live node: request queued, agent polled, dialled back,
+opened SSH to the VPS, shell.
+
+One thing to know before touching it: `:ssh.connect/3` accepts an already-
+connected socket, which would be tidier than a loopback listener. That form does
+not complete its negotiation on OTP 27 — not through a relay and not straight at
+a VPS. The relay listens on loopback for that reason and no other.
+
+Still open here: the overlay. It is now used by nothing. Either give it a real
+endpoint and a hub that runs, or delete it — leaving enrolment handing out keys
+for a network that does not exist is the worst of the three.
 
 ### 3.5 Scheduler: what to add, and what not to
 
@@ -326,8 +344,9 @@ machine that gets a real uplink is unlikely to be the one under a desk.
 **Then — ship backups.** The remaining thing standing between this and taking a
 paying customer seriously.
 
-**Then — make the fleet real.** A second resource node on proper hardware, the
-per-network IP fix, node drain, region selection in the UI.
+**Then — make the fleet real.** A second resource node on proper hardware and
+node drain. (The per-network IP fix, region selection and the console path to a
+remote node are done — see §3.4, §3.1 and §3.8.)
 
 **Alongside, because it is cheap now and expensive later** — leader election,
 idempotent commands, expand/contract migrations, the break-glass console path.
