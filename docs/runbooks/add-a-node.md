@@ -145,7 +145,35 @@ node can do the job rather than merely appear.
 
 ---
 
-## 6. When something is wrong
+## 6. Taking a node back out
+
+Closing a node is not the same as turning it off, and the difference matters
+when someone's machine is running on it.
+
+**Close it to new VPSes** — the operator UI's "Afsluiten" button, or:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://app.bunkhosting.nl/admin/v1/nodes/<NODE_UUID>/drain | jq
+```
+
+The scheduler stops placing there. Everything already on the node keeps running,
+keeps being metered, keeps its console. The node keeps heartbeating, and its
+heartbeat no longer flips it back open.
+
+**Then empty it**, deliberately: there is no automatic migration, because moving
+someone's VPS is not something to trigger by changing a status field. Today that
+means telling those customers, or rebuilding their VPS elsewhere.
+
+**Then remove it.** `DELETE /admin/v1/nodes/:id` refuses while the node still
+hosts a live VPS, which is the backstop for having skipped the previous step.
+
+An offline node can be drained but not resumed. Draining one that is already
+down is how you stop it re-entering rotation the moment it recovers; whether it
+is alive again is the reconciler's call, from evidence, not something to assert
+by hand.
+
+## 7. When something is wrong
 
 **Node never appears.** The token is single-use: if the install was run twice,
 the second run consumed nothing and the agent has no credentials. Mint another.
