@@ -77,7 +77,7 @@ docker run --rm --network "$NET" \
   -e ADMIN_TOKEN="$ADMIN_TOKEN" \
   -e PHX_HOST="$PHX_HOST" -e PUBLIC_URL="$PUBLIC_URL" -e PORT=4000 \
   -e SMTP_HOST -e SMTP_PORT -e SMTP_USERNAME -e SMTP_PASSWORD \
-  -e MAIL_FROM_ADDRESS -e MAIL_FROM_NAME \
+  -e MAIL_FROM_ADDRESS -e MAIL_FROM_NAME -e OPS_EMAIL \
   "$IMG" eval "ControlPlane.Release.migrate()" 2>&1 | tail -4
 
 # 5. (Re)start the control-plane server
@@ -101,6 +101,7 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e SMTP_PASSWORD \
   -e MAIL_FROM_ADDRESS \
   -e MAIL_FROM_NAME \
+  -e OPS_EMAIL \
   "$IMG" >/dev/null
 echo "STARTED $CPNAME on :4000"
 

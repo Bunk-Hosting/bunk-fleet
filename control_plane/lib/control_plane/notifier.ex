@@ -88,6 +88,28 @@ defmodule ControlPlane.Notifier do
   # fine at the definition but is a silent transposition hazard at every call
   # site. Named keys make that class of mistake a `KeyError`/`FunctionClauseError`
   # instead of a wrong email going out.
+  @doc """
+  Mails the operator that something in the platform needs a person.
+
+  Deliberately plain text and deliberately not branded: this goes to whoever runs
+  Bunk, not to a customer, and it is read at the moment something is already
+  wrong. The first line is the whole message; the body is evidence.
+
+  Returns `{:error, :no_ops_email}` when `:ops_email` is unset, which is a
+  configuration gap rather than a delivery failure — the caller (a systemd
+  OnFailure unit) prints it rather than pretending the alert went out.
+  """
+  def deliver_operational_alert(subject, body) when is_binary(subject) and is_binary(body) do
+    case Application.get_env(:control_plane, :ops_email) do
+      to when is_binary(to) and to != "" ->
+        deliver(%{to: to, subject: "[Bunk] " <> subject, text: body, html: nil})
+
+      _ ->
+        Logger.error("operational alert not sent (no OPS_EMAIL configured): #{subject}")
+        {:error, :no_ops_email}
+    end
+  end
+
   defp deliver(%{to: to_email, subject: subject, text: text, html: html}) do
     email =
       new()
@@ -95,7 +117,10 @@ defmodule ControlPlane.Notifier do
       |> from({from_name(), from_email()})
       |> subject(subject)
       |> text_body(text)
-      |> html_body(html)
+
+    # An operational alert has no HTML part; Swoosh would otherwise send an empty
+    # one, which some clients render as a blank message.
+    email = if html, do: html_body(email, html), else: email
 
     case Mailer.deliver(email) do
       {:ok, _metadata} ->

@@ -50,6 +50,17 @@ Type=oneshot
 Environment=BUNK_REPO=$REPO
 Environment=BUNK_BACKUP_SSH=$DEST
 ExecStart=$REPO/tools/backup.sh
+# A backup timer that quietly stops working is how backups actually fail.
+OnFailure=bunk-backup-alert.service
+UNIT
+
+cat > /etc/systemd/system/bunk-backup-alert.service <<UNIT
+[Unit]
+Description=Mail the operator that the backup failed
+
+[Service]
+Type=oneshot
+ExecStart=$REPO/tools/backup-alert.sh bunk-backup.service
 UNIT
 
 cat > /etc/systemd/system/bunk-backup.timer <<'UNIT'
@@ -71,6 +82,13 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now bunk-backup.timer >/dev/null
 echo "==> timer enabled: $(systemctl show -p NextElapseUSecRealtime --value bunk-backup.timer)"
+
+echo
+if [ -z "$(grep -s '^OPS_EMAIL=' "$REPO/.env.prod")" ]; then
+  echo
+  echo "NOTE: OPS_EMAIL is not set in $REPO/.env.prod, so a failed backup will"
+  echo "      have nowhere to report to. Add it and redeploy the control plane."
+fi
 
 echo
 echo "Authorise this host at the destination by adding to its authorized_keys:"

@@ -131,6 +131,11 @@ if config_env() == :prod do
     config :control_plane, :mail,
       from_email: System.get_env("MAIL_FROM_ADDRESS") || "noreply@#{host}",
       from_name: System.get_env("MAIL_FROM_NAME") || "Bunk Hosting"
+
+    # Where operational alerts go — a backup that failed, not a customer email.
+    # No default: guessing an address means the alert goes somewhere nobody
+    # reads, which is worse than the caller being told it was not sent.
+    config :control_plane, :ops_email, System.get_env("OPS_EMAIL")
   else
     # NOT Logger.warning/1 here: config/runtime.exs runs before the :logger
     # application's console backend is attached, so a Logger call at this point

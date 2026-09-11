@@ -25,6 +25,12 @@ Nightly at 03:17 (`bunk-backup.timer`), `tools/backup.sh`:
 4. tar → zstd → `openssl smime -encrypt` to a certificate.
 5. Push over SSH to the destination and prune the local staging copy.
 
+If any of that fails, systemd runs `tools/backup-alert.sh`, which mails the
+address in `OPS_EMAIL` through the control plane's own relay — the same one that
+sends confirmation emails, so there is no second thing to keep working. A backup
+timer that quietly stops is how backups actually fail; nobody finds out until the
+day they are needed.
+
 Two keypairs, and the split is the design:
 
 | | lives on | if it leaks |
