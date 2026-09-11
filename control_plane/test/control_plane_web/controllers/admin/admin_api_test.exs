@@ -130,9 +130,11 @@ defmodule ControlPlaneWeb.Admin.AdminApiTest do
 
       assert is_binary(enroll_token)
       assert region_code == region.code
-      assert install =~ "docker run"
-      assert install =~ "bunk-agent"
-      assert install =~ "BUNK_ENROLL_TOKEN=" <> enroll_token
+      # The wizard, not a container: only an agent installed on the hypervisor
+      # host can configure the customer bridge it is assigned.
+      assert install =~ "/install.sh"
+      assert install =~ "--token " <> enroll_token
+      refute install =~ "docker run"
     end
 
     test "lists nodes (empty is ok)", %{conn: conn} do

@@ -82,20 +82,15 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenController do
 
   defp parse_ttl(_params), do: @default_ttl_seconds
 
-  # A ready-to-run command a node operator pastes onto a host to bootstrap the
-  # bunk-agent and enroll the node into this control plane.
+  # A ready-to-run command a node operator pastes onto their hypervisor host.
+  #
+  # The wizard, not a `docker run`: it asks for the hypervisor credentials rather
+  # than making the operator fill in placeholders, and — the part that cannot be
+  # done from a container — it installs the agent on the host, where it can put
+  # the assigned gateway on the customer bridge and NAT that subnet out of the
+  # node's own uplink.
   defp install_command(conn, token) do
-    cp_url = control_plane_url(conn)
-
-    "docker run -d --name bunk-agent --restart unless-stopped " <>
-      "-e BUNK_CONTROL_PLANE_URL=#{cp_url} " <>
-      "-e BUNK_ENROLL_TOKEN=#{token} " <>
-      "-e BUNK_HYPERVISOR=proxmox " <>
-      "-e BUNK_PROXMOX_HOST=https://YOUR-PROXMOX:8006 " <>
-      "-e BUNK_PROXMOX_NODE=YOUR-NODE " <>
-      "-e BUNK_PROXMOX_TOKEN_ID=... " <>
-      "-e BUNK_PROXMOX_TOKEN_SECRET=... " <>
-      "ghcr.io/bunk-hosting/bunk-agent:latest"
+    "curl -fsSL #{control_plane_url(conn)}/install.sh | bash -s -- --token #{token}"
   end
 
   defp control_plane_url(conn) do

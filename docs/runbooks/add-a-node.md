@@ -53,19 +53,22 @@ curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"code":"nl-2","name":"Nederland — <plaats>"}' \
   https://app.bunkhosting.nl/admin/v1/regions | jq
 
-# Mint the token (valid one hour)
+# Mint the token (valid one hour). region_code works as well as region_id.
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"region_id":"<REGION_UUID>","ttl_seconds":3600}' \
+  -d '{"region_code":"nl-2","ttl_seconds":3600}' \
   https://app.bunkhosting.nl/admin/v1/enroll-tokens | jq
 ```
 
-The plaintext token is returned once. Send it over something that is not a
-group chat.
+The response carries the plaintext token — returned once — and an `install`
+field: the exact command for §3, with the token already in it. Send it over
+something that is not a group chat.
 
 ---
 
 ## 3. Install, on the Proxmox host itself
+
+Paste the `install` line from §2, which is:
 
 ```bash
 curl -fsSL https://app.bunkhosting.nl/install.sh | bash -s -- --token <TOKEN>
