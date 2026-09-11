@@ -311,14 +311,9 @@ all of them.
 
 ## 6. Decisions needed before code
 
-1. **Where does the public address space come from?** No longer "do customers get
-   a public IPv4" — §1.3 settles that they currently cannot, because the estate
-   has no public address and the VPS bridge has no uplink. The open question is
-   which route out of that: colocation with a routed subnet (a /29 or larger, so
-   the platform allocates from a pool per site), a provider that assigns an
-   address per machine, or an IPv6-first offering with shared IPv4 ingress. Each
-   implies a different model in §3.2 and a different promise to the customer.
-   Everything else waits on this.
+1. **Where does the public address space come from?** Researched and costed in
+   §7; what remains is a budget ceiling and whether anything is already
+   contracted.
 2. **Where does the control plane move to?** Own hardware at a colo, or a small
    VM at another provider. The second is faster and cheaper; the first keeps
    everything under one roof.
@@ -329,3 +324,98 @@ all of them.
    cost and control against one less thing to run.
 5. **Still open from the pivot**: cheaper, or more managed? It has not moved, and
    it decides whether the effort after this goes into automation or into service.
+
+---
+
+## 7. Addressing and hosting: the options, costed
+
+Researched 2026-09-12. Prices exclude VAT and move; treat as orders of magnitude,
+not quotes.
+
+### 7.1 What an IPv4 address actually costs
+
+| | monthly | one-off |
+|---|---|---|
+| Hetzner, single additional IPv4 | €1.70 | €4.90 |
+| Hetzner, /29 (6 usable) | €13.60 | €4.90 |
+| Hetzner, /28 (14 usable) | €27.20 | €59.90 |
+| Hetzner, IPv6 /56 per server | included | €15.00 |
+
+A /29 works out at **€2.27 per usable address per month**.
+
+`ROADMAP.md` budgets €0.75. The real figure is three times that, and it lands
+hardest exactly where the margin is thinnest:
+
+| package | price | IPv4 at €2.27 | share of revenue |
+|---|---|---|---|
+| Starter | €3.99 | €2.27 | **57%** |
+| Basic | €7.99 | €2.27 | 28% |
+| Pro | €14.99 | €2.27 | 15% |
+| Business | €29.99 | €2.27 | 8% |
+
+A dedicated IPv4 on the Starter tier eats more than half the revenue before a
+single watt of power. That is a pricing problem, not a rounding error, and it has
+three honest answers: drop the dedicated IPv4 from Starter (IPv6 plus shared
+IPv4 ingress), raise the Starter price, or accept that Starter exists as a
+loss-leader and say so internally rather than discovering it in the books.
+
+Worth noting that the same arithmetic is why the low-cost end of the market sells
+"NAT VPS" with a handful of forwarded ports. It is a real product category, not a
+compromise — and it is also, roughly, what the current infrastructure already
+does, minus the public ingress and minus any platform support for it.
+
+### 7.2 Rent a machine, or rent rack space
+
+**Dutch colocation**, per 1U:
+
+| | price | power | traffic | IPv4 |
+|---|---|---|---|---|
+| PlanetNode (Freedom Internet DC, AMS-IX) | €45 | 0.5 A | 50 Mbit/s | 1 + /64 IPv6 |
+| TransIP Professional | €47.19 | 0.5 A | 1000 Mbit/s | — |
+| Eweka / AsHosting | €55 | — | 100 GB | — |
+
+Add owned hardware at roughly €25/month amortised (the reference machine,
+€1200 over four years) and a Dutch rack slot lands near €70/month.
+
+Two things to notice. **The bandwidth varies by a factor of twenty** between
+these — 50 Mbit/s, or 100 GB a month, is thin for a box meant to carry twenty
+customer VPSes, and it is the sort of limit nobody notices until customers
+complain. And **only PlanetNode publishes what IPv4 you get**; the others need a
+quote, so the number that decides §7.1 is not on the page.
+
+**A rented dedicated server** (Hetzner's auction, being the cheapest capable
+option) removes the hardware purchase, the racking and the hardware-failure risk,
+comes with no setup fee, unlimited traffic on a 1 Gbit/s port, and lets a /29 be
+added for €13.60. The machine is in Germany or Finland.
+
+### 7.3 Recommendation
+
+**Start on a rented dedicated server with a /29, and move the control plane to a
+separate small cloud VM at the same time.**
+
+It resolves, in one step, the two findings that currently block everything: the
+VPS network gets a real uplink with public addresses, and the control plane stops
+sharing a chassis with customer workloads. It needs no capital, no rack visit and
+no hardware gamble, and it can be cancelled monthly if the model does not work.
+Six usable addresses is enough to prove the product with real customers; a /28 is
+one support ticket away when it isn't.
+
+Dutch colocation with owned hardware is the *better* end state — it is where the
+€0.47 per sellable GB of RAM in the cost model actually applies, and where
+"Nederlandse hosting" stops being a claim about a company and starts being a
+claim about a location. It is the wrong *first* step: it wants capital and a
+hardware commitment before there is evidence that anyone will buy.
+
+Two things to check before committing:
+
+- **Does the provider permit running a hosting business on the machine?** The
+  Hetzner dedicated-server agreement I could read prohibits crypto mining, port
+  scanning, MAC spoofing and forged source IPs — and says nothing either way
+  about reselling or third-party customers. Absence of a prohibition is not
+  permission. Ask them directly and get it in writing; a business built on an
+  assumption here is one abuse report from being homeless.
+- **The positioning cost.** The earlier recommendation was to compete on being
+  Dutch, reachable and managed rather than on price. Running the machines in
+  Germany does not destroy that — plenty of Dutch providers do exactly this — but
+  it does mean the Dutch part of the story is about the company, not the
+  hardware, and the website should not imply otherwise.
