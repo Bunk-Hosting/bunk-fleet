@@ -103,8 +103,11 @@ func checkArgs(rule []string) []string {
 // node's own bridge and subnet — no chain is ever flushed, and no rule that does
 // not mention this subnet is touched.
 //
-// Failures are logged, not fatal: an operator who manages their own networking
-// sets BUNK_MANAGE_NETWORK=0 and nothing here runs at all.
+// Failures are logged, not fatal. It is off unless BUNK_MANAGE_NETWORK=1: plenty
+// of nodes already have a router that owns the VPS gateway — the first node in
+// the fleet does — and a second machine claiming that same address would take the
+// network down rather than bring it up. Taking over an operator's networking is
+// something to be asked for, never assumed.
 func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bool) {
 	if !manage {
 		logger.Info("vps network: not managed (BUNK_MANAGE_NETWORK=0); configure the bridge yourself",
@@ -175,14 +178,16 @@ func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bo
 		"bridge", bridge, "gateway", addr, "subnet", subnet.String(), "uplink", uplink)
 }
 
-// ensureBridge creates the bridge when it is missing and brings it up. A bridge
-// with no ports carries no traffic until a VM's tap is attached to it, so
-// creating one is inert — but it must exist before an address can go on it.
+// ensureBridge brings up a bridge that already exists. It deliberately does NOT
+// create one: a bridge the hypervisor does not know about is invisible in the
+// Proxmox UI and gone after a reboot, and — worse — creating one on a machine
+// that merely *talks to* the hypervisor would make that machine believe the VPS
+// subnet is directly attached, blackholing the traffic it used to route.
+// The operator creates the bridge; the agent only addresses it.
 func ensureBridge(ctx context.Context, bridge string) error {
 	if _, err := runCmd(ctx, "ip", "link", "show", bridge); err != nil {
-		if out, err := runCmd(ctx, "ip", "link", "add", "name", bridge, "type", "bridge"); err != nil {
-			return fmt.Errorf("creating bridge: %v (%s)", err, out)
-		}
+		return fmt.Errorf("bridge %s does not exist on this machine — create it on the "+
+			"hypervisor host first (Proxmox: Datacenter > Node > Network > Create > Linux Bridge)", bridge)
 	}
 	if out, err := runCmd(ctx, "ip", "link", "set", bridge, "up"); err != nil {
 		return fmt.Errorf("bringing bridge up: %v (%s)", err, out)

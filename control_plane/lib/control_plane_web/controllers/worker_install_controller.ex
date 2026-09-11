@@ -157,15 +157,22 @@ defmodule ControlPlaneWeb.WorkerInstallController do
 
     if [ "$ON_PVE_HOST" = "true" ]; then
       echo "  Deze machine is de Proxmox-host zelf."
-      echo "  Bunk kan het klantnetwerk dan volledig zelf opzetten: een eigen subnet"
-      echo "  per node, een gateway op de bridge, en uitgaand verkeer via jouw uplink."
-      read -r -p "  Netwerk door Bunk laten beheren? (J/n): " MN </dev/tty
-      case "$MN" in n|N) MANAGE_NET=false;; *) MANAGE_NET=true;; esac
+      echo "  Bunk kan het klantnetwerk dan zelf opzetten: een eigen subnet per node,"
+      echo "  een gateway op een bestaande bridge, en uitgaand verkeer via jouw uplink."
+      echo "  Zeg NEE als er al een router (bv. een OPNsense/OpenWrt-VM) de gateway"
+      echo "  van dat netwerk beheert -- twee machines op hetzelfde adres breekt het."
+      read -r -p "  Netwerk door Bunk laten beheren? (j/N): " MN </dev/tty
+      case "$MN" in j|J|y|Y) MANAGE_NET=true;; *) MANAGE_NET=false;; esac
     fi
 
     if [ "$MANAGE_NET" = "true" ]; then
+      echo "  De bridge moet al bestaan (Proxmox > Node > Network > Create > Linux Bridge)."
       read -r -p "  Bridge voor VPS-verkeer [vmbr2]: " VPS_BRIDGE </dev/tty
       VPS_BRIDGE="${VPS_BRIDGE:-vmbr2}"
+      if ! ip link show "$VPS_BRIDGE" >/dev/null 2>&1; then
+        echo "  !! $VPS_BRIDGE bestaat nog niet op deze machine. Maak hem eerst aan;"
+        echo "     de agent draait wel, maar zet het netwerk pas op als de bridge er is."
+      fi
       read -r -p "  VLAN-tag (0 = geen VLAN): " VPS_VLAN </dev/tty; VPS_VLAN="${VPS_VLAN:-0}"
       echo "  -> Het subnet wordt toegewezen door de control plane; je hoeft zelf"
       echo "     geen gateway of IP-range op te geven."

@@ -81,9 +81,9 @@ type Config struct {
 	VpsNetwork VpsNetworkConfig
 
 	// ManageNetwork lets the agent configure the VPS bridge, IPv4 forwarding and
-	// outbound NAT itself from the network the control plane assigned. Operators
-	// who run their own networking set BUNK_MANAGE_NETWORK=0 and are then
-	// responsible for making the assigned gateway and subnet work.
+	// outbound NAT itself from the network the control plane assigned. Off by
+	// default: a node whose gateway is already owned by a router would be taken
+	// down, not brought up, by a second machine claiming that address.
 	ManageNetwork bool
 }
 
@@ -192,7 +192,7 @@ func Load() (Config, error) {
 		vpsRangeStart = fs.String("vps-range-start", envOr("BUNK_VPS_RANGE_START", ""), "first assignable VPS IP")
 		vpsRangeEnd   = fs.String("vps-range-end", envOr("BUNK_VPS_RANGE_END", ""), "last assignable VPS IP")
 
-		manageNetwork = fs.Bool("manage-network", envBool("BUNK_MANAGE_NETWORK", true, &envErrs),
+		manageNetwork = fs.Bool("manage-network", envBool("BUNK_MANAGE_NETWORK", false, &envErrs),
 			"configure the VPS bridge, forwarding and outbound NAT from the assigned network")
 	)
 
