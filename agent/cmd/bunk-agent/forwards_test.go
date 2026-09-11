@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -135,4 +137,13 @@ func TestFingerprintIgnoresOrderButNotContent(t *testing.T) {
 	if fingerprint(nil) == fingerprint([]transport.PortForward{a}) {
 		t.Error("an empty set and a non-empty one share a fingerprint")
 	}
+}
+
+func TestDescribeForwardsIsSafeWithNothingToSay(t *testing.T) {
+	// An operator who manages their own network still gets told what is needed;
+	// an empty fleet on their node must not look like a failure.
+	describeForwards(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	describeForwards(slog.New(slog.NewTextHandler(io.Discard, nil)), []transport.PortForward{
+		{PublicPort: 20001, TargetIP: "10.10.4.20", TargetPort: 22},
+	})
 }

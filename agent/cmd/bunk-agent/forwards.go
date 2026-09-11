@@ -98,9 +98,11 @@ func fingerprint(forwards []transport.PortForward) string {
 // syncForwards polls the control plane and keeps the firewall matching it.
 func syncForwards(ctx context.Context, logger *slog.Logger, cp *transport.Client, subnet *net.IPNet, manage bool) {
 	if !manage {
+		// Still poll. An operator running their own networking has to install
+		// these by hand, and telling them nothing would leave them to guess which
+		// ports the control plane just promised their customers.
 		logger.Info("port forwards: not managed (BUNK_MANAGE_NETWORK=0); " +
-			"forward the node's public ports to its VPSes yourself")
-		return
+			"the forwards this node needs will be logged as they change")
 	}
 
 	applied := ""
@@ -115,7 +117,10 @@ func syncForwards(ctx context.Context, logger *slog.Logger, cp *transport.Client
 			}
 			logger.Warn("port forwards: cannot read desired state", "err", err)
 		} else if want := fingerprint(forwards); want != applied {
-			if err := applyForwards(ctx, logger, forwards, subnet); err != nil {
+			if !manage {
+				describeForwards(logger, forwards)
+				applied = want
+			} else if err := applyForwards(ctx, logger, forwards, subnet); err != nil {
 				logger.Warn("port forwards: could not apply", "err", err)
 			} else {
 				logger.Info("port forwards applied", "count", len(forwards))
@@ -187,4 +192,25 @@ func ensureChain(ctx context.Context, table, name, parent string) error {
 		}
 	}
 	return nil
+}
+
+// describeForwards prints what the node's firewall should say, for an operator
+// who maintains it themselves. One line per forward, in a shape that can be read
+// straight across to a rule.
+func describeForwards(logger *slog.Logger, forwards []transport.PortForward) {
+	if len(forwards) == 0 {
+		logger.Info("port forwards: none needed on this node")
+		return
+	}
+	logger.Info("port forwards this node needs (install them yourself)", "count", len(forwards))
+	for _, f := range forwards {
+		proto := f.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		logger.Info("  forward",
+			"proto", proto,
+			"public_port", f.PublicPort,
+			"to", net.JoinHostPort(f.TargetIP, strconv.Itoa(f.TargetPort)))
+	}
 }
