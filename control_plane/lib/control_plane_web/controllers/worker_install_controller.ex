@@ -2,9 +2,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   @moduledoc """
   Serves the interactive bunk-worker install wizard (`curl … | bash`).
 
-  The wizard runs on any Linux machine (a small VM is ideal) that can reach the
-  node's Proxmox or ESXi API over the network — it does NOT run on, or need
-  root on, the hypervisor host itself.
+  The wizard runs on any Linux machine that can reach the node's Proxmox or ESXi
+  API over the network. Running it on the Proxmox host itself is the better
+  choice where that is possible: only there can the agent build the customer
+  network (bridge, gateway, NAT) from the subnet the control plane assigns, so
+  the operator does not have to get an IP plan right by hand. Elsewhere — a
+  separate VM, or ESXi, which has no Linux host to configure — the operator
+  declares the network they already run and owns it.
   """
   use ControlPlaneWeb, :controller
 
@@ -24,9 +28,10 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   defp wizard(cp) do
     """
     #!/usr/bin/env bash
-    # bunk-worker installer. Run on a Linux machine (a small VM is ideal) that can
-    # reach your Proxmox OR ESXi API over the network. It does NOT run on, and
-    # does not need root on, the hypervisor host itself — it talks to the API.
+    # bunk-worker installer. Run on a Linux machine that can reach your Proxmox
+    # OR ESXi API over the network. On Proxmox, running it on the host itself
+    # lets the agent set up the customer network for you; anywhere else you
+    # declare the network you already run.
     set -euo pipefail
     CP="#{cp}"
     TOKEN=""
@@ -83,7 +88,8 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     bold "== Bunk Worker installatie =="
     echo "Control plane: $CP"
     echo "Deze worker draait op DEZE Linux-machine en praat met je Proxmox- of"
-    echo "ESXi-API over het netwerk — niet op de hypervisor zelf."
+    echo "ESXi-API over het netwerk. Draai je hem op de Proxmox-host zelf, dan"
+    echo "kan Bunk ook het klantnetwerk voor je opzetten."
     echo
 
     [ -z "$TOKEN" ] && read -r -p "Enroll-token (uit de portal): " TOKEN </dev/tty
@@ -132,21 +138,51 @@ defmodule ControlPlaneWeb.WorkerInstallController do
 
     echo
     echo "Netwerk voor de VPS'en op deze node:"
+    # Two ways to run this. On the Proxmox host itself the agent can build the
+    # customer network (bridge + gateway + NAT) from the subnet the control plane
+    # assigns, and the operator is asked nothing beyond a bridge name. Anywhere
+    # else -- the agent on a separate VM, or ESXi, where there is no Linux host to
+    # configure -- the operator owns the network and declares it here.
+    #
     # Bridge/VLAN are Proxmox-only concepts (the Proxmox provider forces the NIC
     # bridge + 802.1q tag). On ESXi a VM's network is a *port group* and the
     # clone inherits it from the template, so we neither ask nor pass it there.
     VPS_BRIDGE=""
     VPS_VLAN=0
-    if [ "$HYP" = "proxmox" ]; then
-      read -r -p "  Bridge (bv. vmbr0; leeg = van de template overnemen): " VPS_BRIDGE </dev/tty
-      read -r -p "  VLAN-tag (0 = geen VLAN): " VPS_VLAN </dev/tty; VPS_VLAN="${VPS_VLAN:-0}"
-    else
-      echo "  VPS'en gebruiken de port group / netwerk-adapter van de template."
+    VPS_GW=""; VPS_CIDR=""; VPS_RSTART=""; VPS_REND=""
+    MANAGE_NET=false
+
+    ON_PVE_HOST=false
+    [ "$HYP" = "proxmox" ] && [ -d /etc/pve ] && [ -x /usr/sbin/qm ] && ON_PVE_HOST=true
+
+    if [ "$ON_PVE_HOST" = "true" ]; then
+      echo "  Deze machine is de Proxmox-host zelf."
+      echo "  Bunk kan het klantnetwerk dan volledig zelf opzetten: een eigen subnet"
+      echo "  per node, een gateway op de bridge, en uitgaand verkeer via jouw uplink."
+      read -r -p "  Netwerk door Bunk laten beheren? (J/n): " MN </dev/tty
+      case "$MN" in n|N) MANAGE_NET=false;; *) MANAGE_NET=true;; esac
     fi
-    read -r -p "  Gateway voor VPS'en (bv. 192.168.1.1): " VPS_GW </dev/tty
-    read -r -p "  Subnet-prefix (bv. 24): " VPS_CIDR </dev/tty
-    read -r -p "  Eerste bruikbare IP (bv. 192.168.1.100): " VPS_RSTART </dev/tty
-    read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
+
+    if [ "$MANAGE_NET" = "true" ]; then
+      read -r -p "  Bridge voor VPS-verkeer [vmbr2]: " VPS_BRIDGE </dev/tty
+      VPS_BRIDGE="${VPS_BRIDGE:-vmbr2}"
+      read -r -p "  VLAN-tag (0 = geen VLAN): " VPS_VLAN </dev/tty; VPS_VLAN="${VPS_VLAN:-0}"
+      echo "  -> Het subnet wordt toegewezen door de control plane; je hoeft zelf"
+      echo "     geen gateway of IP-range op te geven."
+    else
+      if [ "$HYP" = "proxmox" ]; then
+        read -r -p "  Bridge (bv. vmbr0; leeg = van de template overnemen): " VPS_BRIDGE </dev/tty
+        read -r -p "  VLAN-tag (0 = geen VLAN): " VPS_VLAN </dev/tty; VPS_VLAN="${VPS_VLAN:-0}"
+      else
+        echo "  VPS'en gebruiken de port group / netwerk-adapter van de template."
+      fi
+      echo "  Je beheert het netwerk zelf. Geef op welk subnet de VPS'en krijgen --"
+      echo "  de gateway hieronder moet echt bestaan en verkeer doorlaten."
+      read -r -p "  Gateway voor VPS'en (bv. 192.168.1.1): " VPS_GW </dev/tty
+      read -r -p "  Subnet-prefix (bv. 24): " VPS_CIDR </dev/tty
+      read -r -p "  Eerste bruikbare IP (bv. 192.168.1.100): " VPS_RSTART </dev/tty
+      read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
+    fi
 
     echo
     if [ "$HYP" = "esxi" ]; then
@@ -211,6 +247,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Environment=BUNK_VPS_CIDR_PREFIX=${VPS_CIDR}
     Environment=BUNK_VPS_RANGE_START=${VPS_RSTART}
     Environment=BUNK_VPS_RANGE_END=${VPS_REND}
+    Environment=BUNK_MANAGE_NETWORK=${MANAGE_NET}
     Environment=BUNK_STATE_DIR=/var/lib/bunk-worker
     ExecStart=/usr/local/bin/bunk-worker
     Restart=always
@@ -226,6 +263,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     echo
     bold "== Klaar! =="
     echo "Je worker verbindt nu met $CP en biedt capaciteit aan."
+    if [ "$MANAGE_NET" = "true" ]; then
+      echo "Het klantnetwerk wordt opgezet op $VPS_BRIDGE zodra de node is ingeschreven;"
+      echo "welk subnet je kreeg zie je in de logs ('vps network ready')."
+    else
+      echo "Let op: je beheert het netwerk zelf. VPS'en krijgen gateway $VPS_GW --"
+      echo "zonder werkende gateway en NAT hebben ze geen verbinding."
+    fi
     echo "Status:  systemctl status bunk-worker"
     echo "Logs:    journalctl -u bunk-worker -f"
     """

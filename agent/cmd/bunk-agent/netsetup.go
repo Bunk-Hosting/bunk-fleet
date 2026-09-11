@@ -133,17 +133,17 @@ func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bo
 	}
 
 	addr := fmt.Sprintf("%s/%d", n.Gateway, n.CidrPrefix)
-	if out, err := run(ctx, "ip", "addr", "replace", addr, "dev", bridge); err != nil {
+	if out, err := runCmd(ctx, "ip", "addr", "replace", addr, "dev", bridge); err != nil {
 		logger.Warn("vps network: cannot set gateway address", "addr", addr, "err", err, "detail", out)
 		return
 	}
 
-	if out, err := run(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
+	if out, err := runCmd(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
 		logger.Warn("vps network: cannot enable IPv4 forwarding", "err", err, "detail", out)
 		return
 	}
 
-	routes, err := run(ctx, "ip", "-4", "route", "show", "default")
+	routes, err := runCmd(ctx, "ip", "-4", "route", "show", "default")
 	if err != nil {
 		logger.Warn("vps network: cannot read routing table", "err", err, "detail", routes)
 		return
@@ -155,10 +155,10 @@ func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bo
 	}
 
 	for _, rule := range natRules(bridge, uplink, subnet) {
-		if _, err := run(ctx, "iptables", checkArgs(rule)...); err == nil {
+		if _, err := runCmd(ctx, "iptables", checkArgs(rule)...); err == nil {
 			continue // already present
 		}
-		if out, err := run(ctx, "iptables", rule...); err != nil {
+		if out, err := runCmd(ctx, "iptables", rule...); err != nil {
 			logger.Warn("vps network: cannot install firewall rule",
 				"rule", strings.Join(rule, " "), "err", err, "detail", out)
 			return
@@ -173,18 +173,21 @@ func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bo
 // with no ports carries no traffic until a VM's tap is attached to it, so
 // creating one is inert — but it must exist before an address can go on it.
 func ensureBridge(ctx context.Context, bridge string) error {
-	if _, err := run(ctx, "ip", "link", "show", bridge); err != nil {
-		if out, err := run(ctx, "ip", "link", "add", "name", bridge, "type", "bridge"); err != nil {
+	if _, err := runCmd(ctx, "ip", "link", "show", bridge); err != nil {
+		if out, err := runCmd(ctx, "ip", "link", "add", "name", bridge, "type", "bridge"); err != nil {
 			return fmt.Errorf("creating bridge: %v (%s)", err, out)
 		}
 	}
-	if out, err := run(ctx, "ip", "link", "set", bridge, "up"); err != nil {
+	if out, err := runCmd(ctx, "ip", "link", "set", bridge, "up"); err != nil {
 		return fmt.Errorf("bringing bridge up: %v (%s)", err, out)
 	}
 	return nil
 }
 
-func run(ctx context.Context, name string, args ...string) (string, error) {
+// runCmd executes a command and returns its combined output, which is what the
+// warnings above quote when a step fails — iptables and ip both explain
+// themselves on stderr.
+func runCmd(ctx context.Context, name string, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
