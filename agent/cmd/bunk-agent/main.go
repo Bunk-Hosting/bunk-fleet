@@ -152,13 +152,14 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 		})
 	default:
 		return proxmox.New(proxmox.Config{
-			Host:        cfg.Proxmox.Host,
-			Node:        cfg.Proxmox.Node,
-			TokenID:     cfg.Proxmox.TokenID,
-			TokenSecret: cfg.Proxmox.TokenSecret,
-			VerifySSL:   cfg.Proxmox.VerifySSL,
-			Bridge:      cfg.VpsNetwork.Bridge,
-			VLAN:        cfg.VpsNetwork.VLAN,
+			BackupStorage: cfg.Proxmox.BackupStorage,
+			Host:          cfg.Proxmox.Host,
+			Node:          cfg.Proxmox.Node,
+			TokenID:       cfg.Proxmox.TokenID,
+			TokenSecret:   cfg.Proxmox.TokenSecret,
+			VerifySSL:     cfg.Proxmox.VerifySSL,
+			Bridge:        cfg.VpsNetwork.Bridge,
+			VLAN:          cfg.VpsNetwork.VLAN,
 		})
 	}
 }
@@ -367,6 +368,9 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		}
 		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
 		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
+
+	case transport.CmdBackup, transport.CmdDeleteBackup:
+		handleBackupCommand(ctx, logger, prov, cp, cmd)
 
 	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
 		var p struct {

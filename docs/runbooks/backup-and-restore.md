@@ -11,9 +11,16 @@ inventory, node identities — and the secrets in `.env.prod`, which matter
 independently: they carry `CONSOLE_SSH_PRIVATE_KEY`, and without it a restored
 database describes VPSes nobody can get into any more.
 
-**Not protected:** customer VPS disks. If a node's storage dies, the data on it
-is gone. That is a per-node job (`vzdump` and somewhere to put it) and it is not
-built yet. Say so honestly to anyone asking what they are buying.
+**Also protected, differently:** customer VPS disks. Each node archives the
+guests it runs with `vzdump` in snapshot mode — the guest keeps running — to its
+own storage, nightly, two kept per VPS. Customers see them as restore points on
+`GET /api/v1/vpses/:id/backups`, failures included.
+
+**Not protected:** those archives sit on the same node as the VPS they came
+from. They cover a customer who broke their own machine; they do not cover a node
+losing its storage. And restoring one is currently a manual `qmrestore` on the
+node — there is no button. Say both out loud to anyone asking what they are
+buying.
 
 ## How it works
 

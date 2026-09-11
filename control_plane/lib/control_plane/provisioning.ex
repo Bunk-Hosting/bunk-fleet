@@ -780,6 +780,43 @@ defmodule ControlPlane.Provisioning do
     multi
   end
 
+  # A backup acts on archives beside the VPS, never on the VPS itself, so it
+  # finalises into `vps_backups` and leaves the machine's status alone — a failed
+  # backup must not make a running VPS look broken.
+  defp finalize_vps(multi, %Command{kind: :backup, payload: payload}, _outcome, result) do
+    case payload["backup_id"] do
+      id when is_binary(id) ->
+        Multi.run(multi, :backup, fn _repo, _changes ->
+          ControlPlane.Backups.record_result(id, result)
+        end)
+
+      _ ->
+        multi
+    end
+  end
+
+  defp finalize_vps(multi, %Command{kind: :delete_backup, payload: payload}, :done, _result) do
+    case payload["backup_id"] do
+      id when is_binary(id) ->
+        Multi.run(multi, :backup, fn _repo, _changes ->
+          ControlPlane.Backups.forget(id)
+        end)
+
+      _ ->
+        multi
+    end
+  end
+
+  defp finalize_vps(multi, %Command{kind: :delete_backup, payload: payload}, :failed, result) do
+    # The archive is still there and still taking up the node's disk. Keep the
+    # row: it is the only handle on a file that now needs a person.
+    Logger.error(
+      "backup deletion failed for #{inspect(payload["volid"])}: #{inspect(result["error"])}"
+    )
+
+    multi
+  end
+
   # Non-provision/non-delete commands (or those without an associated VPS) only
   # update the command itself.
   defp finalize_vps(multi, _command, _outcome, _result), do: multi

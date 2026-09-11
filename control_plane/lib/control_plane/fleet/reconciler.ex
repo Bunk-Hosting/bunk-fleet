@@ -29,6 +29,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   require Logger
 
+  alias ControlPlane.Backups
   alias ControlPlane.Billing
   alias ControlPlane.Fleet
   alias ControlPlane.Subscriptions
@@ -41,6 +42,13 @@ defmodule ControlPlane.Fleet.Reconciler do
   # locked FOR UPDATE. Running it hourly instead of on every 30s tick cuts row
   # growth and lock churn ~120x at scale. Override with `:meter_interval_ms`.
   @default_meter_interval_ms 60 * 60 * 1000
+
+  # Backups are dispatched from the same tick, gated the same way. Checking which
+  # VPSes are due is one query; actually taking one is minutes of the node's disk,
+  # and `Backups.run_due/1` only dispatches for VPSes whose last backup is older
+  # than the configured interval — so this cadence bounds how often we ask, not
+  # how often a customer's VPS is backed up. Override with `:backup_check_interval_ms`.
+  @default_backup_check_interval_ms 15 * 60 * 1000
 
   @doc """
   Starts the reconciler.
@@ -58,8 +66,20 @@ defmodule ControlPlane.Fleet.Reconciler do
   def init(opts) do
     interval_ms = Keyword.get(opts, :interval_ms, @default_interval_ms)
     meter_interval_ms = Keyword.get(opts, :meter_interval_ms, @default_meter_interval_ms)
+
+    backup_check_interval_ms =
+      Keyword.get(opts, :backup_check_interval_ms, @default_backup_check_interval_ms)
+
     schedule_tick(interval_ms)
-    {:ok, %{interval_ms: interval_ms, meter_interval_ms: meter_interval_ms, last_meter_ms: nil}}
+
+    {:ok,
+     %{
+       interval_ms: interval_ms,
+       meter_interval_ms: meter_interval_ms,
+       last_meter_ms: nil,
+       backup_check_interval_ms: backup_check_interval_ms,
+       last_backup_check_ms: nil
+     }}
   end
 
   @impl true
@@ -68,6 +88,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     reconcile_nodes()
     reclaim_reservations()
     state = maybe_meter_usage(state)
+    state = maybe_dispatch_backups(state)
     settle_subscriptions()
     schedule_tick(interval_ms)
     {:noreply, state}
@@ -85,6 +106,31 @@ defmodule ControlPlane.Fleet.Reconciler do
     else
       state
     end
+  end
+
+  defp maybe_dispatch_backups(%{backup_check_interval_ms: bi, last_backup_check_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= bi do
+      dispatch_backups()
+      %{state | last_backup_check_ms: now}
+    else
+      state
+    end
+  end
+
+  defp dispatch_backups do
+    summary = Backups.run_due()
+
+    if summary.started > 0 or summary.errors > 0 do
+      Logger.info("backups dispatched", started: summary.started, errors: summary.errors)
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler backup dispatch failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
   end
 
   defp reconcile_nodes do

@@ -101,3 +101,29 @@ type Provider interface {
 	// Name returns the short provider identifier, e.g. "proxmox".
 	Name() string
 }
+
+// Backups is implemented by providers that can archive a guest's disk.
+//
+// Separate from Provider on purpose. Backing up a Proxmox guest and backing up
+// an ESXi guest are different mechanisms with different storage, so a provider
+// that cannot do it should say so by not implementing this — rather than by
+// growing a method that returns "not supported" and looking capable in the type
+// system.
+type Backups interface {
+	// BackupVM archives the guest's disk to the node's own storage and returns a
+	// provider-native handle on the archive plus its size in bytes.
+	BackupVM(ctx context.Context, id string) (Backup, error)
+
+	// DeleteBackup removes an archive by the handle BackupVM returned. Deleting
+	// one that is already gone is success.
+	DeleteBackup(ctx context.Context, volid string) error
+}
+
+// Backup is what a provider hands back after archiving a guest.
+type Backup struct {
+	// VolID is the provider's own identifier for the archive, opaque to everyone
+	// else — e.g. "local:backup/vzdump-qemu-106-2026_09_11-20_15_00.vma.zst".
+	VolID string
+	// SizeBytes is the archive's size on the node's storage.
+	SizeBytes int64
+}

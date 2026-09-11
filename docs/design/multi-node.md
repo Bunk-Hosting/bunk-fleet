@@ -209,10 +209,19 @@ accepts an append and nothing else. Restore verifies the dump against a recorded
 checksum and refuses the live database name. One rehearsal has been run and its
 numbers are in `docs/runbooks/backup-and-restore.md`.
 
-What is still missing is the half a customer would assume was meant: **their VPS
-disk**. If a node's storage dies the data on it is gone. That is a per-node job —
-`vzdump` and somewhere to put it — and restoring to a *different* node remains
-the cheapest failover story available at this size.
+Customer VPS disks are now backed up too, nightly, by the node that runs them:
+`vzdump` in snapshot mode (the guest keeps running) to the node's own storage,
+scheduled from the reconciler tick, two kept per VPS, and the archives listed
+back to the customer as restore points.
+
+That covers the failure customers actually have — they broke their own machine —
+and not the one they would assume it covers: **the archives sit on the same node
+as the VPS**, so a node losing its storage loses both. Moving them off-node, and
+restoring to a *different* node, remains the cheapest failover story available at
+this size and is the next step here.
+
+Restoring is also not built yet: an archive exists and can be restored by hand
+through Proxmox, but there is no button and no command for it.
 
 The rehearsal also ran on the machine the backup came from, which proves the
 archive is restorable but not that recovery works with that machine gone.

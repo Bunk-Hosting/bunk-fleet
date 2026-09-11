@@ -42,6 +42,11 @@ const (
 	CmdPause CommandKind = "pause"
 	// CmdResume un-suspends a paused VM. Payload carries the target id.
 	CmdResume CommandKind = "resume"
+	// CmdBackup archives a guest's disk to the node's own storage. Payload carries
+	// the target id; the result carries the archive's handle and size.
+	CmdBackup CommandKind = "backup"
+	// CmdDeleteBackup removes one archive by the handle a backup produced.
+	CmdDeleteBackup CommandKind = "delete_backup"
 	// CmdConsoleConnect asks the agent to bridge one browser console to a VPS on
 	// this node. Unlike the verbs above it changes nothing and reports no result:
 	// it is a request to open a connection, delivered on the command poll because
@@ -133,6 +138,10 @@ type CommandResult struct {
 	IP string `json:"ip"`
 	// Error carries a human-readable failure reason when Status is "failed".
 	Error string `json:"error"`
+	// VolID and SizeBytes describe the archive a backup produced. Empty for every
+	// other kind of command.
+	VolID     string `json:"volid,omitempty"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
 }
 
 // Client is the HTTP control-plane client. It is safe for concurrent use.

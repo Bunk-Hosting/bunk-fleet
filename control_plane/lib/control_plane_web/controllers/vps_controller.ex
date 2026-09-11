@@ -15,6 +15,8 @@ defmodule ControlPlaneWeb.VpsController do
   import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Credits, Fleet, Provisioning}
+  alias ControlPlane.Backups
+  alias ControlPlane.Backups.VpsBackup
   alias ControlPlane.Fleet.{Node, Package, Region, Vps}
 
   def index(conn, _params) do
@@ -111,6 +113,35 @@ defmodule ControlPlaneWeb.VpsController do
       {:error, :no_node} -> error(conn, :unprocessable_entity, "no_node")
       _ -> not_found(conn)
     end
+  end
+
+  @doc """
+  A VPS's restore points, newest first.
+
+  Failures are listed too. "The last three nightly backups failed" is the single
+  most useful thing this endpoint can say, and it can only say it if failures
+  appear.
+  """
+  def backups(conn, %{"id" => id}) do
+    with {:ok, uuid} <- valid_id(id),
+         %Vps{} <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, uuid) do
+      json(conn, %{backups: Enum.map(Backups.list_for_vps(uuid), &backup_json/1)})
+    else
+      _ -> not_found(conn)
+    end
+  end
+
+  defp backup_json(%VpsBackup{} = backup) do
+    %{
+      id: backup.id,
+      status: backup.status,
+      size_bytes: backup.size_bytes,
+      started_at: backup.started_at,
+      finished_at: backup.finished_at,
+      # Deliberately not the volid: it is the node's internal handle on a file,
+      # of no use to a customer and no business of theirs.
+      error: if(backup.status == :failed, do: backup.error)
+    }
   end
 
   @doc "Starts an owned, stopped VPS. 404 if not owned (existence is never leaked)."

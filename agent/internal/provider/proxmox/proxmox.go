@@ -42,6 +42,9 @@ type Config struct {
 	// is inherited). VLAN > 0 adds an 802.1q tag for a dedicated VPS network.
 	Bridge string
 	VLAN   int
+	// BackupStorage is the PVE storage vzdump archives are written to. Empty
+	// means "local", which is the storage every install has.
+	BackupStorage string
 }
 
 // Client is a Proxmox VE provider implementation.

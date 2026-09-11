@@ -15,7 +15,21 @@ defmodule ControlPlane.Fleet.Command do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "commands" do
-    field :kind, Ecto.Enum, values: [:provision, :delete, :start, :stop, :pause, :resume]
+    field :kind, Ecto.Enum,
+      values: [
+        :provision,
+        :delete,
+        :start,
+        :stop,
+        :pause,
+        :resume,
+        # Disk backups. Unlike the verbs above these change nothing about the
+        # VPS itself — they act on archives beside it — so they finalise into
+        # `vps_backups` rather than into the VPS's status.
+        :backup,
+        :delete_backup
+      ]
+
     field :payload, :map, default: %{}
 
     field :status, Ecto.Enum,

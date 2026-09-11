@@ -203,6 +203,7 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/start", VpsController, :start
     post "/vpses/:id/stop", VpsController, :stop
     post "/vpses/:id/console-ticket", ConsoleController, :create_ticket
+    get "/vpses/:id/backups", VpsController, :backups
 
     # The caller's own prepaid wallet: balance, ledger movements, top-ups.
     get "/billing/wallet", BillingController, :wallet

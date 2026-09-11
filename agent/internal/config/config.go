@@ -22,6 +22,9 @@ type ProxmoxConfig struct {
 	TokenID     string
 	TokenSecret string
 	VerifySSL   bool
+	// BackupStorage is the PVE storage VPS backups are written to; empty means
+	// "local", the storage every install has.
+	BackupStorage string
 }
 
 // OfferConfig caps how much of this machine is dedicated to the VPS pool, i.e.
@@ -167,6 +170,10 @@ func Load() (Config, error) {
 		// certs must explicitly opt out via BUNK_PROXMOX_VERIFY_SSL=false.
 		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true, &envErrs), "verify Proxmox TLS certificate")
 
+		pveBackupStorage = fs.String("proxmox-backup-storage",
+			envOr("BUNK_PROXMOX_BACKUP_STORAGE", ""),
+			"PVE storage for VPS backups (empty = local)")
+
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second, &envErrs), "capacity heartbeat interval")
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
@@ -220,11 +227,12 @@ func Load() (Config, error) {
 		},
 		ManageNetwork: *manageNetwork,
 		Proxmox: ProxmoxConfig{
-			Host:        *pveHost,
-			Node:        *pveNode,
-			TokenID:     *pveTokID,
-			TokenSecret: *pveSecret,
-			VerifySSL:   *pveVerify,
+			Host:          *pveHost,
+			Node:          *pveNode,
+			TokenID:       *pveTokID,
+			TokenSecret:   *pveSecret,
+			VerifySSL:     *pveVerify,
+			BackupStorage: *pveBackupStorage,
 		},
 		Esxi: EsxiConfig{
 			URL:          *esxiURL,
