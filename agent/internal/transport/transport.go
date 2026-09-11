@@ -4,7 +4,9 @@
 // The agent always DIALS OUT (so it works behind NAT): it enrolls once with a
 // one-time token to obtain a durable node identity and credentials, then
 // periodically POSTs capacity heartbeats and long-polls for commands
-// (provision / delete). Console proxying is intentionally out of scope here.
+// (provision / delete). Browser consoles ride the same outbound-only rule: the
+// control plane never dials the node, it asks the node to dial back
+// (DialConsoleRelay).
 package transport
 
 import (
@@ -14,10 +16,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 // CommandKind enumerates the command verbs the control plane may dispatch.
@@ -37,6 +42,11 @@ const (
 	CmdPause CommandKind = "pause"
 	// CmdResume un-suspends a paused VM. Payload carries the target id.
 	CmdResume CommandKind = "resume"
+	// CmdConsoleConnect asks the agent to bridge one browser console to a VPS on
+	// this node. Unlike the verbs above it changes nothing and reports no result:
+	// it is a request to open a connection, delivered on the command poll because
+	// that is the channel the agent is already holding open.
+	CmdConsoleConnect CommandKind = "console_connect"
 )
 
 // EnrollRequest is sent once to exchange a one-time token for node credentials.
@@ -361,4 +371,54 @@ func (c *Client) pollCommands(ctx context.Context) ([]Command, error) {
 		return nil, fmt.Errorf("transport: decode commands: %w", err)
 	}
 	return cmds, nil
+}
+
+// DialConsoleRelay opens the node half of one console session: a WebSocket to
+// the control plane, returned as a net.Conn so the caller can simply copy bytes
+// between it and the VPS's SSH port.
+//
+// WebSocket rather than a streaming HTTP request because the path to the control
+// plane runs through a CDN, and CDNs buffer request bodies — which would deadlock
+// an interactive terminal — but forward WebSockets verbatim.
+func (c *Client) DialConsoleRelay(ctx context.Context, relayToken string) (net.Conn, error) {
+	if c.token == "" {
+		return nil, errors.New("transport: not enrolled (no agent token)")
+	}
+	endpoint, err := consoleRelayURL(c.baseURL, relayToken)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
+		HTTPClient: c.http,
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + c.token}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("transport: console relay dial: %w", err)
+	}
+
+	// The SSH stream is arbitrary binary and can be long-lived and idle (someone
+	// leaves a terminal open), so no read limit and no message-size assumptions.
+	conn.SetReadLimit(-1)
+	return websocket.NetConn(context.WithoutCancel(ctx), conn, websocket.MessageBinary), nil
+}
+
+// consoleRelayURL turns the control-plane base URL into the ws:// or wss:// URL
+// of the relay endpoint, carrying the relay token.
+func consoleRelayURL(baseURL, relayToken string) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("transport: bad control plane URL %q: %w", baseURL, err)
+	}
+	switch u.Scheme {
+	case "https":
+		u.Scheme = "wss"
+	case "http":
+		u.Scheme = "ws"
+	default:
+		return "", fmt.Errorf("transport: control plane URL has no http(s) scheme: %q", baseURL)
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/v1/console-relay"
+	u.RawQuery = url.Values{"token": {relayToken}}.Encode()
+	return u.String(), nil
 }

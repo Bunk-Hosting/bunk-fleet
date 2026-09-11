@@ -10,6 +10,8 @@ defmodule ControlPlane.Console.Session do
   use GenServer
   require Logger
 
+  alias ControlPlane.Console.Relay
+
   @max_input 65_536
   @max_dim 1000
 
@@ -29,6 +31,7 @@ defmodule ControlPlane.Console.Session do
       conn: nil,
       chan: nil,
       owner: owner,
+      node_id: opts[:node_id],
       host: host,
       port: port,
       user: user,
@@ -60,7 +63,7 @@ defmodule ControlPlane.Console.Session do
         connect_timeout: 10_000
       ]
 
-      case :ssh.connect(String.to_charlist(st.host), st.port, opts) do
+      case connect(st, opts) do
         {:ok, conn} ->
           case open_shell(conn) do
             {:ok, chan} ->
@@ -76,6 +79,28 @@ defmodule ControlPlane.Console.Session do
           notify_closed(st.owner, reason)
           {:stop, :normal, st}
       end
+    end
+  end
+
+  # Always through the node's own agent, never straight at the VPS. The control
+  # plane can only dial a VPS while it happens to share a router with it, which is
+  # true of the first node and of no node in another building; routing every
+  # console the same way means the path a remote operator uses is the path that
+  # gets exercised every day.
+  defp connect(st, opts) do
+    case Relay.open(st.node_id, st.vps_id, st.host, st.port) do
+      {:ok, socket, _relay} ->
+        case :ssh.connect(socket, opts, 15_000) do
+          {:ok, conn} ->
+            {:ok, conn}
+
+          {:error, reason} ->
+            :gen_tcp.close(socket)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

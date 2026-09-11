@@ -9,13 +9,17 @@ defmodule ControlPlaneWeb.CommandController do
       agent likely crashed before reporting a result, so they are redelivered.
       Redelivery assumes the agent handles commands idempotently (Go side). `[]`
       when none.
+      The array also carries any pending `console_connect` requests for the node
+      (see `ControlPlane.Console.Relay`); those are transient, report no result,
+      and are handed out once.
     * `POST /v1/commands/:id/result` accepts the agent's outcome for one of the
       node's commands and finalises the associated VPS, returning `204`.
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.Repo
+  alias ControlPlane.Console
   alias ControlPlane.Provisioning
+  alias ControlPlane.Repo
   alias ControlPlane.Fleet.Command
 
   def index(conn, _params) do
@@ -35,7 +39,13 @@ defmodule ControlPlaneWeb.CommandController do
         }
       end)
 
-    json(conn, payload)
+    # Console connect requests ride the same poll rather than getting a loop of
+    # their own: the agent is already asking every couple of seconds, and a
+    # console that waits for the next poll is a console that opens in about a
+    # second. They are deliberately NOT `commands` rows — they are in-memory,
+    # expire in seconds, carry no result, and must never be redelivered to an
+    # agent that restarts, because by then the person has clicked again.
+    json(conn, payload ++ Console.Relay.take_for_node(node.id))
   end
 
   def result(conn, %{"id" => id} = params) do

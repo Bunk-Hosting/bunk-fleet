@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -55,7 +56,11 @@ func run(logger *slog.Logger) error {
 	// Credentials: prefer persisted enrollment (survives restarts) over consuming
 	// a fresh single-use token; only enroll when no state exists yet.
 	statePath := filepath.Join(cfg.StateDir, "state.json")
+	// Held past the branches below: the console target check needs the VPS subnet
+	// the control plane assigned, whether this run enrolled or resumed.
+	var state persistedState
 	if st, ok := loadState(statePath); ok {
+		state = st
 		cp.SetCredentials(st.NodeID, st.AgentToken)
 		logger.Info("loaded persisted enrollment", "node_id", st.NodeID)
 		applyOverlay(logger, st)
@@ -104,6 +109,7 @@ func run(logger *slog.Logger) error {
 		}
 		applyOverlay(logger, st)
 		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
+		state = st
 	} else {
 		logger.Warn("no enroll token and no persisted state; heartbeats will fail until credentials are set")
 	}
@@ -116,7 +122,7 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		go consumeCommands(ctx, logger, prov, cp, cmds)
+		go consumeCommands(ctx, logger, prov, cp, cmds, assignedSubnet(state, cfg.VpsNetwork))
 		logger.Info("command consumer started")
 	} else {
 		logger.Warn("not enrolled; command consumer not started")
@@ -234,7 +240,7 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 // consumeCommands drains the command channel until it is closed (on context
 // cancellation or a fatal poll error) and dispatches each command. A panic or
 // failure handling one command must not stop the loop.
-func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command) {
+func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command, assigned *net.IPNet) {
 	// H4: replay protection. A MITM on a cleartext channel (or a buggy CP) could
 	// re-deliver a previously-seen command — e.g. replay a delete{vm_id} after
 	// that VMID has been reassigned to another tenant. Process each Command.ID at
@@ -264,6 +270,14 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 					order = order[1:]
 				}
 			}
+			// A console request is not a command: nothing converges, nothing is
+			// reported, and it must not sit inside handleCommand's 15-minute
+			// budget while a person waits for a terminal.
+			if cmd.Kind == transport.CmdConsoleConnect {
+				handleConsoleConnect(ctx, logger, cp, assigned, cmd.Payload)
+				continue
+			}
+
 			handleCommand(ctx, logger, prov, cp, cmd)
 		}
 	}

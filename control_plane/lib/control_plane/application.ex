@@ -16,6 +16,10 @@ defmodule ControlPlane.Application do
         ControlPlane.RateLimiter,
         # Tracks live console SSH sessions per user (duplicate keys = {:user, id}).
         {Registry, keys: :duplicate, name: ControlPlane.Console.Registry},
+        # One entry per in-flight console relay, keyed by its relay token — this
+        # is what the agent's dial-back looks itself up in.
+        {Registry, keys: :unique, name: ControlPlane.Console.Relay.Registry},
+        {DynamicSupervisor, strategy: :one_for_one, name: ControlPlane.Console.RelaySupervisor},
         ControlPlane.Console.Tickets
       ] ++
         reconciler_child() ++

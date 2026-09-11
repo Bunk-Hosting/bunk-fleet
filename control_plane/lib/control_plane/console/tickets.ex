@@ -19,9 +19,17 @@ defmodule ControlPlane.Console.Tickets do
 
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
+  @doc """
+  A fresh URL-safe 256-bit token.
+
+  Shared with `ControlPlane.Console.Relay`, whose relay tokens have the same job:
+  unguessable, single-use, and carried in a query string.
+  """
+  def random_token, do: :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
+
   @doc "Mint a single-use ticket for a VPS the caller owns."
   def mint(vps_id, user_id) do
-    ticket = :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
+    ticket = random_token()
     expires = System.monotonic_time(:millisecond) + @ttl_ms
     :ets.insert(@table, {ticket, to_string(vps_id), user_id, expires})
     ticket

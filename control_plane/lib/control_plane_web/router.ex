@@ -70,6 +70,12 @@ defmodule ControlPlaneWeb.Router do
     plug ControlPlaneWeb.Plugs.NodeAuth
   end
 
+  # The console relay is a WebSocket upgrade, not JSON, so it cannot go through
+  # :accepts — but it is still a node calling, so it still authenticates as one.
+  pipeline :node_ws do
+    plug ControlPlaneWeb.Plugs.NodeAuth
+  end
+
   # Admin API: JSON plus shared-secret admin-token bearer authentication.
   pipeline :admin_api do
     plug :accepts, ["json"]
@@ -250,6 +256,15 @@ defmodule ControlPlaneWeb.Router do
     post "/heartbeat", HeartbeatController, :create
     get "/commands", CommandController, :index
     post "/commands/:id/result", CommandController, :result
+  end
+
+  # The node dials this back after seeing a console_connect request on its poll,
+  # and pipes the VPS's SSH stream through it. Both credentials are checked: the
+  # agent token proves which node is calling, the relay token which console.
+  scope "/v1", ControlPlaneWeb do
+    pipe_through :node_ws
+
+    get "/console-relay", ConsoleController, :relay_ws
   end
 
   # Admin API.

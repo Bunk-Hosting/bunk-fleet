@@ -27,6 +27,7 @@ defmodule ControlPlaneWeb.ConsoleSocket do
       {:stop, :normal, state}
     else
       case Session.start_link(%{
+             node_id: state.node_id,
              host: state.host,
              port: state.port,
              user: state.user,
