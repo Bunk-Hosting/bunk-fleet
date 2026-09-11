@@ -1,0 +1,13 @@
+Hoi<%= name %>,
+
+We konden de maandelijkse kosten voor je VPS "<%= vps_name %>" niet afschrijven
+omdat je Bunk-wallet saldo te laag is. Om dataverlies te voorkomen hebben we
+de VPS gepauzeerd — er draait niets meer op, maar niets is verwijderd.
+
+Waardeer je wallet op vóór <%= retry_date %> en we
+proberen het automatisch opnieuw en zetten de VPS weer aan:
+
+<%= url %>
+
+Blijft het saldo te laag, dan blijft de VPS gepauzeerd totdat je opwaardeert —
+er wordt niets verwijderd.

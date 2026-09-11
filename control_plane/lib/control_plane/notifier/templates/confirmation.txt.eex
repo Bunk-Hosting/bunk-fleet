@@ -1,0 +1,8 @@
+Hoi<%= name %>,
+
+Bevestig je e-mailadres om je Bunk Hosting account te activeren en je
+welkomstkrediet te ontvangen:
+
+<%= url %>
+
+Deze link is 24 uur geldig. Heb je geen account aangemaakt? Dan kun je deze e-mail negeren.

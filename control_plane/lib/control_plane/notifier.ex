@@ -5,15 +5,30 @@ defmodule ControlPlane.Notifier do
   subscription can't be charged. Delivery goes through `ControlPlane.Mailer`
   (Swoosh) — see its moduledoc for how the adapter varies per environment.
 
-  Every message is multipart: the branded HTML body from
-  `ControlPlane.Notifier.Templates` plus a plain-text alternative. The text part
-  is not a formality — some clients render it by preference, and a mail with no
-  text alternative scores worse with spam filters.
+  Every message is multipart: the branded HTML body plus a plain-text
+  alternative. The text part is not a formality — some clients render it by
+  preference, and a mail with no text alternative scores worse with spam
+  filters. Both bodies are rendered together by
+  `ControlPlane.Notifier.Templates`, which returns `{text, html}` from a
+  single call per email — see that module's moduledoc for why the two used
+  to live apart (an inline heredoc here, a `.html.eex` there) and why that
+  was a bug waiting to happen. This module no longer has any copy of its own
+  to keep in sync: it asks `Templates` for both bodies and hands them to the
+  mailer.
 
   Every `deliver_*/2` call is wrapped so a mail failure (SMTP down, misconfigured
   relay) never raises into the caller: registration, confirmation, and the
   billing settle loop must all complete regardless of whether the email actually
   went out. Failures are logged, not swallowed silently.
+
+  ## Public API stability
+
+  `deliver_confirmation_instructions/2`, `deliver_reset_password_instructions/2`,
+  and `deliver_low_balance_warning/3` are called directly by
+  `ControlPlane.Accounts` and `ControlPlane.Subscriptions`. Their names,
+  arities, and `:ok | {:error, reason}` return shape are a contract with
+  those callers and must not change here — only the rendering underneath
+  them (this module's private `deliver/1` and `Templates`) is free to move.
   """
   require Logger
 
@@ -26,44 +41,27 @@ defmodule ControlPlane.Notifier do
   @doc "Sends the 'confirm your account' email with a link carrying `token`."
   def deliver_confirmation_instructions(%User{} = user, token) do
     url = public_url() <> "/verify-email?token=" <> token
+    {text, html} = Templates.confirmation(user.name, url)
 
-    deliver(
-      user.email,
-      "Bevestig je Bunk Hosting account",
-      """
-      Hoi#{name_suffix(user)},
-
-      Bevestig je e-mailadres om je Bunk Hosting account te activeren en je
-      welkomstkrediet te ontvangen:
-
-      #{url}
-
-      Deze link is 24 uur geldig. Heb je geen account aangemaakt? Dan kun je deze e-mail negeren.
-      """,
-      Templates.confirmation(user.name, url)
-    )
+    deliver(%{
+      to: user.email,
+      subject: "Bevestig je Bunk Hosting account",
+      text: text,
+      html: html
+    })
   end
 
   @doc "Sends the password-reset email with a link carrying `token`."
   def deliver_reset_password_instructions(%User{} = user, token) do
     url = public_url() <> "/reset-password?token=" <> token
+    {text, html} = Templates.reset_password(user.name, url)
 
-    deliver(
-      user.email,
-      "Wachtwoord opnieuw instellen — Bunk Hosting",
-      """
-      Hoi#{name_suffix(user)},
-
-      Je hebt een nieuw wachtwoord aangevraagd voor je Bunk Hosting account. Klik op
-      onderstaande link om een nieuw wachtwoord in te stellen:
-
-      #{url}
-
-      Deze link is 1 uur geldig. Heb je dit niet aangevraagd? Dan kun je deze e-mail
-      negeren — je wachtwoord blijft ongewijzigd.
-      """,
-      Templates.reset_password(user.name, url)
-    )
+    deliver(%{
+      to: user.email,
+      subject: "Wachtwoord opnieuw instellen — Bunk Hosting",
+      text: text,
+      html: html
+    })
   end
 
   @doc """
@@ -72,42 +70,32 @@ defmodule ControlPlane.Notifier do
   """
   def deliver_low_balance_warning(%User{} = user, vps_name, %Date{} = retry_date) do
     top_up_url = public_url() <> "/dashboard/billing"
+    # Formatted once, then handed to both bodies via Templates.low_balance/4
+    # so the text and HTML mail are guaranteed to show the same date string.
+    retry_date_str = Calendar.strftime(retry_date, "%d-%m-%Y")
+    {text, html} = Templates.low_balance(user.name, vps_name, retry_date_str, top_up_url)
 
-    deliver(
-      user.email,
-      "Saldo te laag — #{vps_name} is gepauzeerd",
-      """
-      Hoi#{name_suffix(user)},
-
-      We konden de maandelijkse kosten voor je VPS "#{vps_name}" niet afschrijven
-      omdat je Bunk-wallet saldo te laag is. Om dataverlies te voorkomen hebben we
-      de VPS gepauzeerd — er draait niets meer op, maar niets is verwijderd.
-
-      Waardeer je wallet op vóór #{Calendar.strftime(retry_date, "%d-%m-%Y")} en we
-      proberen het automatisch opnieuw en zetten de VPS weer aan:
-
-      #{top_up_url}
-
-      Blijft het saldo te laag, dan blijft de VPS gepauzeerd totdat je opwaardeert —
-      er wordt niets verwijderd.
-      """,
-      Templates.low_balance(
-        user.name,
-        vps_name,
-        Calendar.strftime(retry_date, "%d-%m-%Y"),
-        top_up_url
-      )
-    )
+    deliver(%{
+      to: user.email,
+      subject: "Saldo te laag — #{vps_name} is gepauzeerd",
+      text: text,
+      html: html
+    })
   end
 
-  defp deliver(to_email, subject, body_text, body_html) do
+  # Takes a map instead of four positional arguments: `to`/`subject`/`text`/`html`
+  # are all strings, so a positional `deliver(to, subject, text, html)` reads
+  # fine at the definition but is a silent transposition hazard at every call
+  # site. Named keys make that class of mistake a `KeyError`/`FunctionClauseError`
+  # instead of a wrong email going out.
+  defp deliver(%{to: to_email, subject: subject, text: text, html: html}) do
     email =
       new()
       |> to(to_email)
       |> from({from_name(), from_email()})
       |> subject(subject)
-      |> text_body(body_text)
-      |> html_body(body_html)
+      |> text_body(text)
+      |> html_body(html)
 
     case Mailer.deliver(email) do
       {:ok, _metadata} ->
@@ -126,9 +114,6 @@ defmodule ControlPlane.Notifier do
       _ -> "***"
     end
   end
-
-  defp name_suffix(%User{name: name}) when is_binary(name) and name != "", do: " " <> name
-  defp name_suffix(_user), do: ""
 
   defp from_email, do: Application.get_env(:control_plane, :mail)[:from_email]
   defp from_name, do: Application.get_env(:control_plane, :mail)[:from_name]
