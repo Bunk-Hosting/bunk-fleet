@@ -183,6 +183,8 @@ interface BunkVps {
   disk_gb: number;
   region?: string | null;
   provider_vm_id?: string | null;
+  public_host?: string | null;
+  ssh_port?: number | null;
   inserted_at: string;
 }
 
@@ -195,7 +197,11 @@ function transformVps(v: BunkVps): Vps {
     status: STATUS_MAP[v.status] ?? "PENDING",
     ip_address: v.ip_address,
     hostname: null,
-    ssh_port: 22,
+    public_host: v.public_host ?? null,
+    // Null, not 22: a VPS whose node has no public address has no SSH port
+    // either, and showing one would be an invitation to a connection that
+    // cannot succeed.
+    ssh_port: v.ssh_port ?? null,
     ssh_username: "root",
     vcenter_vm_id: v.provider_vm_id ?? null,
     created_at: v.inserted_at,
@@ -382,7 +388,7 @@ export const vpsApi = {
     return {
       data: {
         ip_address: res.data.vps.ip_address,
-        ssh_port: 22,
+        ssh_port: res.data.vps.ssh_port ?? null,
         ssh_username: "root",
         sudo_password: null,
       },

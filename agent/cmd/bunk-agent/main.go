@@ -104,8 +104,13 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		go consumeCommands(ctx, logger, prov, cp, cmds, assignedSubnet(state, cfg.VpsNetwork))
+		subnet := assignedSubnet(state, cfg.VpsNetwork)
+		go consumeCommands(ctx, logger, prov, cp, cmds, subnet)
 		logger.Info("command consumer started")
+
+		// Inbound access for this node's customers. Its own loop rather than a
+		// command, because it is state to converge on, not an event to react to.
+		go syncForwards(ctx, logger, cp, subnet, cfg.ManageNetwork)
 	} else {
 		logger.Warn("not enrolled; command consumer not started")
 	}

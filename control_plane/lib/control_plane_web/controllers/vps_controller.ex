@@ -15,7 +15,7 @@ defmodule ControlPlaneWeb.VpsController do
   import ControlPlaneWeb.ApiResponse
 
   alias ControlPlane.{Credits, Fleet, Provisioning}
-  alias ControlPlane.Fleet.{Package, Region, Vps}
+  alias ControlPlane.Fleet.{Node, Package, Region, Vps}
 
   def index(conn, _params) do
     vpses =
@@ -49,7 +49,11 @@ defmodule ControlPlaneWeb.VpsController do
            charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price) do
       conn
       |> put_status(:created)
-      |> json(%{vps: vps_json(vps)})
+      # Re-read rather than render the struct the transaction returned: that one
+      # has no node or port forwards loaded, so create would answer with a null
+      # endpoint for a VPS that has one, and disagree with show/index about the
+      # same machine.
+      |> json(%{vps: vps_json(Fleet.get_vps_for_owner(user.id, vps.id) || vps)})
     else
       nil -> error(conn, :unprocessable_entity, "no_matching_package")
       {:error, :input_too_large} -> error(conn, :unprocessable_entity, "input_too_large")
@@ -229,9 +233,37 @@ defmodule ControlPlaneWeb.VpsController do
       vcpu: vps.vcpu,
       ram_mb: vps.ram_mb,
       disk_gb: vps.disk_gb,
-      inserted_at: vps.inserted_at
+      inserted_at: vps.inserted_at,
+      # Where a customer connects. Null when the node this VPS landed on has no
+      # public address yet: the honest answer, and the one the UI needs in order
+      # to say "console only" instead of printing an address that goes nowhere.
+      public_host: public_host(vps),
+      ssh_port: ssh_port(vps),
+      port_forwards: port_forwards_json(vps)
     }
   end
+
+  defp public_host(%Vps{node: %Node{public_host: host}}), do: host
+  defp public_host(%Vps{}), do: nil
+
+  defp ssh_port(%Vps{port_forwards: forwards}) when is_list(forwards) do
+    Enum.find_value(forwards, fn f -> if f.target_port == 22, do: f.public_port end)
+  end
+
+  defp ssh_port(%Vps{}), do: nil
+
+  defp port_forwards_json(%Vps{port_forwards: forwards}) when is_list(forwards) do
+    Enum.map(forwards, fn f ->
+      %{
+        public_port: f.public_port,
+        target_port: f.target_port,
+        protocol: f.protocol,
+        purpose: f.purpose
+      }
+    end)
+  end
+
+  defp port_forwards_json(%Vps{}), do: []
 
   defp region_code(%Vps{region: %{code: code}}), do: code
   defp region_code(%Vps{}), do: nil

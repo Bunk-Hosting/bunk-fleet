@@ -17,9 +17,14 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     |> Repo.insert!()
   end
 
-  defp insert_node(region) do
+  defp insert_node(region, attrs \\ %{}) do
     %Node{}
-    |> Node.changeset(%{name: "node-#{System.unique_integer([:positive])}", region_id: region.id})
+    |> Node.changeset(
+      Map.merge(
+        %{name: "node-#{System.unique_integer([:positive])}", region_id: region.id},
+        attrs
+      )
+    )
     |> Ecto.Changeset.change(%{
       status: :online,
       last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
@@ -79,6 +84,71 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       user: confirmed_user_fixture("owner@example.com"),
       other: confirmed_user_fixture("other@example.com")
     }
+  end
+
+  # --- the endpoint a customer connects to ------------------------------------
+
+  describe "the public endpoint" do
+    test "a VPS on a node with a public address gets an SSH port", %{conn: conn, user: user} do
+      region = insert_region()
+      insert_node(region, %{public_host: "nl2.bunkhosting.nl", public_port_start: 20_000})
+
+      params = %{
+        "region_code" => region.code,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
+      assert %{"vps" => vps} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      assert vps["public_host"] == "nl2.bunkhosting.nl"
+      assert vps["ssh_port"] == 20_000
+      assert [%{"target_port" => 22, "purpose" => "ssh"}] = vps["port_forwards"]
+    end
+
+    test "two VPSes on one node get different ports", %{conn: conn, user: user} do
+      region = insert_region()
+      insert_node(region, %{public_host: "nl2.bunkhosting.nl"})
+
+      params = %{
+        "region_code" => region.code,
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
+      one = conn |> auth(user) |> post(~p"/api/v1/vpses", Map.put(params, "name", "one"))
+      two = conn |> auth(user) |> post(~p"/api/v1/vpses", Map.put(params, "name", "two"))
+
+      assert json_response(one, 201)["vps"]["ssh_port"] !=
+               json_response(two, 201)["vps"]["ssh_port"]
+    end
+
+    test "a node with no public address yields no endpoint, and no error", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      # This is the honest answer for a node on a home connection. Inventing an
+      # endpoint, or failing the create, would both be worse than saying nothing.
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
+      assert %{"vps" => vps} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      assert is_nil(vps["public_host"])
+      assert is_nil(vps["ssh_port"])
+      assert vps["port_forwards"] == []
+    end
   end
 
   # --- auth gate -------------------------------------------------------------

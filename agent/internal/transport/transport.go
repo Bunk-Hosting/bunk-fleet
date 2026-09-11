@@ -409,3 +409,49 @@ func consoleRelayURL(baseURL, relayToken string) (string, error) {
 	u.RawQuery = url.Values{"token": {relayToken}}.Encode()
 	return u.String(), nil
 }
+
+// PortForward is one public_port -> vps_ip:target_port mapping the node should
+// be enforcing. Customers on a node share its public address and are told apart
+// by port.
+type PortForward struct {
+	PublicPort int    `json:"public_port"`
+	TargetIP   string `json:"target_ip"`
+	TargetPort int    `json:"target_port"`
+	Protocol   string `json:"protocol"`
+}
+
+// PortForwards asks the control plane what this node's firewall should say.
+//
+// Desired state, not a change feed: the answer is the complete set, so an agent
+// that was offline converges on its next poll rather than having missed the
+// events it slept through.
+func (c *Client) PortForwards(ctx context.Context) ([]PortForward, error) {
+	if c.token == "" {
+		return nil, errors.New("transport: not enrolled (no agent token)")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/port-forwards", nil)
+	if err != nil {
+		return nil, fmt.Errorf("transport: build port-forward request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("transport: port-forward poll: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("transport: port-forward poll: status %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var out struct {
+		Forwards []PortForward `json:"forwards"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("transport: decode port forwards: %w", err)
+	}
+	return out.Forwards, nil
+}

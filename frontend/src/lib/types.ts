@@ -47,7 +47,14 @@ export interface Vps {
   status: VpsStatus;
   ip_address: string | null;
   hostname: string | null;
-  ssh_port: number;
+  /**
+   * Where this VPS is reachable from the internet. Null when the node it runs
+   * on has no public address yet — in which case the browser console is the
+   * only way in, and the UI has to say that rather than print the private
+   * address as if it were an endpoint.
+   */
+  public_host: string | null;
+  ssh_port: number | null;
   ssh_username: string;
   vcenter_vm_id: string | null;
   created_at: string;
@@ -58,7 +65,7 @@ export interface Vps {
 
 export interface VpsCredentials {
   ip_address: string | null;
-  ssh_port: number;
+  ssh_port: number | null;
   ssh_username: string;
   sudo_password: string | null;
 }

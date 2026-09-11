@@ -260,6 +260,10 @@ defmodule ControlPlaneWeb.Router do
     post "/heartbeat", HeartbeatController, :create
     get "/commands", CommandController, :index
     post "/commands/:id/result", CommandController, :result
+
+    # Desired firewall state for this node's VPSes. Polled, not pushed, so a node
+    # that was away converges instead of missing the events it slept through.
+    get "/port-forwards", PortForwardController, :index
   end
 
   # The node dials this back after seeing a console_connect request on its poll,

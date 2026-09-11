@@ -54,6 +54,14 @@ defmodule ControlPlane.Fleet.Node do
     field :vps_range_start, :string
     field :vps_range_end, :string
 
+    # Where customers reach this node's VPSes from the internet, and the port
+    # range its operator has forwarded here. nil public_host means "nowhere yet",
+    # which is the honest state of a node on a home connection — the UI has to be
+    # able to say that rather than print a private address and hope.
+    field :public_host, :string
+    field :public_port_start, :integer
+    field :public_port_end, :integer
+
     belongs_to :region, Region
 
     timestamps(type: :utc_datetime)
@@ -81,11 +89,15 @@ defmodule ControlPlane.Fleet.Node do
       :vps_gateway,
       :vps_cidr_prefix,
       :vps_range_start,
-      :vps_range_end
+      :vps_range_end,
+      :public_host,
+      :public_port_start,
+      :public_port_end
     ])
     |> clamp_capacity()
     |> validate_required([:name, :region_id])
     |> validate_vps_network()
+    |> validate_public_ports()
     |> assoc_constraint(:region)
     |> unique_constraint(:agent_token_hash)
   end
@@ -135,6 +147,27 @@ defmodule ControlPlane.Fleet.Node do
       available_ram_mb: node.available_ram_mb - ram_mb,
       available_disk_gb: node.available_disk_gb - disk_gb
     )
+  end
+
+  # A range that runs backwards would make the port allocator hand out nothing
+  # while looking configured; privileged ports are refused because forwarding
+  # them means the operator's own SSH and web server are in the pool.
+  defp validate_public_ports(changeset) do
+    changeset
+    |> validate_number(:public_port_start, greater_than: 1023, less_than: 65_536)
+    |> validate_number(:public_port_end, greater_than: 1023, less_than: 65_536)
+    |> validate_port_range()
+  end
+
+  defp validate_port_range(changeset) do
+    from = get_field(changeset, :public_port_start)
+    to = get_field(changeset, :public_port_end)
+
+    if is_integer(from) and is_integer(to) and from > to do
+      add_error(changeset, :public_port_end, "must be >= public_port_start")
+    else
+      changeset
+    end
   end
 
   # If a worker declares ANY VPS-network field, require a complete, valid tuple so

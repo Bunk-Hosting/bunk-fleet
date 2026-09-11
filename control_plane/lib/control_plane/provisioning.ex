@@ -16,7 +16,7 @@ defmodule ControlPlane.Provisioning do
 
   alias Ecto.Multi
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Command, Node, Reservation, Vps}
+  alias ControlPlane.Fleet.{Command, Node, PortPool, Reservation, Vps}
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Scheduler
 
@@ -174,6 +174,12 @@ defmodule ControlPlane.Provisioning do
             |> Vps.changeset(%{node_id: node.id, status: :provisioning, ip_address: ip})
             |> repo.update()
           end)
+          # A customer needs somewhere to connect. The node's own address plus an
+          # allocated port is it — in the same transaction as the IP, so a VPS
+          # never exists having been promised an endpoint it did not get.
+          |> Multi.run(:ssh_forward, fn repo, %{vps: vps} ->
+            allocate_ssh_forward(repo, node, vps)
+          end)
           |> Multi.insert(:command, fn %{vps: vps, allocation: {attrs, _ip}} ->
             Command.changeset(%Command{}, %{
               node_id: node.id,
@@ -227,6 +233,28 @@ defmodule ControlPlane.Provisioning do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  # Every VPS gets an SSH forward at provision time rather than on request: it is
+  # the one port nobody can do without, and a customer discovering after the fact
+  # that they have to go and ask for SSH is a customer who bought the wrong thing.
+  #
+  # A node with no public address gets no forward and no error. That is not a
+  # failure — it is a node nothing outside can reach yet, and the API says so
+  # rather than inventing an endpoint.
+  defp allocate_ssh_forward(_repo, %Node{public_host: nil}, _vps), do: {:ok, nil}
+
+  defp allocate_ssh_forward(repo, %Node{} = node, %Vps{} = vps) do
+    case PortPool.allocate(repo, node, %{vps_id: vps.id, target_port: 22, purpose: "ssh"}) do
+      {:ok, forward} ->
+        {:ok, forward}
+
+      {:error, :port_pool_exhausted} = error ->
+        error
+
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 

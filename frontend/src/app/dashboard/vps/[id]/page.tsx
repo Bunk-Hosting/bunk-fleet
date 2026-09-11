@@ -375,18 +375,41 @@ export default function VpsDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">IP-adres</p>
-                <p className="font-medium font-mono">{vps.ip_address ?? "-"}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Gebruikersnaam</p>
-                <p className="font-medium font-mono">{vps.ssh_username}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">SSH-poort</p>
-                <p className="font-medium font-mono">{vps.ssh_port}</p>
-              </div>
+              {vps.public_host && vps.ssh_port ? (
+                <>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Adres</p>
+                    <p className="font-medium font-mono">{vps.public_host}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Gebruikersnaam</p>
+                    <p className="font-medium font-mono">{vps.ssh_username}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">SSH-poort</p>
+                    <p className="font-medium font-mono">{vps.ssh_port}</p>
+                  </div>
+                  <div className="sm:col-span-3 space-y-1">
+                    <p className="text-sm text-muted-foreground">Verbinden</p>
+                    <p className="font-medium font-mono break-all">
+                      ssh -p {vps.ssh_port} {vps.ssh_username}@{vps.public_host}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                /* Telling someone their VPS lives at 10.10.0.21 is telling them
+                   nothing: that address is only routable on the machine the VPS
+                   runs on. Better to say plainly that there is no external
+                   endpoint yet than to print one that cannot work. */
+                <div className="sm:col-span-3 space-y-1">
+                  <p className="text-sm text-muted-foreground">Bereikbaar van buiten</p>
+                  <p className="font-medium">
+                    Nog niet. Deze VPS draait op een node zonder publiek adres, dus
+                    inloggen gaat via de webterminal hierboven. Zodra de node een
+                    publiek adres heeft, verschijnt hier het SSH-adres en de poort.
+                  </p>
+                </div>
+              )}
               <div className="sm:col-span-3 space-y-1">
                 <p className="text-sm text-muted-foreground">Sudo-wachtwoord</p>
                 <div className="flex items-center gap-2">

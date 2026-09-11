@@ -46,6 +46,7 @@ defmodule ControlPlane.Fleet.Vps do
 
     belongs_to :region, Region
     belongs_to :node, Node
+    has_many :port_forwards, ControlPlane.Fleet.PortForward
 
     timestamps(type: :utc_datetime)
   end

@@ -30,7 +30,14 @@ export function VpsCard({ vps }: VpsCardProps) {
         <div className="grid gap-2 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
-            <span>{vps.ip_address || "Geen IP"}</span>
+            {/* The private address is not an endpoint — it is routable only on
+                the machine the VPS runs on. Show what someone can actually
+                connect to, or say there is nothing yet. */}
+            <span>
+              {vps.public_host && vps.ssh_port
+                ? `${vps.public_host}:${vps.ssh_port}`
+                : "Alleen via de webterminal"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <HardDrive className="h-4 w-4" />
