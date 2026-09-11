@@ -15,7 +15,8 @@ defmodule ControlPlane.Console.RelayTest do
   # opened it. That is the same mechanism that closes a console when the browser
   # goes away, and the last test in this file is what proves it.
   defp open(node_id \\ @node_a) do
-    {:ok, socket, relay} = Relay.open(node_id, @vps, @host, 22)
+    {:ok, local_port, relay} = Relay.open(node_id, @vps, @host, 22)
+    {:ok, socket} = :gen_tcp.connect({127, 0, 0, 1}, local_port, [:binary, active: false], 1_000)
     {socket, relay}
   end
 
@@ -134,7 +135,7 @@ defmodule ControlPlane.Console.RelayTest do
 
       owner =
         spawn(fn ->
-          {:ok, _socket, relay} = Relay.open(@node_a, @vps, @host, 22)
+          {:ok, _local_port, relay} = Relay.open(@node_a, @vps, @host, 22)
           send(parent, {:relay, relay})
           receive do: (:stop -> :ok)
         end)

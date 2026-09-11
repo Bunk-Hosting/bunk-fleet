@@ -89,18 +89,12 @@ defmodule ControlPlane.Console.Session do
   # gets exercised every day.
   defp connect(st, opts) do
     case Relay.open(st.node_id, st.vps_id, st.host, st.port) do
-      {:ok, socket, _relay} ->
-        case :ssh.connect(socket, opts, 15_000) do
-          {:ok, conn} ->
-            {:ok, conn}
-
-          {:error, reason} ->
-            :gen_tcp.close(socket)
-            {:error, reason}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      # The relay listens on loopback and forwards to the VPS through its node's
+      # agent, so "127.0.0.1" here is the VPS. Host-key pinning is unaffected:
+      # KeyCb pins per VPS id, never per address, which is exactly why it takes
+      # one (O-33).
+      {:ok, local_port, _relay} -> :ssh.connect(~c"127.0.0.1", local_port, opts)
+      {:error, reason} -> {:error, reason}
     end
   end
 

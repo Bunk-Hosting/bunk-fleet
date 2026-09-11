@@ -21,13 +21,22 @@ defmodule ControlPlane.Console.Relay do
   reach. One path is testable; two paths diverge and the rarely-used one is the
   one that breaks.
 
-  ## Why a loopback socket pair
+  ## Why a loopback listener
 
-  `:ssh.connect/3` takes an already-connected socket, but there is no way to hand
-  it an arbitrary byte stream. So the relay connects a TCP socket to a listener of
-  its own on `127.0.0.1`: one end goes to `:ssh`, the other is pumped against the
-  agent's WebSocket. A nonce is exchanged across the pair before use, so a local
-  process that raced us to the listener is detected rather than spoken to.
+  There is no way to hand `:ssh` an arbitrary byte stream — it wants a host and a
+  port. So the relay becomes one: it listens on `127.0.0.1` on an ephemeral port,
+  `Console.Session` dials that, and the accepted connection is pumped against the
+  agent's WebSocket.
+
+  (`:ssh.connect/3` also accepts an already-connected socket, which would be
+  tidier. It does not work: on OTP 27 the negotiation simply times out, whether
+  the socket points at a relay or straight at a VPS. The host/port path is the one
+  that runs.)
+
+  The listener takes exactly one connection and then closes, and it is bound to
+  loopback, so the only thing that could race onto it is code already running
+  inside the control plane — which already holds the console private key and has
+  nothing to gain.
   """
   use GenServer
   require Logger
@@ -35,7 +44,6 @@ defmodule ControlPlane.Console.Relay do
   alias ControlPlane.Console.Tickets
 
   @registry ControlPlane.Console.Relay.Registry
-  @nonce_bytes 16
   # How long the agent has to dial back before the console gives up. The agent
   # polls every couple of seconds; anything beyond this is a node that is not
   # coming.
@@ -44,18 +52,17 @@ defmodule ControlPlane.Console.Relay do
   # --- requests waiting to be polled ----------------------------------------
 
   @doc """
-  Opens a relay for `vps` on `node`, returning `{:ok, socket, pid}`.
+  Opens a relay for `vps_id` on `node_id`, returning `{:ok, local_port, pid}`.
 
-  `socket` is a connected TCP socket to give to `:ssh.connect/3`; its peer is this
-  relay. The caller is linked to the relay, so a browser that goes away tears the
-  whole chain down.
+  Connect to `127.0.0.1:local_port` and you are talking to the VPS. The caller is
+  linked to the relay, so a browser that goes away tears the whole chain down.
   """
   def open(node_id, vps_id, host, port \\ 22) do
     token = Tickets.random_token()
 
     with {:ok, pid} <- start_relay(token, node_id, vps_id, host, port),
-         {:ok, socket} <- GenServer.call(pid, :take_socket, @attach_timeout_ms + 1_000) do
-      {:ok, socket, pid}
+         {:ok, local_port} <- GenServer.call(pid, :local_port, 10_000) do
+      {:ok, local_port, pid}
     end
   end
 
@@ -151,31 +158,54 @@ defmodule ControlPlane.Console.Relay do
        request_taken: false,
        ws: nil,
        sock: nil,
-       listener: nil
+       listener: nil,
+       acceptor: nil
      }, {:continue, :arm}}
   end
 
   @impl true
   def handle_continue(:arm, state) do
-    # The console is waiting on take_socket; if the agent never dials back, stop
-    # rather than leaving a process and a listener behind.
-    Process.send_after(self(), :attach_timeout, @attach_timeout_ms)
-    {:noreply, state}
+    listen_opts = [:binary, ip: {127, 0, 0, 1}, active: false, packet: :raw, backlog: 1]
+
+    case :gen_tcp.listen(0, listen_opts) do
+      {:ok, listener} ->
+        acceptor = accept_one(listener)
+        # If the agent never dials back, stop rather than leaving a process and a
+        # listening socket behind.
+        Process.send_after(self(), :attach_timeout, @attach_timeout_ms)
+        {:noreply, %{state | listener: listener, acceptor: acceptor}}
+
+      {:error, reason} ->
+        Logger.error("console relay: cannot open a loopback listener: #{inspect(reason)}")
+        {:stop, :normal, state}
+    end
+  end
+
+  # One connection, handed over, and then the door is shut. In a task rather than
+  # the relay itself, because accept/2 blocks and the relay has to stay responsive
+  # to the agent attaching in the meantime.
+  defp accept_one(listener) do
+    relay = self()
+
+    spawn_link(fn ->
+      case :gen_tcp.accept(listener, @attach_timeout_ms) do
+        {:ok, socket} ->
+          :ok = :gen_tcp.controlling_process(socket, relay)
+          send(relay, {:accepted, socket})
+
+        {:error, reason} ->
+          send(relay, {:accept_failed, reason})
+      end
+    end)
   end
 
   @impl true
-  def handle_call(:take_socket, {caller, _tag}, state) do
-    case loopback_pair() do
-      {:ok, ssh_side, relay_side, listener} ->
-        # :ssh reads from the socket itself, so the caller has to own it — a
-        # socket still owned by this process would deliver its data here instead.
-        :ok = :gen_tcp.controlling_process(ssh_side, caller)
-        :ok = :inet.setopts(relay_side, active: true)
-        {:reply, {:ok, ssh_side}, %{state | sock: relay_side, listener: listener}}
+  def handle_call(:local_port, _from, %{listener: listener} = state) when not is_nil(listener) do
+    {:reply, :inet.port(listener), state}
+  end
 
-      {:error, reason} ->
-        {:stop, :normal, {:error, reason}, state}
-    end
+  def handle_call(:local_port, _from, state) do
+    {:stop, :normal, {:error, :relay_unavailable}, state}
   end
 
   def handle_call(:take_request, _from, %{request_taken: true} = state) do
@@ -217,7 +247,11 @@ defmodule ControlPlane.Console.Relay do
     end
   end
 
-  def handle_cast({:from_agent, _data}, state), do: {:noreply, state}
+  # The VPS's banner can arrive before SSH has finished connecting to us. Holding
+  # it costs one message; dropping it corrupts the handshake.
+  def handle_cast({:from_agent, data}, state) do
+    {:noreply, Map.update(state, :pending_in, [data], &[data | &1])}
+  end
 
   def handle_cast(:agent_closed, state), do: {:stop, :normal, state}
 
@@ -233,9 +267,31 @@ defmodule ControlPlane.Console.Relay do
     {:noreply, Map.update(state, :pending_out, [data], &[data | &1])}
   end
 
+  def handle_info({:accepted, socket}, state) do
+    :ok = :inet.setopts(socket, active: true)
+    # The listener has served its purpose; a second connection would be a
+    # different conversation on the same wire.
+    :gen_tcp.close(state.listener)
+
+    for data <- Enum.reverse(Map.get(state, :pending_in, [])), do: :gen_tcp.send(socket, data)
+
+    {:noreply, %{state | sock: socket, listener: nil} |> Map.put(:pending_in, [])}
+  end
+
+  def handle_info({:accept_failed, reason}, state) do
+    Logger.info("console relay: nothing connected to the local port (#{inspect(reason)})")
+    {:stop, :normal, state}
+  end
+
   def handle_info({:tcp_closed, _sock}, state), do: {:stop, :normal, state}
   def handle_info({:tcp_error, _sock, _reason}, state), do: {:stop, :normal, state}
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:stop, :normal, state}
+
+  # The acceptor finishing is the normal course of events, not a reason to close
+  # the console it just connected.
+  def handle_info({:EXIT, pid, _reason}, %{acceptor: pid} = state), do: {:noreply, state}
+
+  # Anything else linked to us is the console's owner going away.
   def handle_info({:EXIT, _pid, _reason}, state), do: {:stop, :normal, state}
 
   def handle_info(:attach_timeout, %{ws: nil} = state) do
@@ -250,35 +306,5 @@ defmodule ControlPlane.Console.Relay do
     if state.sock, do: :gen_tcp.close(state.sock)
     if state.listener, do: :gen_tcp.close(state.listener)
     :ok
-  end
-
-  # --- loopback pair --------------------------------------------------------
-
-  # Two ends of one TCP connection over the loopback interface: the returned
-  # `ssh_side` is what :ssh.connect/3 is given, `relay_side` is what this process
-  # pumps. The nonce proves the accepted socket is the one we just dialled and not
-  # a local process that raced us onto the listener.
-  defp loopback_pair do
-    with {:ok, listener} <-
-           :gen_tcp.listen(0, [
-             :binary,
-             ip: {127, 0, 0, 1},
-             active: false,
-             packet: :raw,
-             backlog: 1
-           ]),
-         {:ok, port} <- :inet.port(listener),
-         {:ok, ssh_side} <-
-           :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], 5_000),
-         {:ok, relay_side} <- :gen_tcp.accept(listener, 5_000),
-         nonce = :crypto.strong_rand_bytes(@nonce_bytes),
-         :ok <- :gen_tcp.send(ssh_side, nonce),
-         {:ok, ^nonce} <- :gen_tcp.recv(relay_side, @nonce_bytes, 5_000) do
-      {:ok, ssh_side, relay_side, listener}
-    else
-      other ->
-        Logger.error("console relay: could not build loopback pair: #{inspect(other)}")
-        {:error, :relay_unavailable}
-    end
   end
 end
