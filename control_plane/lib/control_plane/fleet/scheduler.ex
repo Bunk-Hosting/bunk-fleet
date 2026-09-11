@@ -100,19 +100,8 @@ defmodule ControlPlane.Fleet.Scheduler do
   defp pick_node([], _request), do: nil
 
   defp pick_node(candidates, request) do
-    Enum.max_by(candidates, &headroom_score(&1, request))
+    Enum.max_by(candidates, &Node.headroom_score(&1, request))
   end
-
-  # Fraction of each resource still free after placement, summed. Higher is more
-  # idle / less loaded. Total capacities are guarded against nil/zero.
-  defp headroom_score(%Node{} = node, request) do
-    frac(node.available_vcpu - request.vcpu, node.total_vcpu) +
-      frac(node.available_ram_mb - request.ram_mb, node.total_ram_mb) +
-      frac(node.available_disk_gb - request.disk_gb, node.total_disk_gb)
-  end
-
-  defp frac(_remaining, total) when is_nil(total) or total <= 0, do: 0.0
-  defp frac(remaining, total), do: remaining / total
 
   defp decrement_changeset(%Node{} = node, request) do
     Node.subtract_capacity_changeset(node, request)

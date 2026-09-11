@@ -290,12 +290,57 @@ defmodule ControlPlane.Fleet do
   def online_nodes_in_region_query(region_id) do
     cutoff = DateTime.add(now(), -@heartbeat_ttl_seconds, :second)
 
-    from n in Node,
-      where:
-        n.region_id == ^region_id and
+    query =
+      from n in Node,
+        where:
           n.status == :online and
-          not is_nil(n.last_heartbeat_at) and
-          n.last_heartbeat_at >= ^cutoff
+            not is_nil(n.last_heartbeat_at) and
+            n.last_heartbeat_at >= ^cutoff
+
+    if is_nil(region_id), do: query, else: where(query, [n], n.region_id == ^region_id)
+  end
+
+  @doc """
+  The region to place `request` in when the customer did not pick one.
+
+  Picks the region of the node that would be left with the most headroom — the
+  same measure the scheduler uses to choose between nodes, applied one level up,
+  so "automatic" lands on the emptiest machine in the fleet rather than on
+  whichever region happens to sort first.
+
+  Advisory only: nothing is locked here. The scheduler still makes the real
+  decision inside its transaction, and may pick a different node in the region if
+  this one filled up in between.
+  """
+  def auto_region_id(%{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb} = request) do
+    online_nodes_in_region_query(nil)
+    |> where(
+      [n],
+      n.available_vcpu >= ^vcpu and n.available_ram_mb >= ^ram_mb and
+        n.available_disk_gb >= ^disk_gb
+    )
+    |> Repo.all()
+    |> case do
+      [] -> {:error, :no_capacity}
+      nodes -> {:ok, Enum.max_by(nodes, &Node.headroom_score(&1, request)).region_id}
+    end
+  end
+
+  @doc """
+  Regions a customer can currently be placed in: those with at least one online
+  node reporting free capacity.
+
+  A region with no node behind it is not a choice, it is a disappointment —
+  listing it would let someone pick a location we cannot actually deliver.
+  """
+  def available_regions do
+    node_ids =
+      online_nodes_in_region_query(nil)
+      |> where([n], n.available_vcpu > 0 and n.available_ram_mb > 0 and n.available_disk_gb > 0)
+      |> select([n], n.region_id)
+
+    from(r in Region, where: r.id in subquery(node_ids), order_by: [asc: r.code])
+    |> Repo.all()
   end
 
   @doc false

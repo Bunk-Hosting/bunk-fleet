@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { packagesApi, vpsApi, billingApi, parseApiError } from "@/lib/api";
+import { packagesApi, vpsApi, billingApi, regionsApi, parseApiError } from "@/lib/api";
+import type { BunkRegion } from "@/lib/api";
 import { cn, formatPrice, formatEuro } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
@@ -30,6 +31,9 @@ export default function NewVpsPage() {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [label, setLabel] = useState("");
   const [balanceCents, setBalanceCents] = useState<number | null>(null);
+  const [regions, setRegions] = useState<BunkRegion[]>([]);
+  // "" is automatic: no region is sent and Bunk places on the emptiest machine.
+  const [regionCode, setRegionCode] = useState("");
 
   useEffect(() => {
     async function fetchPackages() {
@@ -51,6 +55,11 @@ export default function NewVpsPage() {
       } catch {
         // balance is a nice-to-have here; ignore failures
       }
+      try {
+        setRegions(await regionsApi.list());
+      } catch {
+        // No list means no choice to offer; automatic placement still works.
+      }
     }
     fetchPackages();
   }, [toast]);
@@ -71,6 +80,7 @@ export default function NewVpsPage() {
         package_id: selectedPackageId,
         os: "ubuntu-22.04",
         label: label || undefined,
+        region_code: regionCode || undefined,
       });
       toast({
         title: "Gelukt!",
@@ -144,6 +154,33 @@ export default function NewVpsPage() {
           ))}
         </div>
       </div>
+
+      {/* Locatie — only worth asking once there is more than one answer */}
+      {regions.length > 1 && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Locatie</h2>
+          <div className="max-w-sm space-y-2">
+            <Label htmlFor="region">Waar moet je VPS draaien?</Label>
+            <select
+              id="region"
+              value={regionCode}
+              onChange={(e) => setRegionCode(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="">Automatisch (meeste ruimte)</option>
+              {regions.map((region) => (
+                <option key={region.id} value={region.code}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Laat dit op automatisch staan als je geen voorkeur hebt — je VPS
+              komt dan op de machine met de meeste vrije capaciteit.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Naam */}
       <div className="space-y-4">

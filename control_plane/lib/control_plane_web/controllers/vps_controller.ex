@@ -38,9 +38,10 @@ defmodule ControlPlaneWeb.VpsController do
   def create(conn, params) do
     user = conn.assigns.current_user
 
-    with {:ok, region_id} <- resolve_region_id(params),
-         attrs = build_attrs(params, region_id),
+    with attrs = build_attrs(params),
          :ok <- validate_provision_input(attrs),
+         {:ok, region_id} <- resolve_region_id(params, attrs),
+         attrs = Map.put(attrs, :region_id, region_id),
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
          price = package_price_cents(pkg),
          {:ok, _charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
@@ -166,9 +167,10 @@ defmodule ControlPlaneWeb.VpsController do
     end
   end
 
-  defp build_attrs(params, region_id) do
+  # Region is added after this: choosing it automatically needs the spec, so the
+  # spec has to be built (and validated) first.
+  defp build_attrs(params) do
     %{
-      region_id: region_id,
       name: params["name"],
       vcpu: params["vcpu"],
       ram_mb: params["ram_mb"],
@@ -184,21 +186,24 @@ defmodule ControlPlaneWeb.VpsController do
     }
   end
 
-  defp resolve_region_id(%{"region_id" => region_id}) when is_binary(region_id) do
+  defp resolve_region_id(%{"region_id" => region_id}, _attrs) when is_binary(region_id) do
     case valid_id(region_id) do
       {:ok, id} -> {:ok, id}
       :error -> {:error, :region_not_found}
     end
   end
 
-  defp resolve_region_id(%{"region_code" => region_code}) when is_binary(region_code) do
+  defp resolve_region_id(%{"region_code" => region_code}, _attrs) when is_binary(region_code) do
     case Fleet.region_by_code(region_code) do
       %Region{id: id} -> {:ok, id}
       nil -> {:error, :region_not_found}
     end
   end
 
-  defp resolve_region_id(_params), do: {:error, :region_not_found}
+  # No preference: Bunk picks. A named region that does not exist is still an
+  # error — only the *absence* of one means "anywhere", so a typo'd region code
+  # cannot quietly land a customer on the other side of the country.
+  defp resolve_region_id(_params, attrs), do: Fleet.auto_region_id(attrs)
 
   defp valid_id(id) when is_binary(id) do
     case Ecto.UUID.cast(id) do

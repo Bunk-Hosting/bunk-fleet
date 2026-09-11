@@ -96,8 +96,24 @@ defmodule ControlPlane.Fleet.Node do
     |> unique_constraint(:agent_token_hash)
   end
 
-  # If a worker declares ANY VPS-network field, require a complete, valid tuple so
-  # the allocator can never crash on bad input or hand out a wrong-subnet address.
+  @doc """
+  How idle this node would be left by `request`: the fraction of each resource
+  still free after placement, summed. Higher is less loaded.
+
+  Both the scheduler (choosing a node) and automatic region selection (choosing
+  where to send a customer who did not pick) score with this, so "the emptiest
+  machine" means the same thing at both levels. Total capacities are guarded
+  against nil/zero, which a node that has never heartbeated will have.
+  """
+  def headroom_score(%__MODULE__{} = node, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
+    frac(node.available_vcpu - vcpu, node.total_vcpu) +
+      frac(node.available_ram_mb - ram_mb, node.total_ram_mb) +
+      frac(node.available_disk_gb - disk_gb, node.total_disk_gb)
+  end
+
+  defp frac(_remaining, total) when is_nil(total) or total <= 0, do: 0.0
+  defp frac(remaining, total), do: remaining / total
+
   @doc """
   Atomically adds a reservation's vcpu/ram/disk back onto its node's available
   capacity with a single SQL increment — no read-modify-write, so a capacity
@@ -127,6 +143,8 @@ defmodule ControlPlane.Fleet.Node do
     )
   end
 
+  # If a worker declares ANY VPS-network field, require a complete, valid tuple so
+  # the allocator can never crash on bad input or hand out a wrong-subnet address.
   defp validate_vps_network(changeset) do
     declared? =
       Enum.any?([:vps_range_start, :vps_range_end, :vps_gateway, :vps_cidr_prefix], fn f ->

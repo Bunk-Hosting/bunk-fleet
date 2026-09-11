@@ -161,6 +161,53 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
     end
 
+    test "no region at all means Bunk picks one", %{conn: conn, user: user} do
+      params = %{"name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+
+      assert %{"vps" => vps} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      assert [persisted] = Fleet.list_vpses_for_owner(user.id)
+      assert persisted.id == vps["id"]
+      # Automatic still lands the VPS in a real region, not a null one.
+      assert persisted.region_id
+    end
+
+    test "automatic placement picks the emptiest node's region", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      # The setup region's node is the one with capacity; a second region whose
+      # node is nearly full must not win just by existing.
+      crowded = insert_region()
+
+      %Node{}
+      |> Node.changeset(%{
+        name: "full-#{System.unique_integer([:positive])}",
+        region_id: crowded.id
+      })
+      |> Ecto.Changeset.change(%{
+        status: :online,
+        last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        total_vcpu: 32,
+        total_ram_mb: 65_536,
+        total_disk_gb: 1000,
+        available_vcpu: 2,
+        available_ram_mb: 4096,
+        available_disk_gb: 50
+      })
+      |> Repo.insert!()
+
+      params = %{"name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      assert [persisted] = Fleet.list_vpses_for_owner(user.id)
+      assert persisted.region_id == region.id
+    end
+
+    # A typo must not quietly place the customer somewhere else: only the absence
+    # of a region means "anywhere".
     test "422 for an unknown region", %{conn: conn, user: user} do
       params = %{
         "region_code" => "nope",

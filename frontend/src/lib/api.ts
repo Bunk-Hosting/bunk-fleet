@@ -321,6 +321,24 @@ export const packagesApi = {
 };
 
 // ── VPS ───────────────────────────────────────────────────────────────
+export interface BunkRegion {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export const regionsApi = {
+  /**
+   * Where a VPS can be placed right now. Only regions with an online node that
+   * has capacity come back, so an empty list means "no choice to offer" — not an
+   * error, since the control plane still places automatically.
+   */
+  list: async (): Promise<BunkRegion[]> => {
+    const res = await api.get<{ regions: BunkRegion[] }>("/regions");
+    return res.data.regions;
+  },
+};
+
 export const vpsApi = {
   list: async () => {
     // Package catalog is cosmetic here (spec→name/price mapping with a "Custom"
@@ -337,7 +355,12 @@ export const vpsApi = {
     return { data: transformVps(res.data.vps) };
   },
 
-  create: async (data: { label?: string; package_id: number; os: OsChoice }) => {
+  create: async (data: {
+    label?: string;
+    package_id: number;
+    os: OsChoice;
+    region_code?: string;
+  }) => {
     const packages = await ensurePackages();
     const pkg = packages.find((p) => p.id === data.package_id);
     if (!pkg) throw new Error("Onbekend pakket.");
@@ -346,7 +369,10 @@ export const vpsApi = {
       vcpu: pkg.cpu_cores,
       ram_mb: pkg.ram_gb * 1024,
       disk_gb: pkg.disk_gb,
-      region_code: "nl-1",
+      // Omitted entirely when the customer has no preference: the control plane
+      // then places the VPS on the emptiest machine in the fleet. Sending a
+      // region we guessed would override that with a worse answer.
+      ...(data.region_code ? { region_code: data.region_code } : {}),
     });
     return { data: transformVps(res.data.vps) };
   },
