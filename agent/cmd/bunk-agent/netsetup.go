@@ -48,7 +48,13 @@ func (n vpsNetwork) subnet() (*net.IPNet, error) {
 func uplinkFromRoutes(routeOutput string) (string, error) {
 	for _, line := range strings.Split(routeOutput, "\n") {
 		fields := strings.Fields(line)
-		for i := 0; i < len(fields)-1; i++ {
+		// Only the default route. Any other route's interface would be the wrong
+		// one to masquerade onto — a link-scope route to the VPS subnet itself,
+		// say, which would NAT customer traffic straight back at the bridge.
+		if len(fields) == 0 || fields[0] != "default" {
+			continue
+		}
+		for i := 1; i < len(fields)-1; i++ {
 			if fields[i] == "dev" && ifaceName.MatchString(fields[i+1]) {
 				return fields[i+1], nil
 			}

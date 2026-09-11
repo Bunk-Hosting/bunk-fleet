@@ -19,8 +19,8 @@ if [ ! -f "$ENV_FILE" ]; then
 DB_PASSWORD=$DBPASS
 SECRET_KEY_BASE=$SKB
 ADMIN_TOKEN=$ADMTOK
-PHX_HOST=control.bunkhosting.nl
-PUBLIC_URL=https://control.bunkhosting.nl
+PHX_HOST=app.bunkhosting.nl
+PUBLIC_URL=https://app.bunkhosting.nl
 PORT=4000
 EOF
   chmod 600 "$ENV_FILE"

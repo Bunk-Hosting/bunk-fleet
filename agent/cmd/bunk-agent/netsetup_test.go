@@ -68,6 +68,13 @@ func TestUplinkFromRoutesWithoutADefaultRoute(t *testing.T) {
 	if _, err := uplinkFromRoutes("10.0.0.0/8 dev eth0 scope link\n"); err == nil {
 		t.Error("uplinkFromRoutes accepted a routing table with no default route")
 	}
+	// The VPS subnet's own link-scope route is the dangerous near-miss: picking
+	// vmbr2 here would masquerade customer traffic back onto the bridge it came
+	// from instead of out of the node.
+	if got, err := uplinkFromRoutes("10.10.4.0/22 dev vmbr2 proto kernel scope link src 10.10.4.1\n" +
+		"default via 192.168.1.1 dev vmbr0\n"); err != nil || got != "vmbr0" {
+		t.Errorf("uplinkFromRoutes = %q, %v; want vmbr0 (not the VPS bridge)", got, err)
+	}
 	if _, err := uplinkFromRoutes(""); err == nil {
 		t.Error("uplinkFromRoutes accepted empty routing output")
 	}
