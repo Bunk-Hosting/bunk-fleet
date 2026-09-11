@@ -6,9 +6,15 @@
 CONTROL_PLANE_DIR := control_plane
 AGENT_DIR         := agent
 
-.PHONY: all test build fmt test-control-plane test-agent build-control-plane build-agent fmt-control-plane fmt-agent sync-worker check-worker
+.PHONY: all check test build fmt test-control-plane test-agent build-control-plane build-agent fmt-control-plane fmt-agent sync-worker check-worker
 
 all: build
+
+## check: full verification gate (format + compile + tests, both components) in containers.
+##        Works without a local Elixir/Go toolchain — unlike the `test` target below.
+##        Needs BUNK_DB_PASSWORD for the Elixir suite. Run this before pushing.
+check:
+	bash tools/check.sh
 
 ## sync-worker: push agent/ Go source into the sibling bunk-worker repo (module path rewritten)
 sync-worker:

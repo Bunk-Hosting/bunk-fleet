@@ -1,0 +1,26 @@
+# Keep the build context small. Without this the whole checkout ships to the
+# daemon on every build (~56MB measured), and — worse — any change under _build/
+# or deps/ invalidates the context layer even though the Dockerfile builds those
+# itself inside the image.
+#
+# priv/static/dist is deliberately NOT ignored: build-prod.sh drops the compiled
+# worker binary there and the image serves it at /dist/bunk-worker.
+
+.git
+.gitignore
+.elixir_ls
+.dialyzer
+
+# Build artefacts — the image runs mix deps.get / compile / release itself.
+_build
+deps
+cover
+
+# Never let a local env file end up in an image layer.
+.env
+.env.*
+
+# Editor / OS noise.
+*.swp
+*~
+.DS_Store

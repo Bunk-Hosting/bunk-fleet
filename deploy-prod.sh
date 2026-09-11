@@ -67,11 +67,17 @@ for i in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/nul
 # any release command, so it needs SECRET_KEY_BASE et al. even though eval doesn't
 # boot the endpoint.
 echo "=== migrating ==="
+# SMTP_* is passed even though migrations never send mail: runtime.exs evaluates
+# the whole prod config block on any release command, and without these it prints
+# its "SMTP_HOST is not set" warning on every single deploy — a false alarm that
+# trains you to ignore the one message that matters when mail really is unset.
 docker run --rm --network "$NET" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e ADMIN_TOKEN="$ADMIN_TOKEN" \
   -e PHX_HOST="$PHX_HOST" -e PUBLIC_URL="$PUBLIC_URL" -e PORT=4000 \
+  -e SMTP_HOST -e SMTP_PORT -e SMTP_USERNAME -e SMTP_PASSWORD \
+  -e MAIL_FROM_ADDRESS -e MAIL_FROM_NAME \
   "$IMG" eval "ControlPlane.Release.migrate()" 2>&1 | tail -4
 
 # 5. (Re)start the control-plane server
@@ -110,10 +116,24 @@ done
 echo "=== container status ==="
 docker ps --filter name=bf-prod --format '{{.Names}}  {{.Status}}  {{.Ports}}'
 
-# 7. Reclaim disk — dangling images + build cache ONLY.
+# 7. Reclaim disk — dangling images only, plus a BOUNDED build-cache trim.
 #    NEVER prunes volumes or stops data containers, so customer/Postgres data is
 #    never touched. Keeps the 20G disk from filling up on repeated rebuilds.
-echo "=== reclaiming space (dangling images + build cache; volumes untouched) ==="
+#
+#    The unbounded `docker builder prune -f` that used to live here was actively
+#    harmful: it deleted the entire BuildKit cache after every deploy (nothing is
+#    "in use" once the build finished), so the next build re-ran apk, deps.get and
+#    deps.compile from scratch — ~7 minutes instead of ~90 seconds. And it freed
+#    almost nothing: measured on this host the build cache was 88MB while 5.6GB
+#    sat in unused images. --keep-storage keeps the warm layers and still caps
+#    growth; the dangling-image prune below is what actually reclaims space.
+echo "=== reclaiming space (dangling images + capped build cache; volumes untouched) ==="
 docker image prune -f >/dev/null 2>&1 || true
-docker builder prune -f >/dev/null 2>&1 || true
+# --keep-storage was renamed to --reserved-space and now warns; try the current
+# spelling first so this keeps working when the old flag is finally dropped.
+# Both are bounded — never fall back to a bare `builder prune`, which is the
+# unbounded form this replaced.
+docker builder prune -f --reserved-space 2GB >/dev/null 2>&1 \
+  || docker builder prune -f --keep-storage 2GB >/dev/null 2>&1 \
+  || true
 echo "disk: $(df -h / | awk 'NR==2{print $3" / "$2" ("$5")"}')"

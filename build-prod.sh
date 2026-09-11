@@ -7,9 +7,15 @@ ROOT=/opt/bunk-fleet
 
 echo "=== 1/2 building worker agent binary (linux/amd64, static) ==="
 mkdir -p "$ROOT/control_plane/priv/static/dist"
+# Persist the Go module + build cache across runs. This is a plain `docker run`,
+# not a layered build, so without a volume every invocation re-downloads govmomi
+# and x/crypto and recompiles the world — about a minute of pure waste per build.
+docker volume create bunk-gocache >/dev/null 2>&1 || true
 docker run --rm \
   -v "$ROOT/agent":/src \
   -v "$ROOT/control_plane/priv/static/dist":/out \
+  -v bunk-gocache:/gocache \
+  -e GOMODCACHE=/gocache/mod -e GOCACHE=/gocache/build \
   -w /src golang:1.23-alpine \
   sh -c 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/bunk-worker ./cmd/bunk-agent \
     && cd /out && sha256sum bunk-worker > bunk-worker.sha256'
