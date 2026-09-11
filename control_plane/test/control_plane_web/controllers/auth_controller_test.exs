@@ -92,12 +92,15 @@ defmodule ControlPlaneWeb.AuthControllerTest do
   end
 
   describe "rate limiting" do
-    # A dedicated X-Forwarded-For IP isolates this test's counter bucket from every
-    # other test (which use the default 127.0.0.1), so the shared limiter can't
-    # cause cross-test interference.
+    # CF-Connecting-IP, not X-Forwarded-For: ControlPlaneWeb.Plugs.RateLimit keys
+    # its bucket on the Cloudflare header and deliberately ignores the
+    # client-supplied X-Forwarded-For (which would hand an attacker unlimited
+    # buckets). Sending the header the plug actually reads gives this test its own
+    # counter bucket, away from the 127.0.0.1 that every other test hits — belt and
+    # braces on top of ConnCase's per-test RateLimiter.reset().
     defp hammer_login(ip) do
       build_conn()
-      |> put_req_header("x-forwarded-for", ip)
+      |> put_req_header("cf-connecting-ip", ip)
       |> post(~p"/api/v1/auth/login", %{"email" => "nobody@example.com", "password" => "wrong-password-123"})
     end
 

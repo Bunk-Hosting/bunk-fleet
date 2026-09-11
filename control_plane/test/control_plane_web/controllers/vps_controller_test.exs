@@ -1,11 +1,11 @@
 defmodule ControlPlaneWeb.VpsControllerTest do
   use ControlPlaneWeb.ConnCase, async: true
 
+  import ControlPlane.Fixtures
+
   alias ControlPlane.{Accounts, Provisioning, Repo}
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.{Node, Package, Region, Vps}
-
-  @password "super-secret-pw-123"
 
   # --- fixtures --------------------------------------------------------------
 
@@ -31,15 +31,6 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       available_disk_gb: 1000
     })
     |> Repo.insert!()
-  end
-
-  # Confirmed because create tests spend the signup bonus (see the package price
-  # comment below) — the bonus is granted on confirmation, not at registration.
-  defp user_fixture(email) do
-    {:ok, user} = Accounts.register_user(%{email: email, password: @password, name: "U"})
-    {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
-    {:ok, confirmed} = Accounts.confirm_user(token)
-    confirmed
   end
 
   # The size-based create charges the matching package's price (O-9), so create
@@ -81,7 +72,13 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     region = insert_region()
     _node = insert_node(region)
     _package = insert_package()
-    %{region: region, user: user_fixture("owner@example.com"), other: user_fixture("other@example.com")}
+    # Confirmed users: create tests spend the signup bonus (see the package price
+    # comment above) and that bonus only exists after email confirmation.
+    %{
+      region: region,
+      user: confirmed_user_fixture("owner@example.com"),
+      other: confirmed_user_fixture("other@example.com")
+    }
   end
 
   # --- auth gate -------------------------------------------------------------

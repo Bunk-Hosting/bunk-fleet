@@ -104,7 +104,17 @@ defmodule ControlPlaneWeb.AuthController do
     json(conn, %{user: user_json(conn.assigns.current_user)})
   end
 
-  @doc "Confirms an account from the token in a `?token=` verification link."
+  @doc """
+  Confirms an account from the token in a `?token=` verification link.
+
+  The two failure modes get deliberately different statuses, because they ask
+  the user for deliberately different things. A bad or expired link is a client
+  error (422): the fix is to request a new one. A confirmation that failed to
+  write is ours (500): the link is still valid and retrying is the right move —
+  answering 422 there would send the user round the resend loop chasing a link
+  that was never the problem, and would hide an outage behind a UI that looks
+  like normal user error.
+  """
   def confirm(conn, %{"token" => token}) when is_binary(token) do
     case Accounts.confirm_user(token) do
       {:ok, user} ->
@@ -114,6 +124,15 @@ defmodule ControlPlaneWeb.AuthController do
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "invalid_token", detail: "Deze link is ongeldig of verlopen."})
+
+      {:error, :confirmation_failed} ->
+        detail =
+          "Bevestigen lukte even niet door een storing aan onze kant. " <>
+            "Je link blijft geldig — probeer het zo nog eens."
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "confirmation_failed", detail: detail})
     end
   end
 
@@ -149,25 +168,32 @@ defmodule ControlPlaneWeb.AuthController do
   def request_password_reset(conn, _params),
     do: conn |> put_status(:unprocessable_entity) |> json(%{error: "email is required"})
 
-  @doc "Exchanges a password-reset token + new password for a changed password."
-  def reset_password(conn, %{"token" => token, "password" => password} = params)
+  @doc """
+  Exchanges a password-reset token + new password for a changed password.
+
+  A rejected attempt must NOT burn the token: someone who picks a password the
+  policy refuses has done nothing wrong and has to be able to retry with the
+  same link (their only copy of it) instead of starting the whole flow over.
+  That property lives in `Accounts.reset_user_password/2`, which only deletes
+  the reset + session tokens inside the transaction that also writes the new
+  password — so a changeset failure rolls the deletion back with it. Nothing
+  here may pre-consume the token ahead of that call.
+  """
+  def reset_password(conn, %{"token" => token, "password" => password})
       when is_binary(token) and is_binary(password) do
-    case Accounts.get_user_by_reset_password_token(token) do
+    with %Accounts.User{} = user <- Accounts.get_user_by_reset_password_token(token),
+         {:ok, _user} <- Accounts.reset_user_password(user, %{"password" => password}) do
+      json(conn, %{detail: "ok"})
+    else
       nil ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "invalid_token", detail: "Deze link is ongeldig of verlopen."})
 
-      user ->
-        case Accounts.reset_user_password(user, %{"password" => params["password"]}) do
-          {:ok, _user} ->
-            json(conn, %{detail: "ok"})
-
-          {:error, changeset} ->
-            conn
-            |> put_status(:unprocessable_entity)
-            |> json(%{errors: changeset_errors(changeset)})
-        end
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: changeset_errors(changeset)})
     end
   end
 

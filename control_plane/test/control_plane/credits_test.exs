@@ -1,25 +1,21 @@
 defmodule ControlPlane.CreditsTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.{Accounts, Credits}
+  import ControlPlane.Fixtures
 
-  # The signup bonus is granted on email confirmation, not at registration (see
-  # Accounts.confirm_user/1) — go through the real confirmation flow so these
-  # tests exercise the actual path a credited user takes, not a shortcut.
-  defp user(email) do
-    {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})
-    {:ok, token} = Accounts.deliver_user_confirmation_instructions(u)
-    {:ok, confirmed} = Accounts.confirm_user(token)
-    confirmed
-  end
+  alias ControlPlane.Credits
+
+  # Every user here is a CONFIRMED one: the signup bonus is granted on email
+  # confirmation, not at registration, so an unconfirmed account has an empty
+  # wallet and would make these balance assertions meaningless.
 
   test "new user receives the signup bonus" do
-    u = user("c1@bunk.test")
+    u = confirmed_user_fixture("c1@bunk.test")
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
   end
 
   test "the signup bonus is granted at most once, whatever the caller does" do
-    u = user("c1b@bunk.test")
+    u = confirmed_user_fixture("c1b@bunk.test")
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
 
     # A pre-confirmation-era account carries a bonus but no confirmed_at, so
@@ -29,7 +25,7 @@ defmodule ControlPlane.CreditsTest do
   end
 
   test "charge debits when affordable, rejects when not, and is atomic" do
-    u = user("c2@bunk.test")
+    u = confirmed_user_fixture("c2@bunk.test")
     assert {:ok, _} = Credits.charge(u.id, 300, "vps_charge", "x")
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents() - 300
 
@@ -41,20 +37,20 @@ defmodule ControlPlane.CreditsTest do
   end
 
   test "zero/under charge is a free no-op" do
-    u = user("c3@bunk.test")
+    u = confirmed_user_fixture("c3@bunk.test")
     assert {:ok, nil} = Credits.charge(u.id, 0, "free", "x")
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
   end
 
   test "refund credits back" do
-    u = user("c4@bunk.test")
+    u = confirmed_user_fixture("c4@bunk.test")
     {:ok, _} = Credits.charge(u.id, 300, "vps_charge", "x")
     {:ok, _} = Credits.refund(u.id, 300, "vps_refund", "x")
     assert Credits.balance_cents(u.id) == Credits.signup_bonus_cents()
   end
 
   test "list_entries returns newest first" do
-    u = user("c5@bunk.test")
+    u = confirmed_user_fixture("c5@bunk.test")
     {:ok, _} = Credits.charge(u.id, 100, "later", "second")
     assert hd(Credits.list_entries(u.id)).kind == "later"
   end

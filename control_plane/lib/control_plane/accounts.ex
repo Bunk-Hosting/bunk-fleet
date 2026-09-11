@@ -9,6 +9,8 @@ defmodule ControlPlane.Accounts do
   """
   import Ecto.Query, warn: false
 
+  require Logger
+
   alias ControlPlane.{Credits, Notifier, Repo}
   alias ControlPlane.Accounts.{User, UserToken}
 
@@ -134,6 +136,29 @@ defmodule ControlPlane.Accounts do
     end
   end
 
+  ## Email-link tokens
+
+  # Both email-link flows (confirmation and password reset) are the same four
+  # steps, and the steps are only safe in this order: invalidate the older
+  # tokens of that context BEFORE minting a new one, so a mailbox never holds
+  # two live links and the user can trust that requesting a new link kills the
+  # old one. Keeping the sequence in one place is what stops the two flows from
+  # drifting — a fix applied to one and forgotten in the other is precisely how
+  # a link the system considers revoked stays usable.
+  #
+  # `deliver` is the `Notifier` entry point for that context, arity 2
+  # (user, encoded_token). Mail delivery failures are the Notifier's business;
+  # the token is already persisted by then, so the user can always ask for a
+  # resend. Returns {:ok, encoded_token} — the raw token exists only here and in
+  # the email, never in the database.
+  defp issue_email_token(%User{} = user, context, deliver) when is_function(deliver, 2) do
+    Repo.delete_all(UserToken.by_user_and_contexts_query(user, [context]))
+    {encoded_token, user_token} = UserToken.build_email_token(user, context)
+    Repo.insert!(user_token)
+    deliver.(user, encoded_token)
+    {:ok, encoded_token}
+  end
+
   ## Email confirmation
 
   @doc """
@@ -149,13 +174,8 @@ defmodule ControlPlane.Accounts do
   def deliver_user_confirmation_instructions(%User{confirmed_at: confirmed}) when not is_nil(confirmed),
     do: {:error, :already_confirmed}
 
-  def deliver_user_confirmation_instructions(%User{} = user) do
-    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["confirm"]))
-    {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
-    Repo.insert!(user_token)
-    Notifier.deliver_confirmation_instructions(user, encoded_token)
-    {:ok, encoded_token}
-  end
+  def deliver_user_confirmation_instructions(%User{} = user),
+    do: issue_email_token(user, "confirm", &Notifier.deliver_confirmation_instructions/2)
 
   @doc """
   Confirms a user from a raw confirmation `token`, atomically stamping
@@ -164,8 +184,19 @@ defmodule ControlPlane.Accounts do
   one transaction so a crediting failure can never leave the account confirmed
   without its bonus, or vice versa.
 
-  Returns `{:ok, user}` or `{:error, :invalid_token}` for a malformed, unknown,
-  already-used, or expired token.
+  Returns `{:ok, user}`, or one of two distinct failures — they are NOT
+  interchangeable and callers are expected to treat them differently:
+
+    * `{:error, :invalid_token}` — the link itself is malformed, unknown,
+      already used, or expired. The user can fix this by requesting a new one.
+    * `{:error, :confirmation_failed}` — the token was good but the write did
+      not go through (database trouble, a failing signup-bonus grant, …). The
+      account is untouched and the link still works; the fault is ours, it is
+      logged at `:error`, and the user should simply retry.
+
+  Collapsing the second case into `:invalid_token` (as this used to) told the
+  user their link had expired, sent them chasing a fresh link that would fail
+  the same way, and left the real fault silent in the logs.
   """
   def confirm_user(token) when is_binary(token) do
     with {:ok, query} <- UserToken.verify_email_token_query(token, "confirm"),
@@ -180,8 +211,15 @@ defmodule ControlPlane.Accounts do
       end)
       |> Repo.transaction()
       |> case do
-        {:ok, %{user: confirmed_user}} -> {:ok, confirmed_user}
-        {:error, _step, _reason, _changes} -> {:error, :invalid_token}
+        {:ok, %{user: confirmed_user}} ->
+          {:ok, confirmed_user}
+
+        {:error, step, reason, _changes} ->
+          Logger.error(
+            "confirm_user/1 failed for user #{user.id} at #{inspect(step)}: #{inspect(reason)}"
+          )
+
+          {:error, :confirmation_failed}
       end
     else
       _ -> {:error, :invalid_token}
@@ -200,27 +238,34 @@ defmodule ControlPlane.Accounts do
   caller learns whether the account exists (only appropriate once you already
   hold a `%User{}`, e.g. an admin-initiated reset).
   """
-  def deliver_user_reset_password_instructions(%User{} = user) do
-    Repo.delete_all(UserToken.by_user_and_contexts_query(user, ["reset_password"]))
-    {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
-    Repo.insert!(user_token)
-    Notifier.deliver_reset_password_instructions(user, encoded_token)
-    {:ok, encoded_token}
-  end
+  def deliver_user_reset_password_instructions(%User{} = user),
+    do: issue_email_token(user, "reset_password", &Notifier.deliver_reset_password_instructions/2)
 
   @doc """
   Enumeration-safe entry point for "forgot password": looks up `email` and, if
-  found, sends a reset link. Always returns `:ok` regardless of whether the
-  address matches an account, so the caller's response can't be used to probe
-  which emails are registered.
+  found, sends a reset link.
+
+  ALWAYS returns `:ok` — for a known address, an unknown one, and a value that
+  isn't even a string. That uniform answer is the whole point of the function
+  and must survive any future edit: the caller (the public
+  `POST /auth/password-reset` endpoint) renders its response straight from this
+  result, so the moment a "no such user" leaks out here, the endpoint becomes an
+  oracle for which email addresses hold an account.
+
+  Callers that legitimately need to know whether delivery happened already hold
+  a `%User{}` and should call `deliver_user_reset_password_instructions/1`.
   """
   def request_password_reset(email) when is_binary(email) do
     case get_user_by_email(String.downcase(email)) do
-      %User{} = user -> deliver_user_reset_password_instructions(user)
-      nil -> :ok
-    end
+      %User{} = user ->
+        # The delivery result is dropped on purpose — see the docstring. It is
+        # never allowed to reach the caller, not even as a success signal.
+        _ = deliver_user_reset_password_instructions(user)
+        :ok
 
-    :ok
+      nil ->
+        :ok
+    end
   end
 
   def request_password_reset(_email), do: :ok
