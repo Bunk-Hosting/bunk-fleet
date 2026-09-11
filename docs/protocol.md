@@ -96,11 +96,12 @@ its `CommandResult`. One of the following payloads:
 
 | Field         | Type   | Notes                                               |
 | ------------- | ------ | --------------------------------------------------- |
-| `vps_id`      | uuid   | Logical VPS this VM backs.                           |
-| `spec`        | object | `{ vcpu, ram_mb, disk_gb, image }`.                 |
-| `cloud_init`  | string | cloud-init user-data rendered by the control plane. |
-| `ssh_keys`    | []string| Authorized public keys for the instance.           |
-| `ip`          | object | `{ overlay_ip, public_ip? }` to assign on the VM.   |
+| `name`        | string | Guest name on the hypervisor.                        |
+| `vcpu` / `ram_mb` / `disk_gb` | int | The requested spec.                     |
+| `template_id` | int    | Template to clone.                                   |
+| `cloud_init`  | object | cloud-init data rendered by the control plane.       |
+| `ssh_keys`    | []string| Authorized public keys, plus the console key.       |
+| `ip_config`   | string | Provider-native addressing: `ip=A.B.C.D/prefix,gw=…`, allocated from the node's own subnet. |
 
 #### `delete`
 
@@ -108,13 +109,18 @@ its `CommandResult`. One of the following payloads:
 | -------- | ------ | ------------------------------------ |
 | `vm_id`  | string | Hypervisor-local VM identifier.      |
 
-#### `console-open`
+#### `console_connect`
 
-| Field      | Type   | Notes                                         |
-| ---------- | ------ | --------------------------------------------- |
-| `vm_id`    | string | Target VM.                                    |
-| `session`  | uuid   | Console session id; subsequent console bytes  |
-|            |        | are multiplexed on the channel under this id. |
+Not a command in the usual sense: it changes nothing, reports no result, and is
+never redelivered. It rides the command poll because that is the channel the
+agent already holds open.
+
+| Field      | Type   | Notes                                                  |
+| ---------- | ------ | ------------------------------------------------------ |
+| `token`    | string | Single-use relay token. The agent presents it on `GET /v1/console-relay`, which upgrades to a WebSocket carrying raw SSH bytes. |
+| `vps_id`   | uuid   | The VPS this console is for.                           |
+| `host`     | string | Address to open TCP to, on the node's own network. The agent refuses anything that is not private, and outside its assigned subnet where it knows one. |
+| `port`     | int    | Usually 22.                                            |
 
 ---
 
@@ -124,12 +130,10 @@ its `CommandResult`. One of the following payloads:
 
 | Field         | Type   | Notes                                                  |
 | ------------- | ------ | ------------------------------------------------------ |
-| `command_id`  | uuid   | Echoes the originating `Command`.                      |
-| `node_id`     | uuid   | Reporting node.                                        |
-| `status`      | enum   | `ok` \| `error` \| `in_progress`.                      |
-| `vm_id`       | string | Hypervisor-local VM id (on provision/delete).          |
-| `ip`          | object | Assigned `{ overlay_ip, public_ip? }` (on provision).  |
-| `error`       | string | Human-readable failure reason when `status = error`.   |
+| `status`      | enum   | `done` \| `failed`.                                    |
+| `vm_id`       | string | Hypervisor-local VM id (on provision).                 |
+| `ip`          | string | The guest's primary IPv4, when known. The control plane keeps its own allocation when the two disagree — the console binds to the address it assigned. |
+| `error`       | string | Human-readable failure reason when `status = failed`.  |
 
 ---
 

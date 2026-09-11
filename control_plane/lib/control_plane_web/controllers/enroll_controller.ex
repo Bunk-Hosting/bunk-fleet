@@ -16,12 +16,11 @@ defmodule ControlPlaneWeb.EnrollController do
         cidr_prefix: params["vps_cidr_prefix"],
         range_start: params["vps_range_start"],
         range_end: params["vps_range_end"]
-      },
-      wg_public_key: params["wg_public_key"]
+      }
     }
 
     case Enrollment.enroll(token, attrs) do
-      {:ok, %{node: node, agent_token: agent_token} = result} ->
+      {:ok, %{node: node, agent_token: agent_token}} ->
         # The agent needs its VPS network back: the control plane may have
         # assigned the block rather than taken the agent's word for it, and the
         # agent is what configures the bridge and NAT from it.
@@ -35,8 +34,6 @@ defmodule ControlPlaneWeb.EnrollController do
             range_end: node.vps_range_end
           }
         }
-
-        body = if result[:overlay], do: Map.put(body, :overlay, result.overlay), else: body
 
         conn
         |> put_status(:ok)

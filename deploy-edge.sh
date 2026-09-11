@@ -3,6 +3,14 @@
 # /ws + /api/v1 to the control plane (WebSockets need a real proxy; the Next
 # rewrite can't carry them) and everything else to the Next.js frontend.
 set -euo pipefail
+
+# One at a time. deploy-frontend.sh ends by calling this script, so running both
+# concurrently is easy to do by accident — and the result is not a slow deploy but
+# a down site: the two runs interleave `docker rm -f` and `docker run`, and the
+# loser deletes the container the winner just started.
+exec 9>/tmp/bunk-deploy-edge.lock
+flock 9
+
 NET=bunkfleet
 # frontend: internal only now (nginx fronts it)
 docker rm -f bunk-frontend >/dev/null 2>&1 || true

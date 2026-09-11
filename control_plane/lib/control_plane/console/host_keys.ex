@@ -4,8 +4,10 @@ defmodule ControlPlane.Console.HostKeys do
 
   The first console connection to a VPS records its host-key fingerprint; every
   later connection must present the same fingerprint or it is rejected. This is
-  what stops the hosting operator — who controls the hypervisor and the overlay
-  network — from transparently MITMing a customer's console session (O-33).
+  what stops the node operator — who controls the hypervisor, the network the VPS
+  sits on, and now the agent every console byte is relayed through — from
+  transparently MITMing a customer's console session (O-33). That matters more,
+  not less, once the fleet includes machines we do not own.
 
   TOFU's one inherent gap is the very first connection: if the operator already
   sits in the path then, the attacker's key gets pinned. That is acceptable here

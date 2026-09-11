@@ -63,39 +63,22 @@ func run(logger *slog.Logger) error {
 		state = st
 		cp.SetCredentials(st.NodeID, st.AgentToken)
 		logger.Info("loaded persisted enrollment", "node_id", st.NodeID)
-		applyOverlay(logger, st)
 		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
 	} else if cfg.EnrollToken != "" {
-		wgPriv, wgPub, kerr := generateWGKey()
-		if kerr != nil {
-			logger.Warn("could not generate WireGuard key; overlay disabled", "err", kerr)
-		}
-
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, cfg.Hypervisor, transport.VpsNetwork{
 			Gateway:    cfg.VpsNetwork.Gateway,
 			CidrPrefix: cfg.VpsNetwork.CidrPrefix,
 			RangeStart: cfg.VpsNetwork.RangeStart,
 			RangeEnd:   cfg.VpsNetwork.RangeEnd,
-		}, wgPub)
+		})
 		cancel()
 		if err != nil {
 			return err
 		}
 		logger.Info("enrolled with control plane", "node_id", resp.NodeID)
 
-		st := persistedState{
-			NodeID:       resp.NodeID,
-			AgentToken:   resp.AgentToken,
-			WGPrivateKey: wgPriv,
-			WGPublicKey:  wgPub,
-		}
-		if resp.Overlay != nil {
-			st.HubPublicKey = resp.Overlay.HubPublicKey
-			st.Endpoint = resp.Overlay.Endpoint
-			st.OverlayIP = resp.Overlay.OverlayIP
-			st.OverlayCIDR = resp.Overlay.OverlayCIDR
-		}
+		st := persistedState{NodeID: resp.NodeID, AgentToken: resp.AgentToken}
 		if resp.VpsNetwork != nil {
 			st.VpsGateway = resp.VpsNetwork.Gateway
 			st.VpsCidrPrefix = resp.VpsNetwork.CidrPrefix
@@ -107,7 +90,6 @@ func run(logger *slog.Logger) error {
 		if err := saveState(statePath, st); err != nil {
 			logger.Warn("could not persist enrollment; a restart will need a fresh token", "err", err)
 		}
-		applyOverlay(logger, st)
 		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
 		state = st
 	} else {

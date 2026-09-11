@@ -54,10 +54,6 @@ defmodule ControlPlane.Fleet.Node do
     field :vps_range_start, :string
     field :vps_range_end, :string
 
-    # WireGuard overlay: the node's wg public key + its assigned overlay /32.
-    field :wg_public_key, :string
-    field :overlay_ip, :string
-
     belongs_to :region, Region
 
     timestamps(type: :utc_datetime)
@@ -85,9 +81,7 @@ defmodule ControlPlane.Fleet.Node do
       :vps_gateway,
       :vps_cidr_prefix,
       :vps_range_start,
-      :vps_range_end,
-      :wg_public_key,
-      :overlay_ip
+      :vps_range_end
     ])
     |> clamp_capacity()
     |> validate_required([:name, :region_id])

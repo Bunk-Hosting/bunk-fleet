@@ -62,15 +62,13 @@ defmodule ControlPlane.Enrollment do
       when is_binary(token_plaintext) do
     agent_token = generate_token()
     net = Map.get(attrs, :vps_network, %{})
-    wg = Map.get(attrs, :wg_public_key)
 
     Repo.transaction(fn ->
       with %EnrollToken{} = token <- fetch_valid_token(token_plaintext),
            {:ok, vps_network} <- resolve_vps_network(net),
            {:ok, node} <- create_node(token, hypervisor, agent_token, vps_network),
-           {:ok, node, overlay} <- maybe_register_overlay(node, wg),
            {:ok, _token} <- consume_token(token) do
-        %{node: node, agent_token: agent_token, overlay: overlay}
+        %{node: node, agent_token: agent_token}
       else
         {:error, :supernet_exhausted} -> Repo.rollback(:supernet_exhausted)
         _ -> Repo.rollback(:invalid_token)
@@ -129,17 +127,6 @@ defmodule ControlPlane.Enrollment do
   end
 
   defp normalize_prefix(_), do: nil
-
-  # Assigns the node an overlay IP + records its wg key when it supplied one;
-  # old agents without WireGuard simply get no overlay.
-  defp maybe_register_overlay(node, wg) when is_binary(wg) and wg != "" do
-    case ControlPlane.Overlay.register_node(node.id, wg) do
-      {:ok, node} -> {:ok, node, ControlPlane.Overlay.node_overlay_params(node)}
-      other -> other
-    end
-  end
-
-  defp maybe_register_overlay(node, _wg), do: {:ok, node, nil}
 
   @doc """
   Authenticates a node by its plaintext bearer agent token.

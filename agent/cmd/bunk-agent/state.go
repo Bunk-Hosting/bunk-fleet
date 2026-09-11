@@ -7,21 +7,12 @@ import (
 )
 
 // persistedState is the on-disk state the agent reuses across restarts: the
-// enrollment credentials plus the WireGuard overlay keypair + assigned params,
-// so a reboot keeps the same node identity AND the same overlay key the control
-// plane already trusts.
+// enrollment credentials plus the customer network it was assigned, so a reboot
+// keeps the same node identity and reconfigures the same bridge without
+// re-enrolling.
 type persistedState struct {
-	NodeID       string `json:"node_id"`
-	AgentToken   string `json:"agent_token"`
-	WGPrivateKey string `json:"wg_private_key,omitempty"`
-	WGPublicKey  string `json:"wg_public_key,omitempty"`
-	HubPublicKey string `json:"hub_public_key,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
-	OverlayIP    string `json:"overlay_ip,omitempty"`
-	OverlayCIDR  string `json:"overlay_cidr,omitempty"`
-
-	// The customer network the control plane assigned this node. Persisted so a
-	// restart reconfigures the bridge without re-enrolling.
+	NodeID        string `json:"node_id"`
+	AgentToken    string `json:"agent_token"`
 	VpsGateway    string `json:"vps_gateway,omitempty"`
 	VpsCidrPrefix int    `json:"vps_cidr_prefix,omitempty"`
 }

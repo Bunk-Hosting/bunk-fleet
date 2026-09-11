@@ -23,7 +23,7 @@ region and a package, and the control plane decides which of our nodes runs it.
 | Control plane         | **Elixir / Phoenix (OTP)**      | Many concurrent flaky-agent connections, realtime console mux, supervision/fault-tolerance. |
 | Worker agent          | **Go (stdlib-only)**            | Single static binary, trivial to ship to a new node.            |
 | Hypervisors           | **Proxmox** + **ESXi/vCenter**  | What our nodes actually run.                                    |
-| Overlay networking    | **WireGuard**                   | NAT-traversing, encrypted overlay for VPS public endpoints.     |
+| Reaching a VPS        | **Relayed through its node's agent** | The agent already dials out; nothing has to reach in.      |
 | Persistence           | **Postgres** (via Ecto)         | Authoritative inventory, placement, and billing state.          |
 | Agent authentication  | **Per-node bearer token**       | Minted once at enrollment; only its hash is stored.             |
 
@@ -54,12 +54,23 @@ subsequent heartbeats.
 Because RAM is the resource that cannot be overcommitted safely, RAM is in
 practice the binding constraint on how many VPS instances a node can carry.
 
-## Overlay networking
+## Reaching a VPS from the control plane
 
-VPS instances join a **WireGuard** overlay. Because every node and VM dials out
-into the overlay, the platform can assign **public endpoints** and route
-east-west traffic between VPS instances regardless of a node's local NAT or
-firewall — no inbound port-forwarding on the node's network is required.
+The control plane never opens a connection to a node. A node can be behind NAT,
+behind CGNAT, or on a school network, and nothing about that changes what works.
+
+When the browser console needs a VPS, the control plane queues a request on the
+channel the node's agent is already polling; the agent dials back over WSS and
+relays bytes to the VPS's SSH port. The control plane needs no route to the
+node's private network and no public address of its own.
+
+There was a WireGuard overlay here. It never carried a byte — enrolment handed
+out keys, but no hub ever listened, and the endpoint it advertised resolved to a
+CDN that does not carry UDP. It was removed rather than finished, because the
+relay solves the problem it was for and solves it in more places.
+
+Customer *inbound* access — someone reaching their own VPS from the internet —
+is a separate, still-open problem: see `docs/design/multi-node.md` §3.2.
 
 ## Failure modes
 
@@ -81,8 +92,8 @@ firewall — no inbound port-forwarding on the node's network is required.
   placement in the control plane.
 - **F2 — Agent + enrollment.** *(done)* `bunk-agent`, single-use-token
   enrollment, per-node agent tokens, heartbeats, command long-poll.
-- **F3 — Overlay + console.** *(done)* WireGuard overlay for VPS endpoints and
-  end-to-end console multiplexing with host-key pinning.
+- **F3 — Console.** *(done)* End-to-end console with host-key pinning, relayed
+  through the node's own agent so it works on a node we cannot dial.
 - **F4 — Fleet operations.** Running more than one node well: capacity
   planning against real cost per node, node drain/maintenance mode, backups,
   and per-node cost reporting.
