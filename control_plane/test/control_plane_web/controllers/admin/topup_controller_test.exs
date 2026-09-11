@@ -15,7 +15,11 @@ defmodule ControlPlaneWeb.Admin.TopupControllerTest do
     u = user("at1@bunk.test")
     {:ok, _} = Credits.create_topup_request(u.id, 2500)
     body = conn |> auth() |> get(~p"/admin/v1/topups") |> json_response(200)
-    assert Enum.any?(body["requests"], &(&1["email"] == "at1@bunk.test" and &1["amount_cents"] == 2500))
+
+    assert Enum.any?(
+             body["requests"],
+             &(&1["email"] == "at1@bunk.test" and &1["amount_cents"] == 2500)
+           )
   end
 
   test "confirm credits the wallet and is idempotent", %{conn: conn} do
@@ -31,7 +35,10 @@ defmodule ControlPlaneWeb.Admin.TopupControllerTest do
   end
 
   test "confirm unknown -> 404", %{conn: conn} do
-    assert conn |> auth() |> post(~p"/admin/v1/topups/#{Ecto.UUID.generate()}/confirm") |> json_response(404)
+    assert conn
+           |> auth()
+           |> post(~p"/admin/v1/topups/#{Ecto.UUID.generate()}/confirm")
+           |> json_response(404)
   end
 
   test "requires admin token", %{conn: conn} do

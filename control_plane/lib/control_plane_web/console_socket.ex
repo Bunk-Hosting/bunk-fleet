@@ -20,7 +20,10 @@ defmodule ControlPlaneWeb.ConsoleSocket do
   @impl true
   def init(state) do
     if session_limit_reached?(state.user_id) do
-      Logger.warning("console ws: per-user session limit reached for user #{inspect(state.user_id)}")
+      Logger.warning(
+        "console ws: per-user session limit reached for user #{inspect(state.user_id)}"
+      )
+
       {:stop, :normal, state}
     else
       case Session.start_link(%{

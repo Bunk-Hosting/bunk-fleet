@@ -16,10 +16,17 @@ defmodule ControlPlaneWeb.BillingControllerTest do
 
   defp insert_node(region) do
     %Node{}
-    |> Node.changeset(%{name: "node-#{System.unique_integer([:positive])}", region_id: region.id, owner_email: "op@example.com"})
+    |> Node.changeset(%{
+      name: "node-#{System.unique_integer([:positive])}",
+      region_id: region.id,
+      owner_email: "op@example.com"
+    })
     # Only :online, recently-heartbeating nodes are metered.
     |> Ecto.Changeset.put_change(:status, :online)
-    |> Ecto.Changeset.put_change(:last_heartbeat_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> Ecto.Changeset.put_change(
+      :last_heartbeat_at,
+      DateTime.utc_now() |> DateTime.truncate(:second)
+    )
     |> Repo.insert!()
   end
 
@@ -56,7 +63,13 @@ defmodule ControlPlaneWeb.BillingControllerTest do
   setup do
     region = insert_region()
     node = insert_node(region)
-    %{region: region, node: node, user: user_fixture("a@example.com"), other: user_fixture("b@example.com")}
+
+    %{
+      region: region,
+      node: node,
+      user: user_fixture("a@example.com"),
+      other: user_fixture("b@example.com")
+    }
   end
 
   test "requires authentication", %{conn: conn} do
@@ -89,10 +102,16 @@ defmodule ControlPlaneWeb.BillingControllerTest do
 
   test "400 for a malformed datetime", ctx do
     assert %{"error" => "invalid_datetime"} =
-             ctx.conn |> auth(ctx.user) |> get(~p"/api/v1/billing/usage?from=nonsense&to=#{@to}") |> json_response(400)
+             ctx.conn
+             |> auth(ctx.user)
+             |> get(~p"/api/v1/billing/usage?from=nonsense&to=#{@to}")
+             |> json_response(400)
   end
 
   test "400 when from is not before to", ctx do
-    assert ctx.conn |> auth(ctx.user) |> get(~p"/api/v1/billing/usage?from=#{@to}&to=#{@from}") |> json_response(400)
+    assert ctx.conn
+           |> auth(ctx.user)
+           |> get(~p"/api/v1/billing/usage?from=#{@to}&to=#{@from}")
+           |> json_response(400)
   end
 end

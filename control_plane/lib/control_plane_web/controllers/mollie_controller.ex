@@ -54,7 +54,10 @@ defmodule ControlPlaneWeb.MollieController do
         # the client (Cloudflare replaces 5xx bodies with its own error page).
         detail = (is_map(body) && body["detail"]) || "betaling geweigerd"
         Logger.warning("mollie rejected topup: #{inspect(body)}")
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "payment_rejected", detail: detail})
+
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "payment_rejected", detail: detail})
 
       {:error, reason} ->
         Logger.warning("topup failed: #{inspect(reason)}")
@@ -73,15 +76,24 @@ defmodule ControlPlaneWeb.MollieController do
           # the amount we recorded — defence-in-depth against adjustable-amount
           # payment types ever being enabled.
           case Credits.mark_topup_paid_by_mollie_id(payment_id, amount) do
-            {:ok, _} -> :ok
-            {:error, :not_pending} -> :ok
+            {:ok, _} ->
+              :ok
+
+            {:error, :not_pending} ->
+              :ok
+
             # A verified *paid* payment with no matching topup row means a real
             # customer payment we can't reconcile — never swallow it silently.
             {:error, :not_found} ->
-              Logger.error("mollie webhook: PAID payment #{payment_id} has no matching topup_request — possible lost payment, reconcile manually")
+              Logger.error(
+                "mollie webhook: PAID payment #{payment_id} has no matching topup_request — possible lost payment, reconcile manually"
+              )
 
-            {:error, :amount_mismatch} -> Logger.error("mollie webhook amount mismatch for #{payment_id}")
-            other -> Logger.warning("mollie webhook credit: #{inspect(other)}")
+            {:error, :amount_mismatch} ->
+              Logger.error("mollie webhook amount mismatch for #{payment_id}")
+
+            other ->
+              Logger.warning("mollie webhook credit: #{inspect(other)}")
           end
 
         {:ok, %{status: status}} when status in ["expired", "canceled", "failed"] ->
@@ -113,12 +125,17 @@ defmodule ControlPlaneWeb.MollieController do
   defp parse_amount(%{"amount_cents" => v}) do
     cents =
       cond do
-        is_integer(v) -> v
-        is_binary(v) -> case Integer.parse(v) do
-          {n, ""} -> n
-          _ -> nil
-        end
-        true -> nil
+        is_integer(v) ->
+          v
+
+        is_binary(v) ->
+          case Integer.parse(v) do
+            {n, ""} -> n
+            _ -> nil
+          end
+
+        true ->
+          nil
       end
 
     if is_integer(cents) and cents >= @min_cents and cents <= @max_cents,

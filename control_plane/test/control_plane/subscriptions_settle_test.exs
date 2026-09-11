@@ -7,7 +7,14 @@ defmodule ControlPlane.SubscriptionsSettleTest do
 
   defp insert_user do
     n = System.unique_integer([:positive])
-    {:ok, user} = Accounts.register_user(%{email: "sub#{n}@example.com", password: "super-secret-pw-123", name: "Sub"})
+
+    {:ok, user} =
+      Accounts.register_user(%{
+        email: "sub#{n}@example.com",
+        password: "super-secret-pw-123",
+        name: "Sub"
+      })
+
     # Drain the signup bonus so every test starts from a 0 balance and the
     # charged/uncharged expectations are deterministic.
     {:ok, _} = Credits.add_entry(user.id, -Credits.balance_cents(user.id), "adjust", "test reset")
@@ -16,16 +23,25 @@ defmodule ControlPlane.SubscriptionsSettleTest do
 
   defp insert_vps(status \\ :active) do
     code = "r-#{System.unique_integer([:positive])}"
-    region = %Region{} |> Region.changeset(%{code: code, name: "Region #{code}"}) |> Repo.insert!()
+
+    region =
+      %Region{} |> Region.changeset(%{code: code, name: "Region #{code}"}) |> Repo.insert!()
 
     node =
       %Node{}
-      |> Node.changeset(%{name: "node-#{System.unique_integer([:positive])}", region_id: region.id})
+      |> Node.changeset(%{
+        name: "node-#{System.unique_integer([:positive])}",
+        region_id: region.id
+      })
       |> Ecto.Changeset.change(%{
         status: :online,
         last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        total_vcpu: 32, total_ram_mb: 65_536, total_disk_gb: 1000,
-        available_vcpu: 32, available_ram_mb: 65_536, available_disk_gb: 1000
+        total_vcpu: 32,
+        total_ram_mb: 65_536,
+        total_disk_gb: 1000,
+        available_vcpu: 32,
+        available_ram_mb: 65_536,
+        available_disk_gb: 1000
       })
       |> Repo.insert!()
 
@@ -34,7 +50,9 @@ defmodule ControlPlane.SubscriptionsSettleTest do
       name: "vps-#{System.unique_integer([:positive])}",
       region_id: region.id,
       node_id: node.id,
-      vcpu: 2, ram_mb: 4096, disk_gb: 50,
+      vcpu: 2,
+      ram_mb: 4096,
+      disk_gb: 50,
       provider_vm_id: "105"
     })
     |> Ecto.Changeset.put_change(:status, status)

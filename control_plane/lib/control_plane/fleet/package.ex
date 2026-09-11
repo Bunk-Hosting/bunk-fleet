@@ -20,7 +20,18 @@ defmodule ControlPlane.Fleet.Package do
 
   def changeset(package, attrs) do
     package
-    |> cast(attrs, [:name, :cpu_cores, :ram_gb, :disk_gb, :bandwidth_tb, :price_monthly, :description, :is_available, :sort_order, :template_id])
+    |> cast(attrs, [
+      :name,
+      :cpu_cores,
+      :ram_gb,
+      :disk_gb,
+      :bandwidth_tb,
+      :price_monthly,
+      :description,
+      :is_available,
+      :sort_order,
+      :template_id
+    ])
     |> validate_required([:name, :cpu_cores, :ram_gb, :disk_gb, :price_monthly])
     |> unique_constraint(:name)
   end

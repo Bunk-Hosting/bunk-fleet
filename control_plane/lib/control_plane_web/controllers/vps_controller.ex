@@ -44,7 +44,8 @@ defmodule ControlPlaneWeb.VpsController do
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
          price = package_price_cents(pkg),
          {:ok, _charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
-         {:ok, %{vps: vps}} <- charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price) do
+         {:ok, %{vps: vps}} <-
+           charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price) do
       conn
       |> put_status(:created)
       |> json(%{vps: vps_json(vps)})
@@ -133,7 +134,13 @@ defmodule ControlPlaneWeb.VpsController do
   # Bound caller-supplied provision input so a request can't carry an absurd
   # number/size of SSH keys or a giant cloud-init blob (targets the user's own VM,
   # but unbounded input is unbounded work). Limits are generous for real use.
-  defp validate_provision_input(%{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb, ssh_keys: ssh, cloud_init: ci}) do
+  defp validate_provision_input(%{
+         vcpu: vcpu,
+         ram_mb: ram_mb,
+         disk_gb: disk_gb,
+         ssh_keys: ssh,
+         cloud_init: ci
+       }) do
     cond do
       # Reject an out-of-bounds spec up front (matches Vps.validate_spec) so an
       # invalid request fails with a clear `invalid_vps` rather than slipping

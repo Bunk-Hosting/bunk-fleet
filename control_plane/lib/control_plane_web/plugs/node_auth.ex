@@ -27,5 +27,4 @@ defmodule ControlPlaneWeb.Plugs.NodeAuth do
       _ -> Bearer.unauthorized(conn)
     end
   end
-
 end

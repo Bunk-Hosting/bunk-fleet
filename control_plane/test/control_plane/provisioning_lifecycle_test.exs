@@ -15,8 +15,12 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
     |> Ecto.Changeset.change(%{
       status: :online,
       last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
-      total_vcpu: 32, total_ram_mb: 65_536, total_disk_gb: 1000,
-      available_vcpu: 32, available_ram_mb: 65_536, available_disk_gb: 1000
+      total_vcpu: 32,
+      total_ram_mb: 65_536,
+      total_disk_gb: 1000,
+      available_vcpu: 32,
+      available_ram_mb: 65_536,
+      available_disk_gb: 1000
     })
     |> Repo.insert!()
   end
@@ -27,7 +31,9 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
       name: "vps-#{System.unique_integer([:positive])}",
       region_id: region.id,
       node_id: node.id,
-      vcpu: 2, ram_mb: 4096, disk_gb: 50,
+      vcpu: 2,
+      ram_mb: 4096,
+      disk_gb: 50,
       provider_vm_id: Keyword.get(opts, :provider_vm_id, "105")
     })
     |> Ecto.Changeset.put_change(:status, status)
@@ -58,7 +64,9 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
     test "pause_vps only from :active" do
       assert {:ok, %{command: cmd}} = Provisioning.pause_vps(setup_vps(:active).id)
       assert cmd.kind == :pause
-      assert {:error, {:invalid_status, :stopped}} = Provisioning.pause_vps(setup_vps(:stopped).id)
+
+      assert {:error, {:invalid_status, :stopped}} =
+               Provisioning.pause_vps(setup_vps(:stopped).id)
     end
 
     test "resume_vps only from :paused" do
@@ -72,7 +80,8 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
     end
 
     test "not_provisioned when provider_vm_id is missing" do
-      assert {:error, :not_provisioned} = Provisioning.start_vps(setup_vps(:stopped, provider_vm_id: nil).id)
+      assert {:error, :not_provisioned} =
+               Provisioning.start_vps(setup_vps(:stopped, provider_vm_id: nil).id)
     end
 
     test "not_found for unknown vps" do
@@ -128,7 +137,9 @@ defmodule ControlPlane.ProvisioningLifecycleTest do
       {:ok, %{command: cmd}} = Provisioning.delete_vps(vps.id)
       # Agent reports the destroy failed (e.g. transient Proxmox error); the
       # command becomes terminal but the VPS stays :deleting.
-      {:ok, _} = Provisioning.apply_result(cmd, %{"status" => "failed", "error" => "VM is running"})
+      {:ok, _} =
+        Provisioning.apply_result(cmd, %{"status" => "failed", "error" => "VM is running"})
+
       assert Repo.get!(Vps, vps.id).status == :deleting
 
       # A fresh delete is allowed (no in-flight command) and enqueues a new one.

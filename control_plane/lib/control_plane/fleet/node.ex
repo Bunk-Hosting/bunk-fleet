@@ -115,7 +115,11 @@ defmodule ControlPlane.Fleet.Node do
   end
 
   @doc "Returns a changeset that subtracts vcpu/ram/disk from the node's available capacity."
-  def subtract_capacity_changeset(%__MODULE__{} = node, %{vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
+  def subtract_capacity_changeset(%__MODULE__{} = node, %{
+        vcpu: vcpu,
+        ram_mb: ram_mb,
+        disk_gb: disk_gb
+      }) do
     change(node,
       available_vcpu: node.available_vcpu - vcpu,
       available_ram_mb: node.available_ram_mb - ram_mb,
@@ -159,7 +163,6 @@ defmodule ControlPlane.Fleet.Node do
       changeset
     end
   end
-
 
   @doc """
   Changeset applied when a node reports a heartbeat.

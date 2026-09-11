@@ -56,7 +56,12 @@ defmodule ControlPlane.Notifier.TemplatesTest do
   describe "low_balance/4" do
     test "names the VPS and the retry date in both formats" do
       {text, html} =
-        Templates.low_balance("Stijn", "web-01", "11-09-2026", "https://app.bunkhosting.nl/dashboard/billing")
+        Templates.low_balance(
+          "Stijn",
+          "web-01",
+          "11-09-2026",
+          "https://app.bunkhosting.nl/dashboard/billing"
+        )
 
       assert html =~ "Je saldo is te laag"
       assert html =~ "web-01"
@@ -115,8 +120,11 @@ defmodule ControlPlane.Notifier.TemplatesTest do
             Templates.reset_password("Stijn", @url),
             Templates.low_balance("Stijn", "web-01", "11-09-2026", @url)
           ] do
-        refute text =~ ~r/<[a-zA-Z!\/][^>]*>/, "text body unexpectedly contains an HTML tag: #{inspect(text)}"
-        refute text =~ ~r/&[a-zA-Z]+;|&#\d+;/, "text body unexpectedly contains an HTML entity: #{inspect(text)}"
+        refute text =~ ~r/<[a-zA-Z!\/][^>]*>/,
+               "text body unexpectedly contains an HTML tag: #{inspect(text)}"
+
+        refute text =~ ~r/&[a-zA-Z]+;|&#\d+;/,
+               "text body unexpectedly contains an HTML entity: #{inspect(text)}"
       end
     end
   end

@@ -36,7 +36,8 @@ defmodule ControlPlaneWeb.AuthController do
       |> put_status(:created)
       |> json(%{user: user_json(user), token: encode_token(token)})
     else
-      {:error, reason} when reason in [:captcha_required, :captcha_failed, :captcha_unavailable] ->
+      {:error, reason}
+      when reason in [:captcha_required, :captcha_failed, :captcha_unavailable] ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "captcha_failed", turnstile_required: true})
@@ -72,7 +73,9 @@ defmodule ControlPlaneWeb.AuthController do
             issue_session(conn, user)
 
           is_binary(params["code"]) ->
-            conn |> put_status(:unauthorized) |> json(%{totp_required: true, error: "invalid_code"})
+            conn
+            |> put_status(:unauthorized)
+            |> json(%{totp_required: true, error: "invalid_code"})
 
           true ->
             conn |> put_status(:ok) |> json(%{totp_required: true})
@@ -198,7 +201,10 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def reset_password(conn, _params),
-    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "token and password are required"})
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "token and password are required"})
 
   def logout(conn, _params) do
     # Extract from header OR the HttpOnly cookie so a cookie-based browser session

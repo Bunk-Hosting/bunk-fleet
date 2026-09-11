@@ -115,7 +115,11 @@ defmodule ControlPlane.Fleet do
 
   @doc "Available VPS packages, ordered like the catalog (sort_order, price)."
   def list_available_packages do
-    Repo.all(from p in Package, where: p.is_available == true, order_by: [asc: p.sort_order, asc: p.price_monthly])
+    Repo.all(
+      from p in Package,
+        where: p.is_available == true,
+        order_by: [asc: p.sort_order, asc: p.price_monthly]
+    )
   end
 
   def get_package(id), do: Repo.get(Package, id)
@@ -146,6 +150,7 @@ defmodule ControlPlane.Fleet do
   end
 
   defp coerce_int(v) when is_integer(v), do: v
+
   defp coerce_int(v) when is_binary(v) do
     case Integer.parse(v) do
       {n, ""} -> n

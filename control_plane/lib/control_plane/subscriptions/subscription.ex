@@ -29,7 +29,17 @@ defmodule ControlPlane.Subscriptions.Subscription do
 
   def changeset(sub, attrs) do
     sub
-    |> cast(attrs, [:vps_id, :owner_id, :package_id, :price_monthly, :status, :billing_cycle, :started_at, :next_billing_date, :cancelled_at])
+    |> cast(attrs, [
+      :vps_id,
+      :owner_id,
+      :package_id,
+      :price_monthly,
+      :status,
+      :billing_cycle,
+      :started_at,
+      :next_billing_date,
+      :cancelled_at
+    ])
     |> validate_required([:vps_id, :owner_id, :price_monthly])
     |> unique_constraint(:vps_id)
   end

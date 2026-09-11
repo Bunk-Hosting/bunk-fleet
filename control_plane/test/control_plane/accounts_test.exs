@@ -102,7 +102,10 @@ defmodule ControlPlane.AccountsTest do
       # Scoped to the "session" context: registration also mints a "confirm"
       # token for the same user, so an unscoped query would see two rows.
       stored =
-        Repo.one!(from t in ControlPlane.Accounts.UserToken, where: t.user_id == ^user.id and t.context == "session")
+        Repo.one!(
+          from t in ControlPlane.Accounts.UserToken,
+            where: t.user_id == ^user.id and t.context == "session"
+        )
 
       assert stored.token == :crypto.hash(:sha256, token)
       refute stored.token == token
@@ -144,12 +147,16 @@ defmodule ControlPlane.AccountsTest do
 
       assert {:ok, confirmed} = Accounts.confirm_user(token)
       assert confirmed.confirmed_at
-      assert ControlPlane.Credits.balance_cents(user.id) == ControlPlane.Credits.signup_bonus_cents()
+
+      assert ControlPlane.Credits.balance_cents(user.id) ==
+               ControlPlane.Credits.signup_bonus_cents()
 
       # The token is single-use: replaying it (e.g. a link opened twice) must not
       # re-grant the bonus.
       assert {:error, :invalid_token} = Accounts.confirm_user(token)
-      assert ControlPlane.Credits.balance_cents(user.id) == ControlPlane.Credits.signup_bonus_cents()
+
+      assert ControlPlane.Credits.balance_cents(user.id) ==
+               ControlPlane.Credits.signup_bonus_cents()
     end
 
     test "confirm_user/1 rejects an unknown or malformed token" do
@@ -170,7 +177,8 @@ defmodule ControlPlane.AccountsTest do
       {:ok, token} = Accounts.deliver_user_confirmation_instructions(user)
       {:ok, confirmed} = Accounts.confirm_user(token)
 
-      assert {:error, :already_confirmed} = Accounts.deliver_user_confirmation_instructions(confirmed)
+      assert {:error, :already_confirmed} =
+               Accounts.deliver_user_confirmation_instructions(confirmed)
     end
   end
 
@@ -195,7 +203,9 @@ defmodule ControlPlane.AccountsTest do
       session_token = Accounts.generate_user_session_token(user)
       {:ok, reset_token} = Accounts.deliver_user_reset_password_instructions(user)
 
-      assert {:ok, updated} = Accounts.reset_user_password(user, %{"password" => "brand-new-pw-123"})
+      assert {:ok, updated} =
+               Accounts.reset_user_password(user, %{"password" => "brand-new-pw-123"})
+
       assert User.valid_password?(updated, "brand-new-pw-123")
       refute User.valid_password?(updated, @valid_password)
 

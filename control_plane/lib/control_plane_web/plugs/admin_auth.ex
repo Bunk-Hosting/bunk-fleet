@@ -36,5 +36,4 @@ defmodule ControlPlaneWeb.Plugs.AdminAuth do
       _ -> :error
     end
   end
-
 end

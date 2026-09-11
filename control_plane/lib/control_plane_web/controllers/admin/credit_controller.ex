@@ -61,7 +61,8 @@ defmodule ControlPlaneWeb.Admin.CreditController do
 
   defp blank_to_default(_), do: "Handmatige bijboeking door beheerder"
 
-  defp bad_request(conn, msg), do: conn |> put_status(:unprocessable_entity) |> json(%{error: msg})
+  defp bad_request(conn, msg),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: msg})
 
   defp entry_json(e) do
     %{amount_cents: e.amount_cents, kind: e.kind, description: e.description, at: e.inserted_at}

@@ -30,7 +30,12 @@ defmodule ControlPlane.Mollie do
 
     case Req.post(req(), url: "/payments", json: body) do
       {:ok, %{status: s, body: b}} when s in 200..201 ->
-        {:ok, %{id: b["id"], checkout_url: get_in(b, ["_links", "checkout", "href"]), status: b["status"]}}
+        {:ok,
+         %{
+           id: b["id"],
+           checkout_url: get_in(b, ["_links", "checkout", "href"]),
+           status: b["status"]
+         }}
 
       {:ok, %{status: s, body: b}} ->
         Logger.warning("mollie create_payment http #{s}")
@@ -58,7 +63,8 @@ defmodule ControlPlane.Mollie do
   # Mollie wants the amount as a string with exactly 2 decimals; format from the
   # integer cents to avoid any float rounding error on money.
   defp euro_string(cents) when is_integer(cents) and cents >= 0 do
-    "#{div(cents, 100)}." <> (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
+    "#{div(cents, 100)}." <>
+      (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
   end
 
   defp req do

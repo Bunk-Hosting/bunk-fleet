@@ -192,7 +192,9 @@ defmodule ControlPlane.ProvisioningTest do
       reloaded_node = Repo.get!(Node, node.id)
       assert reloaded_node.available_vcpu == after_place.available_vcpu + reservation.vcpu
       assert reloaded_node.available_ram_mb == after_place.available_ram_mb + reservation.ram_mb
-      assert reloaded_node.available_disk_gb == after_place.available_disk_gb + reservation.disk_gb
+
+      assert reloaded_node.available_disk_gb ==
+               after_place.available_disk_gb + reservation.disk_gb
     end
   end
 
@@ -323,8 +325,12 @@ defmodule ControlPlane.ProvisioningTest do
 
       reloaded_node = Repo.get!(Node, node.id)
       assert reloaded_node.available_vcpu == after_provision.available_vcpu + reservation.vcpu
-      assert reloaded_node.available_ram_mb == after_provision.available_ram_mb + reservation.ram_mb
-      assert reloaded_node.available_disk_gb == after_provision.available_disk_gb + reservation.disk_gb
+
+      assert reloaded_node.available_ram_mb ==
+               after_provision.available_ram_mb + reservation.ram_mb
+
+      assert reloaded_node.available_disk_gb ==
+               after_provision.available_disk_gb + reservation.disk_gb
     end
 
     test "failed records the error but leaves the VPS and reservation intact" do

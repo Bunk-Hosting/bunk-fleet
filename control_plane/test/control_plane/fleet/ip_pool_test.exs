@@ -11,7 +11,14 @@ defmodule ControlPlane.Fleet.IpPoolTest do
 
   defp vps_with_ip(region, ip) do
     %Vps{}
-    |> Vps.changeset(%{name: "v-#{System.unique_integer([:positive])}", region_id: region.id, vcpu: 1, ram_mb: 1024, disk_gb: 10, ip_address: ip})
+    |> Vps.changeset(%{
+      name: "v-#{System.unique_integer([:positive])}",
+      region_id: region.id,
+      vcpu: 1,
+      ram_mb: 1024,
+      disk_gb: 10,
+      ip_address: ip
+    })
     |> Repo.insert!()
   end
 
@@ -48,7 +55,9 @@ defmodule ControlPlane.Fleet.IpPoolTest do
 
   test "allocates from the node's own range when it declared one" do
     node = node_with_range(region())
-    assert {:ok, %{ip: "192.168.50.10", config: "ip=192.168.50.10/24,gw=192.168.50.1"}} = IpPool.allocate(node)
+
+    assert {:ok, %{ip: "192.168.50.10", config: "ip=192.168.50.10/24,gw=192.168.50.1"}} =
+             IpPool.allocate(node)
   end
 
   test "skips used addresses within the node's range" do
@@ -75,7 +84,14 @@ defmodule ControlPlane.Fleet.IpPoolTest do
 
     {:error, cs} =
       %Vps{}
-      |> Vps.changeset(%{name: "dup", region_id: r.id, vcpu: 1, ram_mb: 1024, disk_gb: 10, ip_address: "10.10.0.99"})
+      |> Vps.changeset(%{
+        name: "dup",
+        region_id: r.id,
+        vcpu: 1,
+        ram_mb: 1024,
+        disk_gb: 10,
+        ip_address: "10.10.0.99"
+      })
       |> Repo.insert()
 
     assert {"has already been taken", _} = cs.errors[:ip_address]

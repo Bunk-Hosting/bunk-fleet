@@ -16,8 +16,12 @@ defmodule ControlPlane.FleetReclaimTest do
       |> Node.changeset(%{name: "n-#{System.unique_integer([:positive])}", region_id: region.id})
       |> Ecto.Changeset.change(%{
         status: :online,
-        total_vcpu: 8, total_ram_mb: 16_384, total_disk_gb: 200,
-        available_vcpu: 0, available_ram_mb: 12_288, available_disk_gb: 120
+        total_vcpu: 8,
+        total_ram_mb: 16_384,
+        total_disk_gb: 200,
+        available_vcpu: 0,
+        available_ram_mb: 12_288,
+        available_disk_gb: 120
       })
       |> Repo.insert!()
 
@@ -28,7 +32,11 @@ defmodule ControlPlane.FleetReclaimTest do
     %Vps{}
     |> Vps.changeset(%{
       name: "v-#{System.unique_integer([:positive])}",
-      region_id: region.id, node_id: node.id, vcpu: 4, ram_mb: 4096, disk_gb: 80
+      region_id: region.id,
+      node_id: node.id,
+      vcpu: 4,
+      ram_mb: 4096,
+      disk_gb: 80
     })
     |> Ecto.Changeset.put_change(:status, status)
     |> Repo.insert!()
@@ -37,7 +45,12 @@ defmodule ControlPlane.FleetReclaimTest do
   defp held(node, vps_id) do
     %Reservation{}
     |> Reservation.changeset(%{
-      node_id: node.id, vps_id: vps_id, vcpu: 4, ram_mb: 4096, disk_gb: 80, status: :held
+      node_id: node.id,
+      vps_id: vps_id,
+      vcpu: 4,
+      ram_mb: 4096,
+      disk_gb: 80,
+      status: :held
     })
     |> Repo.insert!()
   end

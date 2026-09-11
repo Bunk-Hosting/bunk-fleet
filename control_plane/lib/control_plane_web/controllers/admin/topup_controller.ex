@@ -11,7 +11,12 @@ defmodule ControlPlaneWeb.Admin.TopupController do
   def confirm(conn, %{"id" => id}) do
     case Credits.mark_topup_paid(id) do
       {:ok, tr} ->
-        json(conn, %{id: tr.id, reference: tr.reference, status: tr.status, balance_cents: Credits.balance_cents(tr.user_id)})
+        json(conn, %{
+          id: tr.id,
+          reference: tr.reference,
+          status: tr.status,
+          balance_cents: Credits.balance_cents(tr.user_id)
+        })
 
       {:error, :not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "top-up request not found"})

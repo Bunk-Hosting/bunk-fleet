@@ -6,14 +6,23 @@ defmodule ControlPlane.AccountsRegistrationTest do
 
   describe "register_user/1 input validation" do
     test "rejects an over-long name instead of 500-ing on the DB column limit" do
-      attrs = %{name: String.duplicate("a", 200_000), email: "n1@bunk.test", password: "ValidPass123!"}
+      attrs = %{
+        name: String.duplicate("a", 200_000),
+        email: "n1@bunk.test",
+        password: "ValidPass123!"
+      }
+
       assert {:error, changeset} = Accounts.register_user(attrs)
       assert "should be at most 100 character(s)" in errors_on(changeset).name
     end
 
     test "trims surrounding whitespace from the name" do
       {:ok, user} =
-        Accounts.register_user(%{name: "  Alice  ", email: "n2@bunk.test", password: "ValidPass123!"})
+        Accounts.register_user(%{
+          name: "  Alice  ",
+          email: "n2@bunk.test",
+          password: "ValidPass123!"
+        })
 
       assert user.name == "Alice"
     end

@@ -36,8 +36,7 @@ defmodule ControlPlane.Repo.Migrations.CreateNodes do
     # decrement below zero, the transaction fails loudly instead of silently
     # persisting an overcommitted node.
     create constraint(:nodes, :available_nonneg,
-             check:
-               "available_vcpu >= 0 AND available_ram_mb >= 0 AND available_disk_gb >= 0"
+             check: "available_vcpu >= 0 AND available_ram_mb >= 0 AND available_disk_gb >= 0"
            )
 
     create constraint(:nodes, :available_within_total,

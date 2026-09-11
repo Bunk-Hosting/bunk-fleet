@@ -45,7 +45,10 @@ defmodule ControlPlane.Turnstile do
         :ok
 
       {:ok, %{body: body}} ->
-        Logger.warning("turnstile verify rejected: #{inspect(is_map(body) && body["error-codes"])}")
+        Logger.warning(
+          "turnstile verify rejected: #{inspect(is_map(body) && body["error-codes"])}"
+        )
+
         {:error, :captcha_failed}
 
       {:error, reason} ->

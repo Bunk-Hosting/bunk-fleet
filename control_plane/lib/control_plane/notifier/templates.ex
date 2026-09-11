@@ -86,7 +86,13 @@ defmodule ControlPlane.Notifier.Templates do
           {String.t(), String.t()}
   def confirmation(name, url) do
     text = confirmation_text(greeting_name(name, :text), url)
-    html = wrap("Bevestig je e-mailadres — Bunk Hosting", confirmation_body(greeting_name(name, :html), esc(url)))
+
+    html =
+      wrap(
+        "Bevestig je e-mailadres — Bunk Hosting",
+        confirmation_body(greeting_name(name, :html), esc(url))
+      )
+
     {text, html}
   end
 

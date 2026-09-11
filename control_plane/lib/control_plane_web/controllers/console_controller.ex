@@ -43,5 +43,6 @@ defmodule ControlPlaneWeb.ConsoleController do
     end
   end
 
-  defp console_user, do: (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "ubuntu"
+  defp console_user,
+    do: (Application.get_env(:control_plane, :console) || [])[:ssh_user] || "ubuntu"
 end

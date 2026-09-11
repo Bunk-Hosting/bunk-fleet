@@ -26,7 +26,10 @@ defmodule ControlPlane.Credits.TopupRequest do
     req
     |> cast(attrs, [:user_id, :amount_cents, :reference, :status, :paid_at, :mollie_payment_id])
     |> validate_required([:user_id, :amount_cents, :reference, :status])
-    |> validate_number(:amount_cents, greater_than_or_equal_to: 500, less_than_or_equal_to: 100_000)
+    |> validate_number(:amount_cents,
+      greater_than_or_equal_to: 500,
+      less_than_or_equal_to: 100_000
+    )
     |> unique_constraint(:reference)
   end
 end

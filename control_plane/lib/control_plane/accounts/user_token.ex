@@ -74,7 +74,8 @@ defmodule ControlPlane.Accounts.UserToken do
   "reset_password"). Returns `{url_safe_token, %UserToken{}}` — the raw token is
   the only copy ever handed to the caller; only its hash is persisted.
   """
-  def build_email_token(%User{} = user, context) when is_map_key(@email_token_validity_seconds, context) do
+  def build_email_token(%User{} = user, context)
+      when is_map_key(@email_token_validity_seconds, context) do
     token = :crypto.strong_rand_bytes(@rand_size)
     hashed_token = :crypto.hash(@hash_algorithm, token)
 

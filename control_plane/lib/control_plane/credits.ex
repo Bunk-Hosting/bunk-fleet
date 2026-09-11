@@ -40,7 +40,12 @@ defmodule ControlPlane.Credits do
 
   def add_entry(user_id, amount_cents, kind, description) do
     %LedgerEntry{}
-    |> LedgerEntry.changeset(%{user_id: user_id, amount_cents: amount_cents, kind: kind, description: description})
+    |> LedgerEntry.changeset(%{
+      user_id: user_id,
+      amount_cents: amount_cents,
+      kind: kind,
+      description: description
+    })
     |> Repo.insert()
   end
 
@@ -91,14 +96,21 @@ defmodule ControlPlane.Credits do
 
   @doc "Credits an amount back (e.g. refund a failed provision)."
   def refund(_user_id, amount_cents, _kind, _desc) when amount_cents <= 0, do: {:ok, nil}
-  def refund(user_id, amount_cents, kind, description), do: add_entry(user_id, amount_cents, kind, description)
+
+  def refund(user_id, amount_cents, kind, description),
+    do: add_entry(user_id, amount_cents, kind, description)
 
   ## Top-up requests (self-service wallet funding; admin confirms receipt)
 
   @doc "Creates a pending top-up request with a unique payment reference."
   def create_topup_request(user_id, amount_cents) do
     %TopupRequest{}
-    |> TopupRequest.changeset(%{user_id: user_id, amount_cents: amount_cents, reference: generate_reference(), status: :pending})
+    |> TopupRequest.changeset(%{
+      user_id: user_id,
+      amount_cents: amount_cents,
+      reference: generate_reference(),
+      status: :pending
+    })
     |> Repo.insert()
   end
 
@@ -113,12 +125,20 @@ defmodule ControlPlane.Credits do
 
   @doc "All pending requests (admin queue), oldest first, with the user preloaded."
   def list_pending_topups do
-    Repo.all(from t in TopupRequest, where: t.status == :pending, order_by: [asc: t.inserted_at], preload: [:user])
+    Repo.all(
+      from t in TopupRequest,
+        where: t.status == :pending,
+        order_by: [asc: t.inserted_at],
+        preload: [:user]
+    )
   end
 
   @doc "Number of still-pending top-up requests for a user (used to cap abuse)."
   def count_pending_topups(user_id) do
-    Repo.aggregate(from(t in TopupRequest, where: t.user_id == ^user_id and t.status == :pending), :count)
+    Repo.aggregate(
+      from(t in TopupRequest, where: t.user_id == ^user_id and t.status == :pending),
+      :count
+    )
   end
 
   @doc """
@@ -135,11 +155,20 @@ defmodule ControlPlane.Credits do
           Repo.rollback(:not_found)
 
         %TopupRequest{status: :pending} = tr ->
-          {:ok, _} = add_entry(tr.user_id, tr.amount_cents, "topup", "Tegoed bijgeboekt (" <> tr.reference <> ")")
+          {:ok, _} =
+            add_entry(
+              tr.user_id,
+              tr.amount_cents,
+              "topup",
+              "Tegoed bijgeboekt (" <> tr.reference <> ")"
+            )
 
           {:ok, tr} =
             tr
-            |> Ecto.Changeset.change(status: :paid, paid_at: DateTime.truncate(DateTime.utc_now(), :second))
+            |> Ecto.Changeset.change(
+              status: :paid,
+              paid_at: DateTime.truncate(DateTime.utc_now(), :second)
+            )
             |> Repo.update()
 
           tr
@@ -214,7 +243,10 @@ defmodule ControlPlane.Credits do
   # No amount to check against → accept (back-compat / admin flow).
   defp amount_matches?(_tr, nil), do: true
 
-  defp amount_matches?(%TopupRequest{amount_cents: cents}, %{"value" => value, "currency" => currency}) do
+  defp amount_matches?(%TopupRequest{amount_cents: cents}, %{
+         "value" => value,
+         "currency" => currency
+       }) do
     currency == "EUR" and value == euro_string(cents)
   end
 
@@ -222,7 +254,8 @@ defmodule ControlPlane.Credits do
 
   # Integer cents -> Mollie's 2-decimal string, matching ControlPlane.Mollie.
   defp euro_string(cents) when is_integer(cents) and cents >= 0 do
-    "#{div(cents, 100)}." <> (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
+    "#{div(cents, 100)}." <>
+      (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
   end
 
   defp generate_reference do

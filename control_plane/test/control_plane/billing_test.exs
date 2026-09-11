@@ -164,6 +164,7 @@ defmodule ControlPlane.BillingTest do
       node = insert_node(region, "nl1-ops@bunkhosting.nl")
       # Meter exactly one hour of a 2 vCPU / 2048 MB (= 2 GB) / 20 GB VPS.
       last = DateTime.add(@now, -3600, :second)
+
       insert_vps(region, node,
         status: :active,
         last_metered_at: last,
@@ -200,7 +201,13 @@ defmodule ControlPlane.BillingTest do
         disk_gb: 13
       )
 
-      insert_vps(region, node, status: :active, last_metered_at: last, vcpu: 1, ram_mb: 333, disk_gb: 7)
+      insert_vps(region, node,
+        status: :active,
+        last_metered_at: last,
+        vcpu: 1,
+        ram_mb: 333,
+        disk_gb: 7
+      )
 
       assert Billing.meter_active_vpses(@now) == 2
 
@@ -215,7 +222,11 @@ defmodule ControlPlane.BillingTest do
 
     test "is zero for an operator with no usage in the window" do
       window = {DateTime.add(@now, -3600, :second), @now}
-      assert Decimal.equal?(Billing.resource_cost_for_owner("nobody@example.com", window), Decimal.new(0))
+
+      assert Decimal.equal?(
+               Billing.resource_cost_for_owner("nobody@example.com", window),
+               Decimal.new(0)
+             )
     end
 
     test "excludes records outside the window" do
@@ -228,7 +239,11 @@ defmodule ControlPlane.BillingTest do
 
       # Window entirely before the metered_at (@now): no records counted.
       window = {DateTime.add(@now, -7200, :second), DateTime.add(@now, -10, :second)}
-      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", window), Decimal.new(0))
+
+      assert Decimal.equal?(
+               Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", window),
+               Decimal.new(0)
+             )
     end
 
     test "window is half-open: [from, to) includes from-boundary, excludes to-boundary" do
@@ -242,11 +257,19 @@ defmodule ControlPlane.BillingTest do
 
       # `to == @now` must EXCLUDE the boundary record (metered_at < to).
       excl = {DateTime.add(@now, -10, :second), @now}
-      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", excl), Decimal.new(0))
+
+      assert Decimal.equal?(
+               Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", excl),
+               Decimal.new(0)
+             )
 
       # `from == @now` must INCLUDE the boundary record (metered_at >= from).
       incl = {@now, DateTime.add(@now, 10, :second)}
-      assert Decimal.equal?(Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", incl), Decimal.new("0.032"))
+
+      assert Decimal.equal?(
+               Billing.resource_cost_for_owner("nl1-ops@bunkhosting.nl", incl),
+               Decimal.new("0.032")
+             )
     end
   end
 
@@ -288,7 +311,12 @@ defmodule ControlPlane.BillingTest do
     test "duplicate (vps_id, metered_at) insert is rejected by the unique index" do
       region = insert_region()
       node = insert_node(region, "nl1-ops@bunkhosting.nl")
-      vps = insert_vps(region, node, status: :active, last_metered_at: DateTime.add(@now, -60, :second))
+
+      vps =
+        insert_vps(region, node,
+          status: :active,
+          last_metered_at: DateTime.add(@now, -60, :second)
+        )
 
       attrs = %{
         vps_id: vps.id,
@@ -351,6 +379,7 @@ defmodule ControlPlane.BillingTest do
       region = insert_region()
       node = insert_node(region, "nl1-ops@bunkhosting.nl")
       last = DateTime.add(@now, -3600, :second)
+
       insert_vps(region, node,
         status: :active,
         last_metered_at: last,
@@ -389,7 +418,13 @@ defmodule ControlPlane.BillingTest do
     setup do
       region = insert_region()
       node = insert_node(region, "nl1-ops@bunkhosting.nl")
-      %{region: region, node: node, user: user_fixture("a@example.com"), other: user_fixture("b@example.com")}
+
+      %{
+        region: region,
+        node: node,
+        user: user_fixture("a@example.com"),
+        other: user_fixture("b@example.com")
+      }
     end
 
     test "charges the owner the exact cost of their own VPS", ctx do
@@ -410,7 +445,12 @@ defmodule ControlPlane.BillingTest do
       _mine = meter_one_hour(ctx.region, ctx.node, ctx.user)
       _theirs = meter_one_hour(ctx.region, ctx.node, ctx.other)
 
-      mine = Billing.customer_usage(ctx.user.id, {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)})
+      mine =
+        Billing.customer_usage(
+          ctx.user.id,
+          {DateTime.add(@now, -1, :second), DateTime.add(@now, 1, :second)}
+        )
+
       assert length(mine.vpses) == 1
       assert mine.total_seconds == 3600
     end

@@ -90,11 +90,18 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   # --- index -----------------------------------------------------------------
 
   describe "GET /api/v1/vpses" do
-    test "lists only the caller's own VPSes", %{conn: conn, region: region, user: user, other: other} do
+    test "lists only the caller's own VPSes", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
       mine = create_vps_for(user, region, "mine")
       _theirs = create_vps_for(other, region, "theirs")
 
-      assert %{"vpses" => [vps]} = conn |> auth(user) |> get(~p"/api/v1/vpses") |> json_response(200)
+      assert %{"vpses" => [vps]} =
+               conn |> auth(user) |> get(~p"/api/v1/vpses") |> json_response(200)
+
       assert vps["id"] == mine.id
       assert vps["name"] == "mine"
     end
@@ -104,9 +111,17 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
   describe "POST /api/v1/vpses" do
     test "provisions a VPS owned by the caller", %{conn: conn, region: region, user: user} do
-      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
 
-      assert %{"vps" => vps} = conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+      assert %{"vps" => vps} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
       assert vps["name"] == "web"
       # Owner fields are never echoed, and ownership came from the session.
       refute Map.has_key?(vps, "owner_email")
@@ -114,8 +129,20 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert persisted.id == vps["id"]
     end
 
-    test "ignores an owner_id supplied in the body (no spoofing)", %{conn: conn, region: region, user: user, other: other} do
-      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50, "owner_id" => other.id}
+    test "ignores an owner_id supplied in the body (no spoofing)", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50,
+        "owner_id" => other.id
+      }
 
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
       assert Fleet.list_vpses_for_owner(other.id) == []
@@ -123,18 +150,39 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     end
 
     test "resolves a region_code", %{conn: conn, region: region, user: user} do
-      params = %{"region_code" => region.code, "name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      params = %{
+        "region_code" => region.code,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
     end
 
     test "422 for an unknown region", %{conn: conn, user: user} do
-      params = %{"region_code" => "nope", "name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      params = %{
+        "region_code" => "nope",
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
       assert %{"error" => "region_not_found"} =
                conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
     end
 
     test "422 for a zero/negative spec", %{conn: conn, region: region, user: user} do
-      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 0, "ram_mb" => 4096, "disk_gb" => 50}
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 0,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
       assert %{"error" => "invalid_vps"} =
                conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
 
@@ -145,7 +193,14 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     end
 
     test "422 for an absurdly large spec", %{conn: conn, region: region, user: user} do
-      params = %{"region_id" => region.id, "name" => "web", "vcpu" => 9_999, "ram_mb" => 4096, "disk_gb" => 50}
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 9_999,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
     end
 
@@ -154,10 +209,18 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       Application.put_env(:control_plane, :max_vpses_per_owner, 1)
       on_exit(fn -> restore_env(:max_vpses_per_owner, prev) end)
 
-      ok = %{"region_id" => region.id, "name" => "one", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
+      ok = %{
+        "region_id" => region.id,
+        "name" => "one",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
       assert conn |> auth(user) |> post(~p"/api/v1/vpses", ok) |> json_response(201)
 
       over = %{ok | "name" => "two"}
+
       assert %{"error" => "quota_exceeded"} =
                conn |> auth(user) |> post(~p"/api/v1/vpses", over) |> json_response(429)
     end
@@ -166,8 +229,14 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   # --- show / delete ownership ----------------------------------------------
 
   describe "ownership enforcement" do
-    test "show returns 404 for another user's VPS", %{conn: conn, region: region, user: user, other: other} do
+    test "show returns 404 for another user's VPS", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
       theirs = create_vps_for(other, region, "theirs")
+
       assert %{"error" => "not_found"} =
                conn |> auth(user) |> get(~p"/api/v1/vpses/#{theirs.id}") |> json_response(404)
     end
@@ -176,7 +245,12 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert conn |> auth(user) |> get(~p"/api/v1/vpses/not-a-uuid") |> json_response(404)
     end
 
-    test "delete refuses another user's VPS and leaves it intact", %{conn: conn, region: region, user: user, other: other} do
+    test "delete refuses another user's VPS and leaves it intact", %{
+      conn: conn,
+      region: region,
+      user: user,
+      other: other
+    } do
       theirs = create_vps_for(other, region, "theirs")
 
       assert conn |> auth(user) |> delete(~p"/api/v1/vpses/#{theirs.id}") |> json_response(404)
@@ -187,8 +261,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
     test "owner can see their own VPS", %{conn: conn, region: region, user: user} do
       mine = create_vps_for(user, region, "mine")
+
       assert %{"vps" => %{"id" => id}} =
                conn |> auth(user) |> get(~p"/api/v1/vpses/#{mine.id}") |> json_response(200)
+
       assert id == mine.id
     end
 

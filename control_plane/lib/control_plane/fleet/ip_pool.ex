@@ -88,5 +88,4 @@ defmodule ControlPlane.Fleet.IpPool do
     |> Enum.filter(fn n -> n >= start_n and n <= end_n end)
     |> MapSet.new()
   end
-
 end

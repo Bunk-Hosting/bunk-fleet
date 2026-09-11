@@ -33,5 +33,4 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
       _ -> Bearer.unauthorized(conn)
     end
   end
-
 end

@@ -49,7 +49,11 @@ defmodule ControlPlane.Subscriptions do
   end
 
   def active_count(owner_id) do
-    Repo.one(from s in Subscription, where: s.owner_id == ^owner_id and s.status == :active, select: count(s.id))
+    Repo.one(
+      from s in Subscription,
+        where: s.owner_id == ^owner_id and s.status == :active,
+        select: count(s.id)
+    )
   end
 
   @doc "Total recurring monthly cost (sum of active subscription prices)."
@@ -65,7 +69,8 @@ defmodule ControlPlane.Subscriptions do
   def next_billing_date(owner_id) do
     Repo.one(
       from s in Subscription,
-        where: s.owner_id == ^owner_id and s.status == :active and not is_nil(s.next_billing_date),
+        where:
+          s.owner_id == ^owner_id and s.status == :active and not is_nil(s.next_billing_date),
         select: min(s.next_billing_date)
     )
   end
@@ -117,7 +122,8 @@ defmodule ControlPlane.Subscriptions do
           preload: [vps: v]
       )
 
-    Enum.reduce(due, %{charged: 0, suspended: 0, resumed: 0, cancelled: 0, errors: 0}, fn sub, acc ->
+    Enum.reduce(due, %{charged: 0, suspended: 0, resumed: 0, cancelled: 0, errors: 0}, fn sub,
+                                                                                          acc ->
       # Isolate each subscription: one that raises (e.g. a ledger constraint) must
       # not abort the whole tick and starve the subscriptions behind it (the scan is
       # ordered by date, so a permanently-failing oldest row would recur first).
@@ -274,8 +280,11 @@ defmodule ControlPlane.Subscriptions do
 
   defp next_month(date) do
     case Date.new(date.year, date.month, 1) do
-      {:ok, first} -> Date.add(first, 31) |> then(&%{&1 | day: min(date.day, Date.days_in_month(&1))})
-      _ -> Date.add(date, 30)
+      {:ok, first} ->
+        Date.add(first, 31) |> then(&%{&1 | day: min(date.day, Date.days_in_month(&1))})
+
+      _ ->
+        Date.add(date, 30)
     end
   end
 end

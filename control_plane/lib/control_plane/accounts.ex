@@ -80,7 +80,8 @@ defmodule ControlPlane.Accounts do
 
     now = DateTime.truncate(DateTime.utc_now(), :second)
 
-    if byte_size(trimmed) == 6 and NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
+    if byte_size(trimmed) == 6 and
+         NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
       # Atomically claim this time-step so a valid code cannot be replayed, even
       # under concurrent requests: only the write that advances the watermark
       # wins (1 row affected). Previously the update result was discarded
@@ -171,8 +172,9 @@ defmodule ControlPlane.Accounts do
   — resending a confirmation link (or a delayed double-click on "resend") must
   never re-grant the signup bonus or re-send a stale email.
   """
-  def deliver_user_confirmation_instructions(%User{confirmed_at: confirmed}) when not is_nil(confirmed),
-    do: {:error, :already_confirmed}
+  def deliver_user_confirmation_instructions(%User{confirmed_at: confirmed})
+      when not is_nil(confirmed),
+      do: {:error, :already_confirmed}
 
   def deliver_user_confirmation_instructions(%User{} = user),
     do: issue_email_token(user, "confirm", &Notifier.deliver_confirmation_instructions/2)
@@ -201,7 +203,8 @@ defmodule ControlPlane.Accounts do
   def confirm_user(token) when is_binary(token) do
     with {:ok, query} <- UserToken.verify_email_token_query(token, "confirm"),
          %User{} = user <- Repo.one(query) do
-      confirm_changeset = Ecto.Changeset.change(user, confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
+      confirm_changeset =
+        Ecto.Changeset.change(user, confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
 
       Ecto.Multi.new()
       |> Ecto.Multi.update(:user, confirm_changeset)
@@ -294,7 +297,10 @@ defmodule ControlPlane.Accounts do
   def reset_user_password(%User{} = user, attrs) do
     Ecto.Multi.new()
     |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
-    |> Ecto.Multi.delete_all(:tokens, UserToken.by_user_and_contexts_query(user, ["reset_password", "session"]))
+    |> Ecto.Multi.delete_all(
+      :tokens,
+      UserToken.by_user_and_contexts_query(user, ["reset_password", "session"])
+    )
     |> Repo.transaction()
     |> case do
       {:ok, %{user: user}} -> {:ok, user}

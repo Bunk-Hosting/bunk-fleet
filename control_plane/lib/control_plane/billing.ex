@@ -272,8 +272,7 @@ defmodule ControlPlane.Billing do
     row =
       Repo.one(
         from u in UsageRecord,
-          where:
-            u.owner_email == ^owner_email and u.metered_at >= ^from and u.metered_at < ^to,
+          where: u.owner_email == ^owner_email and u.metered_at >= ^from and u.metered_at < ^to,
           select: %{
             seconds: coalesce(sum(u.seconds), 0),
             vcpu_seconds: coalesce(sum(fragment("? * ?", u.seconds, u.vcpu)), 0),
@@ -305,8 +304,7 @@ defmodule ControlPlane.Billing do
 
     Repo.one(
       from u in UsageRecord,
-        where:
-          u.owner_email == ^owner_email and u.metered_at >= ^from and u.metered_at < ^to,
+        where: u.owner_email == ^owner_email and u.metered_at >= ^from and u.metered_at < ^to,
         select: %{
           sv: sum(fragment("?::bigint * ?::bigint", u.seconds, u.vcpu)),
           sr: sum(fragment("?::bigint * ?::bigint", u.seconds, u.ram_mb)),

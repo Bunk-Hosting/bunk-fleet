@@ -101,7 +101,10 @@ defmodule ControlPlaneWeb.AuthControllerTest do
     defp hammer_login(ip) do
       build_conn()
       |> put_req_header("cf-connecting-ip", ip)
-      |> post(~p"/api/v1/auth/login", %{"email" => "nobody@example.com", "password" => "wrong-password-123"})
+      |> post(~p"/api/v1/auth/login", %{
+        "email" => "nobody@example.com",
+        "password" => "wrong-password-123"
+      })
     end
 
     test "429s after too many auth attempts from one client" do
@@ -207,7 +210,9 @@ defmodule ControlPlaneWeb.AuthControllerTest do
     test "409s for an already-confirmed user", %{conn: conn, user: user} do
       {:ok, confirm_token} = Accounts.deliver_user_confirmation_instructions(user)
       {:ok, confirmed} = Accounts.confirm_user(confirm_token)
-      session = Accounts.generate_user_session_token(confirmed) |> Base.url_encode64(padding: false)
+
+      session =
+        Accounts.generate_user_session_token(confirmed) |> Base.url_encode64(padding: false)
 
       out = conn |> put_token(session) |> post(~p"/api/v1/auth/confirm/resend", %{})
       assert json_response(out, 409)["error"] == "already_confirmed"
@@ -219,7 +224,9 @@ defmodule ControlPlaneWeb.AuthControllerTest do
 
     test "always returns 200, whether or not the email exists (anti-enumeration)", %{conn: conn} do
       exists = post(conn, ~p"/api/v1/auth/password-reset", %{"email" => @email})
-      unknown = post(build_conn(), ~p"/api/v1/auth/password-reset", %{"email" => "nobody@example.com"})
+
+      unknown =
+        post(build_conn(), ~p"/api/v1/auth/password-reset", %{"email" => "nobody@example.com"})
 
       assert json_response(exists, 200) == json_response(unknown, 200)
     end
@@ -251,7 +258,10 @@ defmodule ControlPlaneWeb.AuthControllerTest do
 
       login =
         conn
-        |> post(~p"/api/v1/auth/login", %{"email" => @email, "password" => "a-brand-new-password-123"})
+        |> post(~p"/api/v1/auth/login", %{
+          "email" => @email,
+          "password" => "a-brand-new-password-123"
+        })
 
       assert json_response(login, 200)["token"]
     end
@@ -269,7 +279,12 @@ defmodule ControlPlaneWeb.AuthControllerTest do
     test "422s a too-short password without burning the token", %{conn: conn, user: user} do
       {:ok, token} = Accounts.deliver_user_reset_password_instructions(user)
 
-      out = post(conn, ~p"/api/v1/auth/password-reset/confirm", %{"token" => token, "password" => "short"})
+      out =
+        post(conn, ~p"/api/v1/auth/password-reset/confirm", %{
+          "token" => token,
+          "password" => "short"
+        })
+
       assert json_response(out, 422)["errors"]
 
       # The token survives a rejected attempt, so the user can retry with a

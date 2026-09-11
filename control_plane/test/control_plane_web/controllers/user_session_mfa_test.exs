@@ -31,14 +31,19 @@ defmodule ControlPlaneWeb.UserSessionMfaTest do
     assert html_response(bad, 401) =~ "Ongeldige code"
     refute get_session(bad, :user_token)
 
-    good = post(conn, ~p"/login/mfa", %{totp: %{code: NimbleTOTP.verification_code(u.totp_secret)}})
+    good =
+      post(conn, ~p"/login/mfa", %{totp: %{code: NimbleTOTP.verification_code(u.totp_secret)}})
+
     assert redirected_to(good) == ~p"/"
     assert get_session(good, :user_token)
   end
 
   test "wrong password never reaches the MFA step", %{conn: conn} do
     mfa_user("mfa2@bunk.test")
-    conn = post(conn, ~p"/login", %{user: %{email: "mfa2@bunk.test", password: "wrong-password-xx"}})
+
+    conn =
+      post(conn, ~p"/login", %{user: %{email: "mfa2@bunk.test", password: "wrong-password-xx"}})
+
     assert html_response(conn, 401) =~ "Ongeldig"
     refute get_session(conn, :mfa_pending_user_id)
   end

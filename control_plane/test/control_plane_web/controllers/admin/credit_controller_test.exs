@@ -20,7 +20,11 @@ defmodule ControlPlaneWeb.Admin.CreditControllerTest do
     conn =
       conn
       |> auth()
-      |> post(~p"/admin/v1/credits", %{email: "topup@bunk.test", amount_cents: 500, description: "iDEAL"})
+      |> post(~p"/admin/v1/credits", %{
+        email: "topup@bunk.test",
+        amount_cents: 500,
+        description: "iDEAL"
+      })
 
     assert %{"balance_cents" => bal} = json_response(conn, 200)
     assert bal == start + 500
@@ -30,7 +34,12 @@ defmodule ControlPlaneWeb.Admin.CreditControllerTest do
   test "negative amount is a correction", %{conn: conn} do
     u = confirmed_user_fixture("corr@bunk.test")
     start = Credits.balance_cents(u.id)
-    conn = conn |> auth() |> post(~p"/admin/v1/credits", %{email: "corr@bunk.test", amount_cents: -200})
+
+    conn =
+      conn
+      |> auth()
+      |> post(~p"/admin/v1/credits", %{email: "corr@bunk.test", amount_cents: -200})
+
     assert json_response(conn, 200)["balance_cents"] == start - 200
   end
 
@@ -43,13 +52,18 @@ defmodule ControlPlaneWeb.Admin.CreditControllerTest do
   end
 
   test "404 for unknown user", %{conn: conn} do
-    conn = conn |> auth() |> post(~p"/admin/v1/credits", %{email: "nope@bunk.test", amount_cents: 100})
+    conn =
+      conn |> auth() |> post(~p"/admin/v1/credits", %{email: "nope@bunk.test", amount_cents: 100})
+
     assert json_response(conn, 404)
   end
 
   test "rejects zero amount", %{conn: conn} do
     confirmed_user_fixture("zero@bunk.test")
-    conn = conn |> auth() |> post(~p"/admin/v1/credits", %{email: "zero@bunk.test", amount_cents: 0})
+
+    conn =
+      conn |> auth() |> post(~p"/admin/v1/credits", %{email: "zero@bunk.test", amount_cents: 0})
+
     assert json_response(conn, 422)
   end
 

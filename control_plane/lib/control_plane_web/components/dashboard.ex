@@ -124,17 +124,30 @@ defmodule ControlPlaneWeb.DashboardComponents do
   end
 
   defp badge_style(:active), do: {"Actief", "border-transparent bg-green-500/15 text-green-400"}
-  defp badge_style(:stopped), do: {"Gestopt", "border-transparent bg-secondary text-secondary-foreground"}
-  defp badge_style(:paused), do: {"Gepauzeerd", "border-transparent bg-amber-500/15 text-amber-400"}
-  defp badge_style(:queued), do: {"In wachtrij", "border-transparent bg-amber-500/15 text-amber-400"}
-  defp badge_style(:provisioning), do: {"Wordt aangemaakt", "border-transparent bg-amber-500/15 text-amber-400"}
+
+  defp badge_style(:stopped),
+    do: {"Gestopt", "border-transparent bg-secondary text-secondary-foreground"}
+
+  defp badge_style(:paused),
+    do: {"Gepauzeerd", "border-transparent bg-amber-500/15 text-amber-400"}
+
+  defp badge_style(:queued),
+    do: {"In wachtrij", "border-transparent bg-amber-500/15 text-amber-400"}
+
+  defp badge_style(:provisioning),
+    do: {"Wordt aangemaakt", "border-transparent bg-amber-500/15 text-amber-400"}
+
   defp badge_style(:failed), do: {"Fout", "border-transparent bg-destructive/15 text-destructive"}
-  defp badge_style(:deleting), do: {"Wordt verwijderd", "border-transparent bg-amber-500/15 text-amber-400"}
+
+  defp badge_style(:deleting),
+    do: {"Wordt verwijderd", "border-transparent bg-amber-500/15 text-amber-400"}
+
   defp badge_style(:deleted), do: {"Verwijderd", "border text-muted-foreground"}
   defp badge_style(_), do: {"Onbekend", "border text-muted-foreground"}
 
   defp active?(href, path) do
     path = path || "/dashboard"
+
     cond do
       path == href -> true
       href == "/dashboard" -> false

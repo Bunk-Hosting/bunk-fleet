@@ -50,15 +50,25 @@ defmodule ControlPlaneWeb.AuthTotpTest do
              |> post(~p"/api/v1/auth/totp/setup", %{code: NimbleTOTP.verification_code(secret)})
              |> json_response(200)
 
-      assert conn |> get(~p"/api/v1/auth/me") |> json_response(200) |> get_in(["user", "totp_enabled"])
-
-      assert conn |> delete(~p"/api/v1/auth/totp/disable", %{code: "000000"}) |> json_response(422)
+      assert conn
+             |> get(~p"/api/v1/auth/me")
+             |> json_response(200)
+             |> get_in(["user", "totp_enabled"])
 
       assert conn
-             |> delete(~p"/api/v1/auth/totp/disable", %{code: NimbleTOTP.verification_code(secret)})
+             |> delete(~p"/api/v1/auth/totp/disable", %{code: "000000"})
+             |> json_response(422)
+
+      assert conn
+             |> delete(~p"/api/v1/auth/totp/disable", %{
+               code: NimbleTOTP.verification_code(secret)
+             })
              |> json_response(200)
 
-      refute conn |> get(~p"/api/v1/auth/me") |> json_response(200) |> get_in(["user", "totp_enabled"])
+      refute conn
+             |> get(~p"/api/v1/auth/me")
+             |> json_response(200)
+             |> get_in(["user", "totp_enabled"])
     end
   end
 end

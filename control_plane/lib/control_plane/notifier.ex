@@ -121,5 +121,6 @@ defmodule ControlPlane.Notifier do
   # The customer-facing app origin (Next.js), not the control-plane API host.
   # PUBLIC_URL already serves this role elsewhere (e.g. mollie_controller's
   # redirect_url) because the edge proxies both the API and the app off one host.
-  defp public_url, do: Application.get_env(:control_plane, :public_url) || "https://app.bunkhosting.nl"
+  defp public_url,
+    do: Application.get_env(:control_plane, :public_url) || "https://app.bunkhosting.nl"
 end

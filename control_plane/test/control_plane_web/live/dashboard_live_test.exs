@@ -11,7 +11,11 @@ defmodule ControlPlaneWeb.DashboardLiveTest do
   # redirecting to /login.
   defp log_in_admin(conn) do
     {:ok, admin} =
-      Accounts.register_user(%{email: "admin@bunk.test", password: "super-secret-pw-123", name: "Admin"})
+      Accounts.register_user(%{
+        email: "admin@bunk.test",
+        password: "super-secret-pw-123",
+        name: "Admin"
+      })
 
     {:ok, _admin} = Accounts.update_user_role(admin, :admin)
     token = Accounts.generate_user_session_token(admin)

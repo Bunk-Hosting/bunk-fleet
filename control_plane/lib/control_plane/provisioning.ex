@@ -89,7 +89,9 @@ defmodule ControlPlane.Provisioning do
     # release update would raise "current transaction is aborted" → HTTP 500
     # instead of a clean {:error, :no_capacity} (→ 409).
     case Repo.transaction(fn ->
-           Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:owner_vps, owner_id})])
+           Repo.query!("SELECT pg_advisory_xact_lock($1)", [
+             :erlang.phash2({:owner_vps, owner_id})
+           ])
 
            if count_live_vpses(owner_id) >= max_vpses_per_owner() do
              Repo.rollback(:quota_exceeded)
@@ -531,6 +533,7 @@ defmodule ControlPlane.Provisioning do
       # terminal; this serializes concurrent/duplicate result deliveries.
       |> Multi.run(:lock, fn repo, _changes ->
         locked = repo.one!(from c in Command, where: c.id == ^command.id, lock: "FOR UPDATE")
+
         if locked.status in [:done, :failed],
           do: {:error, :already_applied},
           else: {:ok, locked}
@@ -596,7 +599,9 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:reservation, fn repo, %{vps: vps} ->
       case held_reservation(repo, vps_id) do
         nil ->
-          if vps.status not in [:deleted], do: Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
+          if vps.status not in [:deleted],
+            do: Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
+
           {:ok, nil}
 
         held ->
@@ -614,7 +619,13 @@ defmodule ControlPlane.Provisioning do
     |> Multi.run(:compensate, fn repo, %{vps: vps} ->
       if vps.status in [:deleting] and is_binary(vm_id) do
         %Command{}
-        |> Command.changeset(%{node_id: vps.node_id, vps_id: vps_id, kind: :delete, status: :pending, payload: %{"vm_id" => vm_id}})
+        |> Command.changeset(%{
+          node_id: vps.node_id,
+          vps_id: vps_id,
+          kind: :delete,
+          status: :pending,
+          payload: %{"vm_id" => vm_id}
+        })
         |> repo.insert()
       else
         {:ok, nil}
@@ -821,7 +832,9 @@ defmodule ControlPlane.Provisioning do
   # Bound the agent-supplied VM id to a sane length/charset so it can't smuggle
   # control characters or absurd values into the DB / later command payloads.
   defp sane_vm_id(v) when is_binary(v) do
-    if v != "" and String.length(v) <= 64 and String.match?(v, ~r/\A[A-Za-z0-9._:-]+\z/), do: v, else: nil
+    if v != "" and String.length(v) <= 64 and String.match?(v, ~r/\A[A-Za-z0-9._:-]+\z/),
+      do: v,
+      else: nil
   end
 
   defp sane_vm_id(_), do: nil
@@ -836,7 +849,15 @@ defmodule ControlPlane.Provisioning do
 
       sub ->
         cents = ControlPlane.Money.to_cents(sub.price_monthly)
-        {:ok, _} = ControlPlane.Credits.refund(sub.owner_id, cents, "vps_refund", "Terugbetaling: provisioning mislukt")
+
+        {:ok, _} =
+          ControlPlane.Credits.refund(
+            sub.owner_id,
+            cents,
+            "vps_refund",
+            "Terugbetaling: provisioning mislukt"
+          )
+
         {:ok, _} = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
         {:ok, :refunded}
     end
@@ -871,7 +892,9 @@ defmodule ControlPlane.Provisioning do
   # avoids double-restoring capacity the reconciler already reclaimed (which would
   # inflate the node's advertised free capacity).
   defp restore_if_present(_repo, nil), do: {:ok, 0}
-  defp restore_if_present(repo, %Reservation{} = reservation), do: Node.add_capacity(repo, reservation)
+
+  defp restore_if_present(repo, %Reservation{} = reservation),
+    do: Node.add_capacity(repo, reservation)
 
   defp vps_changeset(attrs) do
     Vps.changeset(%Vps{}, %{

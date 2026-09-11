@@ -136,7 +136,11 @@ if config_env() == :prod do
     # application's console backend is attached, so a Logger call at this point
     # is silently dropped — verified empirically, it never reaches `docker logs`.
     # IO.puts to stderr is the only thing guaranteed to show up this early.
-    IO.puts(:stderr, "[warning] SMTP_HOST is not set — confirmation/reset/low-balance emails will NOT be delivered.")
+    IO.puts(
+      :stderr,
+      "[warning] SMTP_HOST is not set — confirmation/reset/low-balance emails will NOT be delivered."
+    )
+
     config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Local
   end
 

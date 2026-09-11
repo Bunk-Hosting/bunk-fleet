@@ -62,7 +62,9 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       |> Map.new()
 
     balances =
-      Repo.all(from e in LedgerEntry, group_by: e.user_id, select: {e.user_id, sum(e.amount_cents)})
+      Repo.all(
+        from e in LedgerEntry, group_by: e.user_id, select: {e.user_id, sum(e.amount_cents)}
+      )
       |> Map.new()
 
     json(conn, %{
@@ -110,7 +112,12 @@ defmodule ControlPlaneWeb.Admin.PanelController do
          %User{} = user <- Accounts.get_user(uid) || :not_found,
          {:ok, cents} <- parse_amount(params) do
       {:ok, _} =
-        Credits.add_entry(user.id, cents, "admin_adjustment", "Handmatige aanpassing door beheerder")
+        Credits.add_entry(
+          user.id,
+          cents,
+          "admin_adjustment",
+          "Handmatige aanpassing door beheerder"
+        )
 
       json(conn, %{id: user.id, balance_cents: Credits.balance_cents(user.id)})
     else
@@ -242,12 +249,17 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   defp parse_amount(%{"amount_cents" => v}) do
     cents =
       cond do
-        is_integer(v) -> v
-        is_binary(v) -> case Integer.parse(v) do
-          {n, ""} -> n
-          _ -> nil
-        end
-        true -> nil
+        is_integer(v) ->
+          v
+
+        is_binary(v) ->
+          case Integer.parse(v) do
+            {n, ""} -> n
+            _ -> nil
+          end
+
+        true ->
+          nil
       end
 
     if is_integer(cents) and cents != 0 and abs(cents) <= 10_000_000,

@@ -14,6 +14,9 @@ defmodule ControlPlane.Repo.Migrations.CreateOverlay do
       add :overlay_ip, :string
     end
 
-    create unique_index(:nodes, [:overlay_ip], where: "overlay_ip IS NOT NULL", name: :nodes_overlay_ip_uidx)
+    create unique_index(:nodes, [:overlay_ip],
+             where: "overlay_ip IS NOT NULL",
+             name: :nodes_overlay_ip_uidx
+           )
   end
 end
