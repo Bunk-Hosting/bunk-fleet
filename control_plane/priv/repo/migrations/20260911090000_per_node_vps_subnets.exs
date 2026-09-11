@@ -17,7 +17,6 @@ defmodule ControlPlane.Repo.Migrations.PerNodeVpsSubnets do
   use Ecto.Migration
 
   alias ControlPlane.Fleet.Subnets
-  alias ControlPlane.Net
 
   def up do
     drop index(:vpses, [:ip_address], name: :vpses_active_ip_uidx)
@@ -64,6 +63,9 @@ defmodule ControlPlane.Repo.Migrations.PerNodeVpsSubnets do
     :ok
   end
 
+  # `node_id` is whatever `repo.query!` handed back for the uuid column — the raw
+  # 16-byte binary, which is also what Postgrex wants as a parameter. Do not try
+  # to dump it again.
   defp assign_block(repo, node_id, taken) do
     index = preferred_block(repo, node_id, taken) || lowest_free_block(taken)
 
@@ -90,7 +92,7 @@ defmodule ControlPlane.Repo.Migrations.PerNodeVpsSubnets do
             block.vps_cidr_prefix,
             block.vps_range_start,
             block.vps_range_end,
-            Ecto.UUID.dump!(node_id)
+            node_id
           ]
         )
 
@@ -106,7 +108,7 @@ defmodule ControlPlane.Repo.Migrations.PerNodeVpsSubnets do
       SELECT ip_address FROM vpses
        WHERE node_id = $1 AND ip_address IS NOT NULL AND status <> 'deleted'
       """,
-      [Ecto.UUID.dump!(node_id)]
+      [node_id]
     ).rows
     |> Enum.flat_map(fn [ip] -> block_index(ip) end)
     |> Enum.find(&(not MapSet.member?(taken, &1)))
@@ -116,22 +118,14 @@ defmodule ControlPlane.Repo.Migrations.PerNodeVpsSubnets do
     Enum.find(0..(Subnets.block_count() - 1), &(not MapSet.member?(taken, &1)))
   end
 
-  defp block_index(address) when is_binary(address) do
-    if Net.valid?(address) do
-      # Re-derive from Subnets.block/1 rather than duplicating its arithmetic, so
-      # a change to the carve can never drift from the backfill.
-      Enum.filter(0..(Subnets.block_count() - 1), fn i ->
-        block = Subnets.block(i)
-
-        Net.to_int(address) >= Net.to_int(block.vps_gateway) and
-          Net.to_int(address) <= Net.to_int(block.vps_range_end)
-      end)
-    else
-      []
+  # Ask Subnets rather than re-deriving the arithmetic, so the backfill can never
+  # drift from the carve the running system uses.
+  defp block_index(address) do
+    case Subnets.index_of(address) do
+      {:ok, index} -> [index]
+      :error -> []
     end
   end
-
-  defp block_index(_), do: []
 
   defp query!(repo, sql, params \\ []), do: repo.query!(sql, params, log: false)
 end

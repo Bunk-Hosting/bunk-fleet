@@ -56,6 +56,35 @@ defmodule ControlPlane.Fleet.SubnetsTest do
     end
   end
 
+  describe "index_of/1" do
+    test "maps an address back to the block it belongs to" do
+      assert Subnets.index_of("10.10.0.1") == {:ok, 0}
+      assert Subnets.index_of("10.10.0.21") == {:ok, 0}
+      assert Subnets.index_of("10.10.3.254") == {:ok, 0}
+      assert Subnets.index_of("10.10.4.20") == {:ok, 1}
+      assert Subnets.index_of("10.10.255.254") == {:ok, Subnets.block_count() - 1}
+    end
+
+    test "an address outside the supernet belongs to no block" do
+      # A node that brought its own network claims nothing from the supernet, so
+      # the backfill must not hand it a block it is not using.
+      assert Subnets.index_of("192.168.50.10") == :error
+      assert Subnets.index_of("10.9.255.255") == :error
+      assert Subnets.index_of("10.11.0.0") == :error
+      assert Subnets.index_of("not-an-ip") == :error
+      assert Subnets.index_of(nil) == :error
+    end
+
+    test "every block's own addresses map back to that block" do
+      for index <- 0..(Subnets.block_count() - 1) do
+        block = Subnets.block(index)
+        assert Subnets.index_of(block.vps_gateway) == {:ok, index}
+        assert Subnets.index_of(block.vps_range_start) == {:ok, index}
+        assert Subnets.index_of(block.vps_range_end) == {:ok, index}
+      end
+    end
+  end
+
   describe "next_free_block/1" do
     test "hands out block 0 on an empty fleet" do
       assert {:ok, 0, %{vps_gateway: "10.10.0.1"}} = Subnets.next_free_block(Repo)

@@ -63,6 +63,25 @@ defmodule ControlPlane.Fleet.Subnets do
   end
 
   @doc """
+  The block `address` falls in, or `:error` when it is outside the supernet.
+
+  An address outside the supernet belongs to a node that brought its own network,
+  and claims no block.
+  """
+  def index_of(address) when is_binary(address) do
+    if Net.valid?(address) do
+      offset = Net.to_int(address) - Net.to_int(@supernet)
+      index = div(offset, @block_size)
+
+      if offset >= 0 and index < @block_count, do: {:ok, index}, else: :error
+    else
+      :error
+    end
+  end
+
+  def index_of(_), do: :error
+
+  @doc """
   The lowest block not yet claimed by a node, or `{:error, :supernet_exhausted}`.
 
   Call this inside the enrollment transaction, after taking `lock/1` — two agents
@@ -91,18 +110,12 @@ defmodule ControlPlane.Fleet.Subnets do
     :ok
   end
 
-  # Which block an address falls in, as a single-element list so callers can
-  # flat_map over a column that may hold an address outside the supernet (a node
-  # that declared its own network) or something unparseable.
-  defp block_index(address) when is_binary(address) do
-    if Net.valid?(address) do
-      offset = Net.to_int(address) - Net.to_int(@supernet)
-      index = div(offset, @block_size)
-      if offset >= 0 and index < @block_count, do: [index], else: []
-    else
-      []
+  # A single-element list so callers can flat_map over a column that may hold an
+  # address outside the supernet, or nothing at all.
+  defp block_index(address) do
+    case index_of(address) do
+      {:ok, index} -> [index]
+      :error -> []
     end
   end
-
-  defp block_index(_), do: []
 end
