@@ -22,6 +22,12 @@ browser console are all the agent dialling out over HTTPS.
   ports, no address. `vmbr2` by convention. It must exist before the install: the
   agent will address a bridge, never create one.
 
+- **A forwarded port range**, if customers on this node should be reachable from
+  the internet. Pick something well clear of anything the hypervisor uses —
+  20000-29999 is the default — and forward it to the node on whatever router
+  faces the internet. Without it the node still works; its VPSes are just
+  console-only, which the dashboard says plainly rather than hiding.
+
 Decide one thing up front: **who owns the gateway on that bridge.**
 
 | situation | answer | `BUNK_MANAGE_NETWORK` |
@@ -84,7 +90,29 @@ assigns the node a `/22` out of `10.10.0.0/16` and hands it back at enrolment.
 
 ---
 
-## 4. Check it actually worked
+## 4. Tell the control plane where the node can be reached
+
+A node with no public address is legitimate — its VPSes are console-only. If this
+one does have one, record it, and the port range its operator forwarded:
+
+```sql
+UPDATE nodes
+   SET public_host = 'nl2.bunkhosting.nl',
+       public_port_start = 20000,
+       public_port_end   = 29999
+ WHERE name = 'node-…';
+```
+
+From then on every VPS placed there is allocated an SSH port at provision time,
+the agent installs the forwards on its next sync (within a minute), and the
+customer's dashboard shows a real `ssh -p … user@host` line instead of "alleen
+via de webterminal".
+
+Existing VPSes on the node do not get a forward retroactively — allocation
+happens at provision. Setting the address before ordering the first VPS there
+saves that.
+
+## 5. Check it actually worked
 
 ```bash
 journalctl -u bunk-worker -f
@@ -117,7 +145,7 @@ node can do the job rather than merely appear.
 
 ---
 
-## 5. When something is wrong
+## 6. When something is wrong
 
 **Node never appears.** The token is single-use: if the install was run twice,
 the second run consumed nothing and the agent has no credentials. Mint another.

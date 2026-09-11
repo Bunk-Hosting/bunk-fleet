@@ -180,23 +180,42 @@ The original proposal, kept because the reasoning still holds:
   VPS in another country. Data residency is a promise; quietly breaking it to
   satisfy an order is the wrong trade.
 
-### 3.2 Public addressing
+### 3.2 Public addressing — **done for shared IPv4**
 
-Needs a decision before it needs code (§6). Once decided, the shape is:
+The decision in §7 was Starter without its own IPv4, so what customers get is a
+port on the node's address rather than an address of their own. That is now
+built: `nodes.public_host` plus a forwarded port range, `port_forwards` allocated
+per node in the same transaction as the private address, and an agent that makes
+its firewall match a desired-state endpoint.
 
-- Addresses are a **per-region resource**, because they come from whatever uplink
-  that site has. Model them as a pool per region (or per node), allocated at
-  provision time alongside the private address, released on delete.
-- The same table answers "how many can we still sell here", which the placement
-  logic in §3.5 then has to respect: a region with capacity but no free addresses
-  is full.
+It cost nothing in address budget, which was the point — a dedicated IPv4 is
+€2.27/month against a €3.99 plan.
 
-### 3.3 Backups
+Two things are deliberately still open:
 
-The one feature that blocks selling, unchanged from the roadmap: off-node,
-encrypted, scheduled, with a restore that has actually been run. Restore to a
-*different* node is also the cheapest failover story available at this size —
-worth designing for from the start even if it is operated manually at first.
+- **Dedicated addresses**, for customers who need port 443 on an address of their
+  own. The original shape here still holds when that day comes: a pool per node,
+  allocated at provision, released on delete, and a region with capacity but no
+  free address is full for the placement logic in §3.5.
+- **A node with no public address at all** stays legitimate — the first one is
+  that node. Those VPSes are console-only, and the UI says so rather than
+  printing a private address as if it were an endpoint.
+
+### 3.3 Backups — **done for the control plane, not for customer disks**
+
+The control plane is backed up nightly: database plus `.env.prod`, encrypted to a
+certificate whose private key is not on the machine, pushed to a destination that
+accepts an append and nothing else. Restore verifies the dump against a recorded
+checksum and refuses the live database name. One rehearsal has been run and its
+numbers are in `docs/runbooks/backup-and-restore.md`.
+
+What is still missing is the half a customer would assume was meant: **their VPS
+disk**. If a node's storage dies the data on it is gone. That is a per-node job —
+`vzdump` and somewhere to put it — and restoring to a *different* node remains
+the cheapest failover story available at this size.
+
+The rehearsal also ran on the machine the backup came from, which proves the
+archive is restorable but not that recovery works with that machine gone.
 
 ### 3.4 The IP pool is not scoped to a network — **done**
 
