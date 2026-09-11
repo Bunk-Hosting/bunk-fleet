@@ -44,14 +44,16 @@ cat > /etc/systemd/system/bunk-backup.service <<UNIT
 Description=Bunk control-plane backup
 After=docker.service
 Requires=docker.service
+# [Unit], not [Service]: systemd parses OnFailure only here, and in [Service] it
+# logs "Unknown key" and carries on — leaving a backup job that reports failure
+# to nobody, which is the exact thing this is meant to prevent.
+OnFailure=bunk-backup-alert.service
 
 [Service]
 Type=oneshot
 Environment=BUNK_REPO=$REPO
 Environment=BUNK_BACKUP_SSH=$DEST
 ExecStart=$REPO/tools/backup.sh
-# A backup timer that quietly stops working is how backups actually fail.
-OnFailure=bunk-backup-alert.service
 UNIT
 
 cat > /etc/systemd/system/bunk-backup-alert.service <<UNIT
