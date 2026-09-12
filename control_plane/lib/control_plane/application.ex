@@ -5,10 +5,6 @@ defmodule ControlPlane.Application do
 
   use Application
 
-  # Compiled in, because Mix is not loaded inside a release. Skipped in :test,
-  # where every protection is deliberately off and the warnings would be noise.
-  @report_posture Mix.env() != :test
-
   @impl true
   def start(_type, _args) do
     children =
@@ -40,7 +36,11 @@ defmodule ControlPlane.Application do
 
     # After the tree is up, so the warnings land in the same log stream as
     # everything else rather than ahead of the logger's own configuration.
-    if @report_posture, do: ControlPlane.SecurityPosture.report()
+    # Off in :test, where every protection is deliberately unset and the warnings
+    # would be noise. Config rather than Mix.env(): Mix is not loaded inside a
+    # release, and a compile-time constant here leaves a branch that can never run.
+    if Application.get_env(:control_plane, :report_security_posture, true),
+      do: ControlPlane.SecurityPosture.report()
 
     result
   end

@@ -59,3 +59,7 @@ config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Test
 config :control_plane, :mollie,
   api_key: "test_stub_key",
   req_options: [plug: {Req.Test, ControlPlane.Mollie}]
+
+# The boot-time security-posture report is about production gaps; in :test every
+# protection is deliberately unset, so it would print three warnings per run.
+config :control_plane, report_security_posture: false

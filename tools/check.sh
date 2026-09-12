@@ -52,6 +52,22 @@ check_elixir() {
       echo "--- mix test ---"
       mix test
     '
+
+  # Dialyzer runs against MIX_ENV=dev (that is where the cached PLT lives) and
+  # needs no database. The first run in a fresh checkout builds the PLT and takes
+  # a few minutes; after that it is seconds, because priv/plts is inside the
+  # mounted tree. CI runs it too — having it here is what stops a type regression
+  # from being discovered seven minutes into a production image build.
+  echo "--- mix dialyzer ---"
+  docker run --rm \
+    -v "$ROOT/control_plane":/app -w /app \
+    -e MIX_ENV=dev \
+    elixir:1.17-alpine sh -eu -c '
+      mix local.hex --force >/dev/null
+      mix local.rebar --force >/dev/null
+      mix deps.get >/dev/null
+      mix dialyzer
+    '
 }
 
 check_go() {
