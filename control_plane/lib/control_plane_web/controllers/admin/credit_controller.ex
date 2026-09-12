@@ -14,7 +14,7 @@ defmodule ControlPlaneWeb.Admin.CreditController do
   def show(conn, %{"email" => email}) do
     case Accounts.get_user_by_email(email) do
       nil ->
-        conn |> put_status(:not_found) |> json(%{error: "user not found"})
+        conn |> put_status(:not_found) |> json(%{error: "user_not_found"})
 
       user ->
         json(conn, %{
@@ -38,7 +38,7 @@ defmodule ControlPlaneWeb.Admin.CreditController do
       {:ok, _} = Credits.add_entry(user.id, cents, kind, desc)
       json(conn, %{email: email, balance_cents: Credits.balance_cents(user.id)})
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "user not found"})
+      nil -> conn |> put_status(:not_found) |> json(%{error: "user_not_found"})
       _ -> bad_request(conn, "amount_cents must be a non-zero integer")
     end
   end

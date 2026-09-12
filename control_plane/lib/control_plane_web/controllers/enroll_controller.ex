@@ -54,6 +54,6 @@ defmodule ControlPlaneWeb.EnrollController do
   def enroll(conn, _params) do
     conn
     |> put_status(:unprocessable_entity)
-    |> json(%{error: "missing token"})
+    |> json(%{error: "missing_token", detail: "missing token"})
   end
 end

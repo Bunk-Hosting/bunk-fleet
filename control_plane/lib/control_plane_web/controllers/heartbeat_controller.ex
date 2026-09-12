@@ -22,18 +22,18 @@ defmodule ControlPlaneWeb.HeartbeatController do
         {:error, _changeset} ->
           conn
           |> put_status(:unprocessable_entity)
-          |> json(%{error: "invalid heartbeat"})
+          |> json(%{error: "invalid_heartbeat"})
       end
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "node_id mismatch"})
+      |> json(%{error: "node_id_mismatch"})
     end
   end
 
   def create(conn, _params) do
     conn
     |> put_status(:unprocessable_entity)
-    |> json(%{error: "missing node_id"})
+    |> json(%{error: "missing_node_id"})
   end
 end

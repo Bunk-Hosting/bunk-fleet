@@ -19,10 +19,10 @@ defmodule ControlPlaneWeb.Admin.TopupController do
         })
 
       {:error, :not_found} ->
-        conn |> put_status(:not_found) |> json(%{error: "top-up request not found"})
+        conn |> put_status(:not_found) |> json(%{error: "topup_not_found"})
 
       {:error, :not_pending} ->
-        conn |> put_status(:conflict) |> json(%{error: "request is not pending"})
+        conn |> put_status(:conflict) |> json(%{error: "not_pending"})
     end
   end
 

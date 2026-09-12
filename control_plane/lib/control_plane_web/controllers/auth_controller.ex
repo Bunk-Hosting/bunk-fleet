@@ -84,14 +84,14 @@ defmodule ControlPlaneWeb.AuthController do
       nil ->
         conn
         |> put_status(:unauthorized)
-        |> json(%{error: "invalid email or password"})
+        |> json(%{error: "invalid_credentials", detail: "E-mailadres of wachtwoord klopt niet."})
     end
   end
 
   def login(conn, _params) do
     conn
     |> put_status(:unprocessable_entity)
-    |> json(%{error: "email and password are required"})
+    |> json(%{error: "missing_credentials", detail: "email and password are required"})
   end
 
   defp issue_session(conn, user) do
@@ -140,7 +140,10 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def confirm(conn, _params),
-    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "token is required"})
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "missing_token", detail: "token is required"})
 
   @doc """
   Re-sends the confirmation email to the authenticated (already logged-in but
@@ -169,7 +172,10 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def request_password_reset(conn, _params),
-    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "email is required"})
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "missing_email", detail: "email is required"})
 
   @doc """
   Exchanges a password-reset token + new password for a changed password.
@@ -204,7 +210,7 @@ defmodule ControlPlaneWeb.AuthController do
     do:
       conn
       |> put_status(:unprocessable_entity)
-      |> json(%{error: "token and password are required"})
+      |> json(%{error: "missing_token_or_password", detail: "token and password are required"})
 
   def logout(conn, _params) do
     # Extract from header OR the HttpOnly cookie so a cookie-based browser session
@@ -295,7 +301,10 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def totp_confirm(conn, _params),
-    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "code is required"})
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "missing_code", detail: "code is required"})
 
   @doc "Disables TOTP — requires a valid current code (defence in depth)."
   def totp_disable(conn, %{"code" => code}) when is_binary(code) do
@@ -310,7 +319,10 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   def totp_disable(conn, _params),
-    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "code is required"})
+    do:
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "missing_code", detail: "code is required"})
 
   defp qr_data_url(uri) do
     svg = uri |> EQRCode.encode() |> EQRCode.svg(width: 200)

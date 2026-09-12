@@ -124,13 +124,27 @@ geen enkele test vallen. Het punt is dat het antwoord niet meer van govmomi's
 formulering afhangt, en de nieuwe tests leggen het antwoord vast, niet de route
 ernaartoe.
 
+`error` is nu overal een machinecode. Dertien endpoints antwoordden met een Engelse
+zin (`"invalid email or password"`, `"missing token"`) terwijl de rest snake_case
+gebruikte; de zin staat nu in `detail`, waar hij thuishoort. Dat was niet alleen
+inconsistent: de vertaaltabel van de frontend zocht op `invalid_credentials`, een
+code die de control plane nooit stuurde, dus die vertaling sloeg altijd over naar de
+generieke fallback. De tabel dekt nu de codes die een klant echt kan raken, per
+gebied gegroepeerd.
+
+Een test leest de codes uit de broncode en eist snake_case zonder hoofdletters of
+leestekens, plus vier gevallen tegen de echte endpoints. Zonder zoiets valt een code
+die terugzakt naar een zin niet op — hij breekt niets, hij stopt alleen stilletjes
+met vertaald worden.
+
+De Nederlandse teksten die overblijven staan in de server-gerenderde inlogformulieren,
+waar het de zin is die iemand leest en geen code waar een client op schakelt. Dat is
+goed zo; de review las dat als een probleem en dat was het niet.
+
 ## Nog open
 
 ### Control plane
 - **[MED]** `@spec` op de publieke Fleet/Provisioning/Billing/Credits/Accounts-API.
-- **[MED]** Foutmeldingen spreken door elkaar heen: machinecodes, Engelse zinnen en
-  Nederlands. Nederlandse klantteksten zitten nog in de `Credits`-context in plaats
-  van in de weblaag.
 - **[LOW]** De `attrs[:x] || attrs["x"]`-dans normaliseren op de grens van
   `create_vps/1` in plaats van overal.
 

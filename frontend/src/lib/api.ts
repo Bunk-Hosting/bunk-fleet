@@ -45,21 +45,51 @@ export async function ensureCsrfCookie(): Promise<void> {}
 
 // Known bunk-fleet error codes -> friendly Dutch messages. Unknown codes fall
 // back to the caller-supplied contextual message (never a raw code in the UI).
+// Machine codes the control plane sends in `{ error: "..." }`, translated for the
+// person reading them. Not every code needs an entry: anything missing falls back
+// to the caller's own contextual message, which is usually more specific than a
+// generic sentence would be. What must never happen is a raw code reaching a
+// customer, and parseApiError below is what guarantees that.
 const ERROR_MESSAGES: Record<string, string> = {
-  invalid_code: "De ingevoerde code klopt niet.",
+  // Authentication
   invalid_credentials: "Ongeldig e-mailadres of wachtwoord.",
-  invalid_email_or_password: "Ongeldig e-mailadres of wachtwoord.",
+  invalid_code: "De ingevoerde code klopt niet.",
+  invalid_token: "Deze link is ongeldig of verlopen.",
   email_taken: "Dit e-mailadres is al in gebruik.",
+  already_confirmed: "Je account is al bevestigd.",
   unauthorized: "Je bent niet (meer) ingelogd.",
   forbidden: "Je hebt geen toegang tot deze actie.",
   not_found: "Niet gevonden.",
+  rate_limited: "Te veel pogingen. Probeer het over een minuutje opnieuw.",
+  captcha_failed: "De verificatie is niet gelukt. Probeer het opnieuw.",
+
+  // Een VPS bestellen
+  insufficient_credits: "Je tegoed is niet toereikend voor deze VPS.",
+  quota_exceeded: "Je hebt het maximum aantal VPS'en bereikt.",
+  no_capacity: "Er is op dit moment geen capaciteit vrij in deze regio.",
+  no_matching_package: "Deze combinatie van cpu, geheugen en schijf is niet te bestellen.",
+  invalid_vps: "Deze specificatie kan niet.",
+  region_not_found: "Deze regio bestaat niet.",
+
+  // Een bestaande VPS bedienen. invalid_status_* zegt precies welke staat in de
+  // weg zit, wat bruikbaarder is dan "dat kan nu niet".
   invalid_status_active: "De VPS draait al.",
   invalid_status_stopped: "De VPS is al gestopt.",
   invalid_status_queued: "De VPS wordt nog voorbereid.",
   invalid_status_provisioning: "De VPS wordt nog aangemaakt.",
-  already_confirmed: "Je account is al bevestigd.",
-  invalid_token: "Deze link is ongeldig of verlopen.",
-  rate_limited: "Te veel pogingen. Probeer het over een minuutje opnieuw.",
+  invalid_status_restoring: "Er wordt een back-up teruggezet; wacht tot dat klaar is.",
+  already_deleting: "Deze VPS wordt al verwijderd.",
+  not_provisioned: "Deze VPS is nog niet klaar.",
+  vps_not_active: "Dit kan alleen bij een draaiende VPS.",
+  console_unavailable: "De console is nu niet beschikbaar voor deze VPS.",
+  backup_not_restorable: "Deze back-up kan niet teruggezet worden.",
+
+  // Betalen
+  invalid_amount: "Dit bedrag kan niet.",
+  too_many_pending_topups: "Je hebt al te veel openstaande betalingen openstaan.",
+  payment_rejected: "De betaling is geweigerd.",
+  payment_provider_error: "Betalen lukt nu even niet. Probeer het later opnieuw.",
+  payments_unavailable: "Betalen is tijdelijk uitgeschakeld.",
 };
 
 /**
