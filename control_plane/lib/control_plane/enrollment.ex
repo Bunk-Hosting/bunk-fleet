@@ -14,6 +14,7 @@ defmodule ControlPlane.Enrollment do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Clock
   alias ControlPlane.Fleet.EnrollToken
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Subnets
@@ -30,7 +31,7 @@ defmodule ControlPlane.Enrollment do
   """
   def create_enroll_token(%{region_id: region_id, ttl_seconds: ttl_seconds} = attrs) do
     plaintext = generate_token()
-    expires_at = DateTime.add(now(), ttl_seconds, :second)
+    expires_at = Clock.shift(ttl_seconds)
 
     result =
       %EnrollToken{}
@@ -149,7 +150,7 @@ defmodule ControlPlane.Enrollment do
 
   defp fetch_valid_token(token_plaintext) do
     token_hash = hash(token_plaintext)
-    now = now()
+    now = Clock.now()
 
     # FOR UPDATE so concurrent enrollments with the same token serialize: the
     # first locks + consumes it, the second then sees used_at set and gets nil
@@ -173,7 +174,7 @@ defmodule ControlPlane.Enrollment do
       region_id: token.region_id,
       hypervisor: hypervisor,
       status: :online,
-      last_heartbeat_at: now(),
+      last_heartbeat_at: Clock.now(),
       agent_token_hash: hash(agent_token),
       # Cost-centre attribution: which person/team inside Bunk this node belongs
       # to. Optional — metering falls back to the node name when it's nil.
@@ -190,7 +191,7 @@ defmodule ControlPlane.Enrollment do
 
   defp consume_token(%EnrollToken{} = token) do
     token
-    |> EnrollToken.changeset(%{used_at: now()})
+    |> EnrollToken.changeset(%{used_at: Clock.now()})
     |> Repo.update()
   end
 
@@ -209,6 +210,4 @@ defmodule ControlPlane.Enrollment do
   defp hash(value) do
     :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

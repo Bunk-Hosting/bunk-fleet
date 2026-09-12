@@ -27,6 +27,7 @@ defmodule ControlPlane.Backups do
   require Logger
 
   alias ControlPlane.Backups.VpsBackup
+  alias ControlPlane.Clock
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Repo
@@ -74,7 +75,7 @@ defmodule ControlPlane.Backups do
   runs and a command with no row is one nobody can find.
   """
   def start_backup(%Vps{} = vps) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    now = Clock.now()
 
     Multi.new()
     |> Multi.insert(:backup, fn _ ->
@@ -109,7 +110,7 @@ defmodule ControlPlane.Backups do
   only tell it if failures are rows too.
   """
   def record_result(backup_id, result) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    now = Clock.now()
 
     case Repo.get(VpsBackup, backup_id) do
       nil -> {:error, :not_found}

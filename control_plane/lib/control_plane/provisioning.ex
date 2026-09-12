@@ -14,6 +14,7 @@ defmodule ControlPlane.Provisioning do
   import Ecto.Query, warn: false
   require Logger
 
+  alias ControlPlane.Clock
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.IpPool
@@ -107,7 +108,7 @@ defmodule ControlPlane.Provisioning do
     {count, _} =
       Repo.update_all(
         from(v in Vps, where: v.id in ^stuck),
-        set: [status: :failed, updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+        set: [status: :failed, updated_at: Clock.now()]
       )
 
     if count > 0, do: Events.broadcast_changed(:vps)
@@ -609,7 +610,7 @@ defmodule ControlPlane.Provisioning do
   re-reports the original outcome.
   """
   def deliverable_commands_for_node(%Node{id: node_id}) do
-    cutoff = DateTime.add(now(), -@redelivery_ttl_seconds, :second)
+    cutoff = Clock.shift(-@redelivery_ttl_seconds)
 
     Repo.all(
       from c in Command,
@@ -630,7 +631,7 @@ defmodule ControlPlane.Provisioning do
   """
   def mark_delivered(%Command{} = command) do
     command
-    |> Command.changeset(%{status: :delivered, delivered_at: now()})
+    |> Command.changeset(%{status: :delivered, delivered_at: Clock.now()})
     |> Repo.update()
   end
 
@@ -643,7 +644,7 @@ defmodule ControlPlane.Provisioning do
 
   def mark_delivered_all(commands) do
     ids = Enum.map(commands, & &1.id)
-    ts = now()
+    ts = Clock.now()
 
     # Guard on non-terminal status: a concurrent apply_result / cancel_and_release
     # may have moved a command to :done/:failed between the poll's read and this
@@ -766,6 +767,4 @@ defmodule ControlPlane.Provisioning do
         {:error, changeset}
     end
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

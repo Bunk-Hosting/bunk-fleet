@@ -5,6 +5,7 @@ defmodule ControlPlane.Fleet do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Clock
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Package
@@ -291,7 +292,7 @@ defmodule ControlPlane.Fleet do
 
     attrs =
       totals
-      |> Map.put(:last_heartbeat_at, now())
+      |> Map.put(:last_heartbeat_at, Clock.now())
       # A draining node is still alive and still serving the VPSes it has — it is
       # only closed to new ones. Stamping :online here would undo an operator's
       # drain within thirty seconds, silently, which is how a node you are trying
@@ -350,7 +351,7 @@ defmodule ControlPlane.Fleet do
   heartbeat. Shared with the scheduler so locking variants can build on top of it.
   """
   def online_nodes_in_region_query(region_id) do
-    cutoff = DateTime.add(now(), -@heartbeat_ttl_seconds, :second)
+    cutoff = Clock.shift(-@heartbeat_ttl_seconds)
 
     query =
       from n in Node,
@@ -427,7 +428,7 @@ defmodule ControlPlane.Fleet do
   See `mark_stale_nodes_offline/1` to pass an explicit cutoff (useful in tests).
   """
   def mark_stale_nodes_offline do
-    mark_stale_nodes_offline(DateTime.add(now(), -@heartbeat_ttl_seconds, :second))
+    mark_stale_nodes_offline(Clock.shift(-@heartbeat_ttl_seconds))
   end
 
   @doc """
@@ -441,14 +442,12 @@ defmodule ControlPlane.Fleet do
           n.status == :online and
             (is_nil(n.last_heartbeat_at) or n.last_heartbeat_at < ^cutoff)
 
-    {count, _} = result = Repo.update_all(query, set: [status: :offline, updated_at: now()])
+    {count, _} = result = Repo.update_all(query, set: [status: :offline, updated_at: Clock.now()])
 
     if count > 0, do: Events.broadcast_changed(:nodes_offline)
 
     result
   end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
   # Allow both string- and atom-keyed attribute maps for heartbeats.
   defp normalize_keys(attrs) when is_map(attrs) do

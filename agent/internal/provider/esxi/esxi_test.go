@@ -2,8 +2,11 @@ package esxi
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
@@ -173,4 +176,38 @@ func contains(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// isNotFound decides whether a delete reports success. Delete commands are
+// re-delivered, so the second one finds nothing — and if that reads as a
+// failure, the VPS never leaves :deleting.
+//
+// These cases pass against both the typed check and the message check that
+// backs it up, which is the point: what is pinned here is the answer, not which
+// of the two paths produced it. The typed check exists so the answer does not
+// depend on govmomi's wording, and the last two cases are why the message check
+// cannot stand alone — "connection refused" is not a missing guest.
+func TestIsNotFoundSeesThroughWrapping(t *testing.T) {
+	bare := &find.NotFoundError{}
+
+	cases := map[string]struct {
+		err  error
+		want bool
+	}{
+		"nil":               {nil, false},
+		"bare not-found":    {bare, true},
+		"wrapped once":      {fmt.Errorf("esxi: power state: %w", bare), true},
+		"wrapped twice":     {fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", bare)), true},
+		"plain message":     {errors.New("vm not found on host"), true},
+		"unrelated failure": {errors.New("connection refused"), false},
+		"wrapped unrelated": {fmt.Errorf("esxi: destroy: %w", errors.New("permission denied")), false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := isNotFound(tc.err); got != tc.want {
+				t.Errorf("isNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
 }

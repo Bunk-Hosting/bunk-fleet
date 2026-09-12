@@ -26,6 +26,7 @@ defmodule ControlPlane.Provisioning.Results do
   require Logger
 
   alias ControlPlane.Backups
+  alias ControlPlane.Clock
   alias ControlPlane.Console.HostKeys
   alias ControlPlane.Credits
   alias ControlPlane.Fleet.Command
@@ -405,7 +406,7 @@ defmodule ControlPlane.Provisioning.Results do
   # downtime — over-charging the customer and over-paying the operator for time
   # the VM never served.
   defp status_changeset(vps, :active) do
-    now = DateTime.truncate(DateTime.utc_now(), :second)
+    now = Clock.now()
 
     vps
     |> Vps.changeset(%{status: :active})

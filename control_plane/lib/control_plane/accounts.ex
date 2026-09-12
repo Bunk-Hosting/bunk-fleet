@@ -14,6 +14,7 @@ defmodule ControlPlane.Accounts do
   alias ControlPlane.Accounts.LoginThrottle
   alias ControlPlane.Accounts.User
   alias ControlPlane.Accounts.UserToken
+  alias ControlPlane.Clock
   alias ControlPlane.Credits
   alias ControlPlane.Notifier
   alias ControlPlane.Repo
@@ -58,7 +59,7 @@ defmodule ControlPlane.Accounts do
   def confirm_totp(%User{totp_secret: secret} = user, code) when is_binary(secret) do
     if valid_totp_code?(secret, code) do
       user
-      |> Ecto.Changeset.change(totp_confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
+      |> Ecto.Changeset.change(totp_confirmed_at: Clock.now())
       |> Repo.update()
     else
       {:error, :invalid_code}
@@ -82,7 +83,7 @@ defmodule ControlPlane.Accounts do
   def valid_totp?(%User{totp_secret: secret} = user, code) when is_binary(secret) do
     trimmed = String.trim(to_string(code))
 
-    now = DateTime.truncate(DateTime.utc_now(), :second)
+    now = Clock.now()
 
     if byte_size(trimmed) == 6 and
          NimbleTOTP.valid?(secret, trimmed, since: user.totp_last_used_at) do
@@ -208,7 +209,7 @@ defmodule ControlPlane.Accounts do
     with {:ok, query} <- UserToken.verify_email_token_query(token, "confirm"),
          %User{} = user <- Repo.one(query) do
       confirm_changeset =
-        Ecto.Changeset.change(user, confirmed_at: DateTime.truncate(DateTime.utc_now(), :second))
+        Ecto.Changeset.change(user, confirmed_at: Clock.now())
 
       Ecto.Multi.new()
       |> Ecto.Multi.update(:user, confirm_changeset)

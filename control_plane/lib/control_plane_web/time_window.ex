@@ -8,6 +8,8 @@ defmodule ControlPlaneWeb.TimeWindow do
   `to - 30d`; with `require: true` both must be present. `from` must precede `to`.
   Returns `{:ok, {from, to}}` or `{:error, :invalid_datetime | :invalid_window}`.
   """
+
+  alias ControlPlane.Clock
   @default_window_days 30
 
   def parse(params, opts \\ []) do
@@ -32,7 +34,7 @@ defmodule ControlPlaneWeb.TimeWindow do
 
   defp one(_value, _required?, _default), do: {:error, :invalid_datetime}
 
-  defp default_to, do: DateTime.utc_now() |> DateTime.truncate(:second)
+  defp default_to, do: Clock.now()
   defp default_from(to), do: DateTime.add(to, -@default_window_days * 24 * 3600, :second)
 
   defp validate(from, to) do

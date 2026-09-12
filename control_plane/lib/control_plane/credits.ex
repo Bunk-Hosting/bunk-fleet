@@ -9,6 +9,7 @@ defmodule ControlPlane.Credits do
   separate per-resource-hour metering in `ControlPlane.Billing`.
   """
   import Ecto.Query
+  alias ControlPlane.Clock
   alias ControlPlane.Credits.LedgerEntry
   alias ControlPlane.Credits.TopupRequest
   alias ControlPlane.Repo
@@ -168,7 +169,7 @@ defmodule ControlPlane.Credits do
             tr
             |> Ecto.Changeset.change(
               status: :paid,
-              paid_at: DateTime.truncate(DateTime.utc_now(), :second)
+              paid_at: Clock.now()
             )
             |> Repo.update()
 
@@ -234,9 +235,7 @@ defmodule ControlPlane.Credits do
       from(t in TopupRequest,
         where: t.mollie_payment_id == ^mollie_payment_id and t.status == :pending
       )
-      |> Repo.update_all(
-        set: [status: :cancelled, updated_at: DateTime.truncate(DateTime.utc_now(), :second)]
-      )
+      |> Repo.update_all(set: [status: :cancelled, updated_at: Clock.now()])
 
     if count == 1, do: :ok, else: {:error, :not_pending}
   end

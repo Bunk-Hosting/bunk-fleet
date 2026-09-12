@@ -104,11 +104,30 @@ ongewoons wilt, en dat gebeurt hier zelden. Dit is een observatie voor als er oo
 een reden is om de frontend aan te raken, geen werk dat op zichzelf de moeite waard
 is.
 
+## Deze ronde erbij
+
+`ControlPlane.Clock` vervangt drie identieke `defp now/0`-helpers en zestien losse
+`DateTime.utc_now() |> DateTime.truncate(:second)`. Truncatie is hier geen
+stijlkeuze: elke `utc_datetime`-kolom bewaart hele seconden en Ecto weigert een
+`DateTime` met microseconden in plaats van hem af te ronden, dus die regel werd op
+negentien plekken opnieuw afgeleid. `Clock.shift/1` vervangt de vier
+`DateTime.add(now(), -ttl, :second)`-vormen waarmee elke sweep zijn cutoff schrijft.
+
+Het heet `Clock` en niet `Time` omdat `alias ControlPlane.Time` de `Time` van Elixir
+zelf zou overschaduwen — een val voor wie hierna `Time.utc_now()` schrijft.
+
+`esxi.isNotFound` doet zijn getypeerde controles nu met `errors.As` en loopt de
+foutketen af voor de soap fault (govmomi's drager daarvan is unexported, dus
+`errors.As` heeft er niets om op te richten). Eerlijk over wat dat oplost: de
+string-fallback ving deze gevallen al — een mutatie naar de oude type-assertie laat
+geen enkele test vallen. Het punt is dat het antwoord niet meer van govmomi's
+formulering afhangt, en de nieuwe tests leggen het antwoord vast, niet de route
+ernaartoe.
+
 ## Nog open
 
 ### Control plane
 - **[MED]** `@spec` op de publieke Fleet/Provisioning/Billing/Credits/Accounts-API.
-- **[MED]** Eén gedeelde `ControlPlane.Time.now/0` (nu 3× gedefinieerd).
 - **[MED]** Foutmeldingen spreken door elkaar heen: machinecodes, Engelse zinnen en
   Nederlands. Nederlandse klantteksten zitten nog in de `Credits`-context in plaats
   van in de weblaag.
@@ -116,11 +135,13 @@ is.
   `create_vps/1` in plaats van overal.
 
 ### Agent
-- **[MED]** `withClient(ctx, fn)` voor de connect-en-defer-logout-boilerplate, die
-  in esxi.go veertien keer staat.
-- **[LOW]** `esxi.go isNotFound` kan `errors.As` gebruiken; `Overlay.HubIP` wordt
-  gedecodeerd maar nooit gelezen, net als `persistedState.WGPublicKey` en
-  `OverlayCIDR`.
+- **[AFGEWEZEN]** `withClient(ctx, fn)` voor de connect-en-defer-logout-boilerplate
+  in esxi.go. Bij nader inzien geen verbetering: het gaat om vier idiomatische
+  Go-regels die elke lezer in één oogopslag pakt, en om ze weg te halen moet het
+  hele lichaam van zeven methodes een closure in — een extra inspringniveau, en
+  `return` gaat er iets anders betekenen. De zeven aanroepers geven bovendien elk
+  een andere nulwaarde terug (`rollbackClone` slikt de fout zelfs anders), dus het
+  zou generics vragen om iets op te lossen dat geen probleem is.
 
 ### Frontend
 - **[MED]** 17 pagina's schrijven hun eigen loading/error/try-catch. Een

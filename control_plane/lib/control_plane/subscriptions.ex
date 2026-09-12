@@ -4,6 +4,7 @@ defmodule ControlPlane.Subscriptions do
   require Logger
 
   alias ControlPlane.Accounts
+  alias ControlPlane.Clock
   alias ControlPlane.Credits
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Vps
@@ -34,7 +35,7 @@ defmodule ControlPlane.Subscriptions do
           price_monthly: pkg.price_monthly,
           status: :active,
           billing_cycle: :monthly,
-          started_at: DateTime.truncate(DateTime.utc_now(), :second),
+          started_at: Clock.now(),
           next_billing_date: next_month(today)
         })
         |> Repo.insert(on_conflict: :nothing, conflict_target: :vps_id)
@@ -84,7 +85,7 @@ defmodule ControlPlane.Subscriptions do
   charges for a server that no longer exists. Idempotent.
   """
   def cancel_for_vps(vps_id) do
-    now = DateTime.truncate(DateTime.utc_now(), :second)
+    now = Clock.now()
 
     {n, _} =
       Repo.update_all(
@@ -270,7 +271,7 @@ defmodule ControlPlane.Subscriptions do
 
   defp to_cents(%Decimal{} = price), do: ControlPlane.Money.to_cents(price)
 
-  defp ts, do: DateTime.truncate(DateTime.utc_now(), :second)
+  defp ts, do: Clock.now()
 
   # One period on from the ANCHOR (the original due date), not from the settle day,
   # so a short past_due retry never shifts the billing day. Guard: if the sub was

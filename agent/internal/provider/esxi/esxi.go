@@ -88,19 +88,40 @@ func vmByID(gc *govmomi.Client, id string) *object.VirtualMachine {
 	return object.NewVirtualMachine(gc.Client, types.ManagedObjectReference{Type: "VirtualMachine", Value: id})
 }
 
+// isNotFound reports whether err means "that guest is not here", which the
+// delete path treats as success: delete commands are re-delivered, and the
+// second one finds nothing.
+//
+// errors.As rather than a type assertion, because this package wraps with %w
+// everywhere — a bare assertion misses a NotFound that travelled through one
+// fmt.Errorf and turns "already gone" into a failure the VPS never recovers
+// from. The string check stays last: some govmomi paths return a plain error
+// with no type to match on.
 func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	if _, ok := err.(*find.NotFoundError); ok {
+
+	var notFound *find.NotFoundError
+	if errors.As(err, &notFound) {
 		return true
 	}
-	if soap.IsSoapFault(err) {
-		switch soap.ToSoapFault(err).VimFault().(type) {
+
+	// govmomi's soap fault carrier is unexported, so errors.As has nothing to
+	// target; IsSoapFault does a bare assertion of its own. Walk the chain and
+	// ask it at each level instead, which is the same thing errors.As would do
+	// if the type were exported.
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if !soap.IsSoapFault(e) {
+			continue
+		}
+		switch soap.ToSoapFault(e).VimFault().(type) {
 		case types.ManagedObjectNotFound, *types.ManagedObjectNotFound:
 			return true
 		}
+		break
 	}
+
 	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
