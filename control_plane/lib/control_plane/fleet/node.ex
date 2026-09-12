@@ -21,6 +21,9 @@ defmodule ControlPlane.Fleet.Node do
   @max_total_ram_mb 1_048_576
   @max_total_disk_gb 65_536
 
+  @typedoc "A persisted node row."
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "nodes" do

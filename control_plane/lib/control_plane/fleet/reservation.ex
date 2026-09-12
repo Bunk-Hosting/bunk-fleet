@@ -10,6 +10,9 @@ defmodule ControlPlane.Fleet.Reservation do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Vps
 
+  @typedoc "A persisted reservation row."
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "reservations" do
