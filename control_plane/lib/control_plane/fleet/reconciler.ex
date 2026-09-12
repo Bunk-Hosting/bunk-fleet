@@ -89,6 +89,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     reconcile_nodes()
     reclaim_reservations()
     fail_stuck_creates()
+    retry_stuck_deletes()
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
     settle_subscriptions()
@@ -190,6 +191,20 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler stuck-create sweep failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  defp retry_stuck_deletes do
+    count = Provisioning.retry_stuck_deletes()
+
+    if count > 0 do
+      Logger.info("fleet reconciler retried failed teardowns", retried: count)
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler delete-retry sweep failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end

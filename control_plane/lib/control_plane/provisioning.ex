@@ -108,6 +108,75 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Re-dispatches teardowns that failed, and returns how many it retried.
+
+  A delete whose command fails leaves the VPS `:deleting` with a live VM still
+  running on the node. It is recoverable — asking to delete again dispatches a
+  fresh command — but the dashboard shows "being deleted" and offers no second
+  button, so the nudge has to come from here.
+
+  The spacing doubles with each failure: five minutes after the first, ten after
+  the second, and so on to a ceiling. That is deliberate in both directions. A
+  transient error — a busy storage, a node mid-reboot — clears on the next
+  attempt; a real one (a VM the hypervisor will not release) stops generating a
+  command every thirty seconds while still being retried hours later, when the
+  node that was down for maintenance comes back.
+
+  There is no give-up state on purpose. Marking the VPS `:failed` would let the
+  customer clear it from their list while its VM kept running and its capacity
+  stayed booked — tidy for them, a leak for the fleet.
+  """
+  def retry_stuck_deletes(grace_seconds \\ 300, max_backoff_seconds \\ 6 * 3600) do
+    now = DateTime.utc_now()
+
+    candidates =
+      Repo.all(
+        from v in Vps,
+          as: :vps,
+          where: v.status == :deleting and not is_nil(v.node_id),
+          where:
+            not exists(
+              from c in Command,
+                where:
+                  c.vps_id == parent_as(:vps).id and c.kind == :delete and
+                    c.status in [:pending, :delivered],
+                select: 1
+            )
+      )
+
+    candidates
+    |> Enum.filter(&due_for_delete_retry?(&1, now, grace_seconds, max_backoff_seconds))
+    |> Enum.map(fn vps ->
+      Logger.error("retrying the failed teardown of vps #{vps.id}")
+      dispatch_delete(vps)
+    end)
+    |> length()
+  end
+
+  defp due_for_delete_retry?(%Vps{} = vps, now, grace_seconds, max_backoff_seconds) do
+    failures =
+      Repo.all(
+        from c in Command,
+          where: c.vps_id == ^vps.id and c.kind == :delete and c.status == :failed,
+          order_by: [desc: c.updated_at],
+          select: c.updated_at
+      )
+
+    case failures do
+      [] ->
+        false
+
+      [last | _] ->
+        # 5 min, 10, 20, 40… so a genuinely broken teardown stops churning while
+        # still being retried long after a node comes back.
+        backoff =
+          min(grace_seconds * Integer.pow(2, length(failures) - 1), max_backoff_seconds)
+
+        DateTime.diff(now, last, :second) >= backoff
+    end
+  end
+
+  @doc """
   Creates a VPS on behalf of an authenticated owner, enforcing the per-owner quota
   and stamping ownership from the trusted session (never the request body).
 
@@ -766,9 +835,13 @@ defmodule ControlPlane.Provisioning do
   # error on the command (done by the caller) and log for an operator to retry.
   defp finalize_vps(multi, %Command{kind: :delete, vps_id: vps_id}, :failed, result)
        when not is_nil(vps_id) do
+    # Left :deleting with its VM still there — which is the truth, and which the
+    # reconciler now acts on: retry_stuck_deletes/2 re-dispatches on a widening
+    # interval rather than leaving the row to sit there hoping someone clicks
+    # delete a second time.
     Logger.error(
       "delete command failed for vps #{vps_id}: #{inspect(result["error"])}; " <>
-        "VPS left intact for retry"
+        "the teardown will be retried"
     )
 
     multi
