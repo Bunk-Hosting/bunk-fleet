@@ -17,6 +17,8 @@ defmodule ControlPlaneWeb.ConnCase do
 
   use ExUnit.CaseTemplate
 
+  alias ControlPlane.Accounts.LoginThrottle
+
   using do
     quote do
       # The default endpoint for testing
@@ -39,6 +41,7 @@ defmodule ControlPlaneWeb.ConnCase do
     # accumulated limiter state (auth_controller / rate_limiter) run async: false
     # so this reset never races their request sequences.
     ControlPlane.RateLimiter.reset()
+    LoginThrottle.reset()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end

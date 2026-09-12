@@ -16,6 +16,8 @@ defmodule ControlPlane.DataCase do
 
   use ExUnit.CaseTemplate
 
+  alias ControlPlane.Accounts.LoginThrottle
+
   using do
     quote do
       alias ControlPlane.Repo
@@ -29,6 +31,9 @@ defmodule ControlPlane.DataCase do
 
   setup tags do
     ControlPlane.DataCase.setup_sandbox(tags)
+    # Failed-login counters are a single global ETS keyed by address; without a
+    # per-test reset, one test's wrong passwords throttle the next one's login.
+    LoginThrottle.reset()
     :ok
   end
 

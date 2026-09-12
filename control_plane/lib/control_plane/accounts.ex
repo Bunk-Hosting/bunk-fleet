@@ -11,6 +11,7 @@ defmodule ControlPlane.Accounts do
 
   require Logger
 
+  alias ControlPlane.Accounts.LoginThrottle
   alias ControlPlane.Accounts.User
   alias ControlPlane.Accounts.UserToken
   alias ControlPlane.Credits
@@ -333,11 +334,38 @@ defmodule ControlPlane.Accounts do
   """
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
-    user = Repo.get_by(User, email: String.downcase(email))
-    if User.valid_password?(user, password), do: user
+    # Throttled accounts are told exactly what a wrong password is told. Both the
+    # JSON API and the browser form come through here, so this is the one place
+    # the check has to be.
+    if LoginThrottle.blocked?(email), do: nil, else: verify_password(email, password)
   end
 
   def get_user_by_email_and_password(_email, _password), do: nil
+
+  defp verify_password(email, password) do
+    user = Repo.get_by(User, email: String.downcase(email))
+
+    # valid_password?/2 hashes against a dummy when `user` is nil, so an address
+    # that exists and one that does not take the same time to reject.
+    if User.valid_password?(user, password) do
+      LoginThrottle.clear(email)
+      user
+    else
+      note_failed_login(email)
+      nil
+    end
+  end
+
+  defp note_failed_login(email) do
+    failures = LoginThrottle.note_failure(email)
+
+    # Worth a line in the log: a single account collecting failures from many
+    # addresses is credential stuffing, and nothing else in the system can see it.
+    if failures in [5, 10, 20],
+      do: Logger.warning("login throttle: #{failures} failed attempts against an account")
+
+    :ok
+  end
 
   @doc """
   Generates a new session token for `user`, persists its hash, and returns the raw

@@ -14,6 +14,7 @@ defmodule ControlPlane.Application do
         {DNSCluster, query: Application.get_env(:control_plane, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: ControlPlane.PubSub},
         ControlPlane.RateLimiter,
+        ControlPlane.Accounts.LoginThrottle,
         # Tracks live console SSH sessions per user (duplicate keys = {:user, id}).
         {Registry, keys: :duplicate, name: ControlPlane.Console.Registry},
         # One entry per in-flight console relay, keyed by its relay token — this
