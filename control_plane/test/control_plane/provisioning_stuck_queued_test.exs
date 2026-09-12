@@ -1,8 +1,11 @@
 defmodule ControlPlane.ProvisioningStuckQueuedTest do
   use ControlPlane.DataCase, async: true
 
+  alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Provisioning
-  alias ControlPlane.Fleet.{Command, Node, Region, Vps}
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

@@ -1,8 +1,12 @@
 defmodule ControlPlaneWeb.BillingControllerTest do
   use ControlPlaneWeb.ConnCase, async: true
 
-  alias ControlPlane.{Accounts, Billing, Repo}
-  alias ControlPlane.Fleet.{Node, Region, Vps}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Billing
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Repo
 
   @now ~U[2026-06-25 12:00:00Z]
   @from "2026-06-25T11:00:00Z"

@@ -7,7 +7,8 @@ defmodule ControlPlane.Fleet.Vps do
   import Ecto.Changeset
 
   alias ControlPlane.Accounts.User
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

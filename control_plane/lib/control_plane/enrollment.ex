@@ -14,8 +14,10 @@ defmodule ControlPlane.Enrollment do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Fleet.EnrollToken
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Subnets
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{EnrollToken, Node, Subnets}
 
   @token_bytes 32
 

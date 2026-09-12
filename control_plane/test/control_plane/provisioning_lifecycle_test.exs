@@ -1,8 +1,10 @@
 defmodule ControlPlane.ProvisioningLifecycleTest do
   use ControlPlane.DataCase, async: true
 
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Provisioning
-  alias ControlPlane.Fleet.{Node, Region, Vps}
 
   defp insert_region do
     code = "r-#{System.unique_integer([:positive])}"

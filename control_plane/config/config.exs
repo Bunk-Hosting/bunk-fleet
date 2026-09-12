@@ -37,7 +37,22 @@ config :control_plane, ControlPlaneWeb.Endpoint,
 # Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  # Every key a Logger call passes as metadata has to be named here or the
+  # console backend silently drops it — the structured fields would simply not
+  # appear, which is worse than not having logged them, because the code says
+  # they are there. `crash_reason` is what a rescued exception attaches its
+  # stacktrace to; the rest are counters the reconciler's sweeps report.
+  metadata: [
+    :request_id,
+    :crash_reason,
+    :marked_offline,
+    :reclaimed,
+    :metered,
+    :retried,
+    :started,
+    :errors,
+    :count
+  ]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

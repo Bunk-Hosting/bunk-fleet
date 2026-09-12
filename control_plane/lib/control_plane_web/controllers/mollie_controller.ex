@@ -14,7 +14,8 @@ defmodule ControlPlaneWeb.MollieController do
   import ControlPlaneWeb.ApiResponse
   require Logger
 
-  alias ControlPlane.{Credits, Mollie}
+  alias ControlPlane.Credits
+  alias ControlPlane.Mollie
 
   @min_cents 500
   @max_cents 100_000

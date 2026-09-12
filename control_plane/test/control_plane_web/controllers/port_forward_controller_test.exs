@@ -1,8 +1,12 @@
 defmodule ControlPlaneWeb.PortForwardControllerTest do
   use ControlPlaneWeb.ConnCase, async: true
 
-  alias ControlPlane.{Enrollment, Repo}
-  alias ControlPlane.Fleet.{Node, PortPool, Region, Vps}
+  alias ControlPlane.Enrollment
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.PortPool
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Repo
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

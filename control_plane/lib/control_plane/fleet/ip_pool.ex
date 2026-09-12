@@ -19,9 +19,10 @@ defmodule ControlPlane.Fleet.IpPool do
   """
   import Ecto.Query
 
-  alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Node, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Net
+  alias ControlPlane.Repo
 
   @doc """
   Allocates the next free address on `node`. Returns `{:ok, %{ip: ip, config: ip_config}}`

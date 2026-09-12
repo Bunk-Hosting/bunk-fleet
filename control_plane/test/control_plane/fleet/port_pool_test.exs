@@ -1,7 +1,11 @@
 defmodule ControlPlane.Fleet.PortPoolTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.Fleet.{Node, PortForward, PortPool, Region, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.PortForward
+  alias ControlPlane.Fleet.PortPool
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

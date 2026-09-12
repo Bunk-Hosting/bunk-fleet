@@ -17,7 +17,8 @@ defmodule ControlPlaneWeb.BillingController do
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.{Billing, Credits}
+  alias ControlPlane.Billing
+  alias ControlPlane.Credits
   alias ControlPlaneWeb.TimeWindow
 
   @doc """
@@ -36,17 +37,18 @@ defmodule ControlPlaneWeb.BillingController do
   end
 
   def usage(conn, params) do
-    with {:ok, {from, to}} <- TimeWindow.parse(params) do
-      usage = Billing.customer_usage(conn.assigns.current_user.id, {from, to})
+    case TimeWindow.parse(params) do
+      {:ok, {from, to}} ->
+        usage = Billing.customer_usage(conn.assigns.current_user.id, {from, to})
 
-      json(conn, %{
-        from: DateTime.to_iso8601(from),
-        to: DateTime.to_iso8601(to),
-        total_seconds: usage.total_seconds,
-        total_cost: Decimal.to_string(usage.total_cost),
-        vpses: Enum.map(usage.vpses, &vps_json/1)
-      })
-    else
+        json(conn, %{
+          from: DateTime.to_iso8601(from),
+          to: DateTime.to_iso8601(to),
+          total_seconds: usage.total_seconds,
+          total_cost: Decimal.to_string(usage.total_cost),
+          vpses: Enum.map(usage.vpses, &vps_json/1)
+        })
+
       {:error, :invalid_datetime} ->
         bad_request(conn, "invalid_datetime", "from and to must be ISO8601 datetimes")
 

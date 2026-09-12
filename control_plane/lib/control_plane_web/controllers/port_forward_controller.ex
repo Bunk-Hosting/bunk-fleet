@@ -12,7 +12,8 @@ defmodule ControlPlaneWeb.PortForwardController do
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.Fleet.{PortForward, PortPool}
+  alias ControlPlane.Fleet.PortForward
+  alias ControlPlane.Fleet.PortPool
   alias ControlPlane.Repo
 
   def index(conn, _params) do

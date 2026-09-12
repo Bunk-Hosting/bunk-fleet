@@ -1,7 +1,9 @@
 defmodule ControlPlane.Fleet.SchedulerTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.Fleet.{Node, Region, Reservation}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Reservation
   alias ControlPlane.Fleet.Scheduler
 
   # --- inline insert helpers -------------------------------------------------

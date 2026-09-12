@@ -2,7 +2,9 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
   use ControlPlane.DataCase, async: true
 
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Reconciler, Region}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Reconciler
+  alias ControlPlane.Fleet.Region
 
   # --- inline insert helpers -------------------------------------------------
 

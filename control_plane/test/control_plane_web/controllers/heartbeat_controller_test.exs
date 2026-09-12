@@ -1,9 +1,10 @@
 defmodule ControlPlaneWeb.HeartbeatControllerTest do
   use ControlPlaneWeb.ConnCase
 
-  alias ControlPlane.Repo
   alias ControlPlane.Enrollment
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Repo
 
   defp create_region(_) do
     region =

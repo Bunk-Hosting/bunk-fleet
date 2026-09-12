@@ -3,10 +3,14 @@ defmodule ControlPlane.Subscriptions do
   import Ecto.Query
   require Logger
 
+  alias ControlPlane.Accounts
+  alias ControlPlane.Credits
+  alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Notifier
+  alias ControlPlane.Provisioning
   alias ControlPlane.Repo
   alias ControlPlane.Subscriptions.Subscription
-  alias ControlPlane.{Accounts, Credits, Fleet, Notifier, Provisioning}
-  alias ControlPlane.Fleet.Vps
 
   # A VPS in one of these states is gone (or never came up); its subscription must
   # never be charged. `:failed` is included so a provision that never produced a VM

@@ -14,10 +14,15 @@ defmodule ControlPlaneWeb.VpsController do
   use ControlPlaneWeb, :controller
   import ControlPlaneWeb.ApiResponse
 
-  alias ControlPlane.{Credits, Fleet, Provisioning}
   alias ControlPlane.Backups
   alias ControlPlane.Backups.VpsBackup
-  alias ControlPlane.Fleet.{Node, Package, Region, Vps}
+  alias ControlPlane.Credits
+  alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Package
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Provisioning
 
   def index(conn, _params) do
     vpses =

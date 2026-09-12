@@ -27,7 +27,8 @@ defmodule ControlPlane.Backups do
   require Logger
 
   alias ControlPlane.Backups.VpsBackup
-  alias ControlPlane.Fleet.{Command, Vps}
+  alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Repo
   alias Ecto.Multi
 

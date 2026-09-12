@@ -10,7 +10,8 @@ defmodule ControlPlane.Fleet.Command do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias ControlPlane.Fleet.{Node, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Vps
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

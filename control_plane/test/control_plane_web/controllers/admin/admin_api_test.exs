@@ -1,10 +1,11 @@
 defmodule ControlPlaneWeb.Admin.AdminApiTest do
   use ControlPlaneWeb.ConnCase
 
-  alias ControlPlane.Repo
   alias ControlPlane.Enrollment
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Provisioning
-  alias ControlPlane.Fleet.{Region, Vps}
+  alias ControlPlane.Repo
 
   @admin_token "test-admin-token"
 

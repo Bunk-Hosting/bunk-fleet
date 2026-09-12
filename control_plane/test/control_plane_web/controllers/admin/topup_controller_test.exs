@@ -1,7 +1,8 @@
 defmodule ControlPlaneWeb.Admin.TopupControllerTest do
   use ControlPlaneWeb.ConnCase
 
-  alias ControlPlane.{Accounts, Credits}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Credits
 
   @admin_token "test-admin-token"
   defp auth(conn), do: put_req_header(conn, "authorization", "Bearer " <> @admin_token)

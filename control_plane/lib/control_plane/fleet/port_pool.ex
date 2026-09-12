@@ -10,7 +10,8 @@ defmodule ControlPlane.Fleet.PortPool do
   """
   import Ecto.Query
 
-  alias ControlPlane.Fleet.{Node, PortForward}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.PortForward
 
   @default_start 20_000
   @default_end 29_999

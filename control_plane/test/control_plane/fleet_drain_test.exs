@@ -2,7 +2,9 @@ defmodule ControlPlane.FleetDrainTest do
   use ControlPlane.DataCase, async: true
 
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Region, Scheduler}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Scheduler
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

@@ -2,7 +2,9 @@ defmodule ControlPlane.Fleet.IpPoolTest do
   use ControlPlane.DataCase, async: true
 
   alias ControlPlane.Fleet.IpPool
-  alias ControlPlane.Fleet.{Node, Region, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

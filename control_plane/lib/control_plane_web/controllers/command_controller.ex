@@ -18,9 +18,9 @@ defmodule ControlPlaneWeb.CommandController do
   use ControlPlaneWeb, :controller
 
   alias ControlPlane.Console
+  alias ControlPlane.Fleet.Command
   alias ControlPlane.Provisioning
   alias ControlPlane.Repo
-  alias ControlPlane.Fleet.Command
 
   def index(conn, _params) do
     node = conn.assigns.current_node

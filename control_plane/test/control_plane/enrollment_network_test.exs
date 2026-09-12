@@ -1,8 +1,11 @@
 defmodule ControlPlane.EnrollmentNetworkTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.{Enrollment, Repo}
-  alias ControlPlane.Fleet.{Node, Region, Subnets}
+  alias ControlPlane.Enrollment
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Subnets
+  alias ControlPlane.Repo
 
   defp token(code) do
     region = %Region{} |> Region.changeset(%{code: code, name: "R"}) |> Repo.insert!()

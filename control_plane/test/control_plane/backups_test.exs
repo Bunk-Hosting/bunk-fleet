@@ -3,7 +3,10 @@ defmodule ControlPlane.BackupsTest do
 
   alias ControlPlane.Backups
   alias ControlPlane.Backups.VpsBackup
-  alias ControlPlane.Fleet.{Command, Node, Region, Vps}
+  alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
 
   defp region do
     code = "r-#{System.unique_integer([:positive])}"

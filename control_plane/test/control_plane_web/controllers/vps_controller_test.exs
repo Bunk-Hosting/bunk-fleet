@@ -3,9 +3,14 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
   import ControlPlane.Fixtures
 
-  alias ControlPlane.{Accounts, Provisioning, Repo}
+  alias ControlPlane.Accounts
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Package, Region, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Package
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Provisioning
+  alias ControlPlane.Repo
 
   # --- fixtures --------------------------------------------------------------
 

@@ -22,15 +22,16 @@ defmodule ControlPlaneWeb.Admin.BillingController do
   alias ControlPlaneWeb.TimeWindow
 
   def usage(conn, params) do
-    with {:ok, {from, to}} <- TimeWindow.parse(params, require: true) do
-      summary = Enum.map(Billing.resource_cost_summary({from, to}), &cost_json/1)
+    case TimeWindow.parse(params, require: true) do
+      {:ok, {from, to}} ->
+        summary = Enum.map(Billing.resource_cost_summary({from, to}), &cost_json/1)
 
-      json(conn, %{
-        from: DateTime.to_iso8601(from),
-        to: DateTime.to_iso8601(to),
-        cost_centres: summary
-      })
-    else
+        json(conn, %{
+          from: DateTime.to_iso8601(from),
+          to: DateTime.to_iso8601(to),
+          cost_centres: summary
+        })
+
       {:error, :invalid_datetime} ->
         conn
         |> put_status(:bad_request)

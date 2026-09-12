@@ -3,8 +3,10 @@ defmodule ControlPlaneWeb.RegionControllerTest do
 
   import ControlPlane.Fixtures
 
-  alias ControlPlane.{Accounts, Repo}
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Repo
 
   defp region(code) do
     %Region{} |> Region.changeset(%{code: code, name: "Region #{code}"}) |> Repo.insert!()

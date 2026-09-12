@@ -5,9 +5,14 @@ defmodule ControlPlane.Fleet do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Fleet.Events
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Package
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Reservation
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Repo
   alias Ecto.Multi
-  alias ControlPlane.Fleet.{Events, Node, Package, Region, Reservation, Vps}
 
   # A node is considered "online" for scheduling purposes only if it has reported
   # a heartbeat within this window.

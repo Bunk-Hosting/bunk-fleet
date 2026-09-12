@@ -17,8 +17,8 @@ defmodule ControlPlane.Console.HostKeys do
   import Ecto.Query
   require Logger
 
-  alias ControlPlane.Repo
   alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Repo
 
   @doc """
   Verifies a presented host-key `fingerprint` (a `"SHA256:..."` string) against the

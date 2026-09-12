@@ -3,7 +3,8 @@ defmodule ControlPlaneWeb.DashboardLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias ControlPlane.{Accounts, Fleet}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Events
 
   # The fleet dashboard at "/" is admin-only (UserAuth :ensure_staff). Put an

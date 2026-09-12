@@ -11,8 +11,11 @@ defmodule ControlPlane.Accounts do
 
   require Logger
 
-  alias ControlPlane.{Credits, Notifier, Repo}
-  alias ControlPlane.Accounts.{User, UserToken}
+  alias ControlPlane.Accounts.User
+  alias ControlPlane.Accounts.UserToken
+  alias ControlPlane.Credits
+  alias ControlPlane.Notifier
+  alias ControlPlane.Repo
 
   @doc """
   Fetches a user by id, raising `Ecto.NoResultsError` if none exists.

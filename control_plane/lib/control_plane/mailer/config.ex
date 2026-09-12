@@ -116,11 +116,9 @@ defmodule ControlPlane.Mailer.Config do
   to fall back, never a reason for the node not to start.
   """
   def cacertfile(nil) do
-    try do
-      CAStore.file_path()
-    rescue
-      _ -> @fallback_cacertfile
-    end
+    CAStore.file_path()
+  rescue
+    _ -> @fallback_cacertfile
   end
 
   def cacertfile(path) when is_binary(path), do: path

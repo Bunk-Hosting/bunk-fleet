@@ -11,10 +11,15 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   use ControlPlaneWeb, :controller
   import Ecto.Query
 
-  alias ControlPlane.{Accounts, Credits, Fleet, Provisioning, Repo}
+  alias ControlPlane.Accounts
   alias ControlPlane.Accounts.User
+  alias ControlPlane.Credits
   alias ControlPlane.Credits.LedgerEntry
-  alias ControlPlane.Fleet.{Node, Vps}
+  alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Provisioning
+  alias ControlPlane.Repo
 
   # --- Stats ---------------------------------------------------------------
 

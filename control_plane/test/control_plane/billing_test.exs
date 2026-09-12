@@ -4,7 +4,9 @@ defmodule ControlPlane.BillingTest do
   alias ControlPlane.Accounts
   alias ControlPlane.Billing
   alias ControlPlane.Billing.UsageRecord
-  alias ControlPlane.Fleet.{Node, Region, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
 
   # A fixed "now" for deterministic metering/seconds assertions.
   @now ~U[2026-06-25 12:00:00Z]

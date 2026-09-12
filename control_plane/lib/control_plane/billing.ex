@@ -70,9 +70,11 @@ defmodule ControlPlane.Billing do
   import Ecto.Query, warn: false
   require Logger
 
-  alias ControlPlane.Repo
   alias ControlPlane.Billing.UsageRecord
-  alias ControlPlane.Fleet.{Command, Node, Vps}
+  alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Repo
 
   # Exact divisor folded into every per-record numerator: seconds→hours (3600)
   # times MB→GB (1024). Kept as an integer Decimal so the single final division
@@ -179,8 +181,9 @@ defmodule ControlPlane.Billing do
 
     # Process in bounded batches of 1,000, each in its OWN short transaction. A
     # single insert_all over the whole active fleet blows Postgres's 65,535
-    # bind-parameter cap above ~7k VPSes (a total metering outage), and locking every active VPS at once stalls all provision / power /
-    # delete finalisation for the entire tick. The UNIQUE (vps_id, metered_at)
+    # bind-parameter cap above ~7k VPSes (a total metering outage), and locking
+    # every active VPS at once stalls all provision / power / delete
+    # finalisation for the entire tick. The UNIQUE (vps_id, metered_at)
     # index keeps each batch double-bill safe on its own.
     owner_by_vps
     |> Map.keys()

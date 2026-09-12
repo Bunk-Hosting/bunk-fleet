@@ -7,7 +7,8 @@ defmodule ControlPlaneWeb.Admin.CreditController do
   """
   use ControlPlaneWeb, :controller
 
-  alias ControlPlane.{Accounts, Credits}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Credits
 
   # GET /admin/v1/credits?email=...  -> balance + recent ledger entries
   def show(conn, %{"email" => email}) do

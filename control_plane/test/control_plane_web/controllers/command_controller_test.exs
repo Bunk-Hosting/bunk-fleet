@@ -1,10 +1,13 @@
 defmodule ControlPlaneWeb.CommandControllerTest do
   use ControlPlaneWeb.ConnCase
 
-  alias ControlPlane.Repo
   alias ControlPlane.Enrollment
+  alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Reservation
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Provisioning
-  alias ControlPlane.Fleet.{Command, Region, Reservation, Vps}
+  alias ControlPlane.Repo
 
   defp create_region(_) do
     region =

@@ -1,8 +1,10 @@
 defmodule ControlPlaneWeb.Admin.NodeDrainTest do
   use ControlPlaneWeb.ConnCase, async: true
 
-  alias ControlPlane.{Fleet, Repo}
-  alias ControlPlane.Fleet.{Node, Region}
+  alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Repo
 
   @admin_token "test-admin-token"
 

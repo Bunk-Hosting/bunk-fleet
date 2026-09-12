@@ -1,7 +1,8 @@
 defmodule ControlPlane.CreditsTopupTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.{Accounts, Credits}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Credits
 
   defp user(email) do
     {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})

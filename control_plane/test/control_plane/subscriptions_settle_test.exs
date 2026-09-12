@@ -1,9 +1,13 @@
 defmodule ControlPlane.SubscriptionsSettleTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.{Accounts, Credits, Subscriptions}
+  alias ControlPlane.Accounts
+  alias ControlPlane.Credits
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Subscriptions
   alias ControlPlane.Subscriptions.Subscription
-  alias ControlPlane.Fleet.{Node, Region, Vps}
 
   defp insert_user do
     n = System.unique_integer([:positive])

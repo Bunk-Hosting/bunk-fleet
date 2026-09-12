@@ -9,8 +9,9 @@ defmodule ControlPlane.Credits do
   separate per-resource-hour metering in `ControlPlane.Billing`.
   """
   import Ecto.Query
+  alias ControlPlane.Credits.LedgerEntry
+  alias ControlPlane.Credits.TopupRequest
   alias ControlPlane.Repo
-  alias ControlPlane.Credits.{LedgerEntry, TopupRequest}
 
   @signup_bonus_cents 1000
   @size_prices_cents %{"small" => 300, "medium" => 600, "large" => 1200}

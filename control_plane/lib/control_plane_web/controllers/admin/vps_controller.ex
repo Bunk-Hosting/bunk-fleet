@@ -11,7 +11,8 @@ defmodule ControlPlaneWeb.Admin.VpsController do
   use ControlPlaneWeb, :controller
 
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Region, Vps}
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Provisioning
 
   def index(conn, _params) do

@@ -14,10 +14,11 @@ defmodule ControlPlane.Fleet.Scheduler do
   """
   import Ecto.Query
 
-  alias Ecto.Multi
-  alias ControlPlane.Repo
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Reservation}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Reservation
+  alias ControlPlane.Repo
+  alias Ecto.Multi
 
   @type request :: %{
           required(:region_id) => binary(),

@@ -10,7 +10,8 @@ defmodule ControlPlaneWeb.ConsoleController do
   use ControlPlaneWeb, :controller
   import ControlPlaneWeb.ApiResponse
 
-  alias ControlPlane.{Console, Fleet}
+  alias ControlPlane.Console
+  alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Vps
 
   def create_ticket(conn, %{"id" => id}) do

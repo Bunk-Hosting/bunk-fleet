@@ -14,12 +14,18 @@ defmodule ControlPlane.Provisioning do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Ecto.Multi
-  alias ControlPlane.Repo
-  alias ControlPlane.Fleet.{Command, Node, PortPool, Reservation, Vps}
-  alias ControlPlane.Locks
+  alias ControlPlane.Backups
+  alias ControlPlane.Console.HostKeys
+  alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.PortPool
+  alias ControlPlane.Fleet.Reservation
   alias ControlPlane.Fleet.Scheduler
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Locks
+  alias ControlPlane.Repo
+  alias Ecto.Multi
 
   # How long a `:delivered` command may sit without a reported result before it
   # is considered lost (agent crashed mid-flight) and becomes eligible for
@@ -904,7 +910,7 @@ defmodule ControlPlane.Provisioning do
     case payload["backup_id"] do
       id when is_binary(id) ->
         Multi.run(multi, :backup, fn _repo, _changes ->
-          ControlPlane.Backups.record_result(id, result)
+          Backups.record_result(id, result)
         end)
 
       _ ->
@@ -916,7 +922,7 @@ defmodule ControlPlane.Provisioning do
     case payload["backup_id"] do
       id when is_binary(id) ->
         Multi.run(multi, :backup, fn _repo, _changes ->
-          ControlPlane.Backups.forget(id)
+          Backups.forget(id)
         end)
 
       _ ->
@@ -964,7 +970,7 @@ defmodule ControlPlane.Provisioning do
         # read that as exactly the attack it exists to catch and refuse the
         # console — locking the customer out of the thing they would use to check
         # the restore worked. Forget the pin; the next connection pins afresh.
-        ControlPlane.Console.HostKeys.forget(vps.id)
+        HostKeys.forget(vps.id)
 
         repo.update(changeset)
       else

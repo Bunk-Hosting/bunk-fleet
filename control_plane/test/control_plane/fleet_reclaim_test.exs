@@ -3,7 +3,10 @@ defmodule ControlPlane.FleetReclaimTest do
   use ControlPlane.DataCase, async: true
 
   alias ControlPlane.Fleet
-  alias ControlPlane.Fleet.{Node, Region, Reservation, Vps}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Reservation
+  alias ControlPlane.Fleet.Vps
 
   defp setup_node do
     region =

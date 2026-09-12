@@ -1,7 +1,9 @@
 defmodule ControlPlane.Fleet.SubnetsTest do
   use ControlPlane.DataCase, async: true
 
-  alias ControlPlane.Fleet.{Node, Region, Subnets}
+  alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Subnets
   alias ControlPlane.Net
 
   defp region do
