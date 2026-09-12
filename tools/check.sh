@@ -36,6 +36,8 @@ check_elixir() {
     -e MIX_ENV=test \
     -e DB_HOST="$DB_HOST" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
     elixir:1.17-alpine sh -eu -c '
+      # mix_audit fetches the advisory database over git; the base image has none.
+      apk add --no-cache git >/dev/null
       mix local.hex --force >/dev/null
       mix local.rebar --force >/dev/null
       mix deps.get >/dev/null

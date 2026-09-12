@@ -18,6 +18,7 @@ defmodule ControlPlane.Provisioning do
   alias ControlPlane.Console.HostKeys
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
+  alias ControlPlane.Fleet.IpPool
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.PortPool
   alias ControlPlane.Fleet.Reservation
@@ -25,6 +26,8 @@ defmodule ControlPlane.Provisioning do
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Locks
   alias ControlPlane.Repo
+  alias ControlPlane.Subscriptions
+  alias ControlPlane.Subscriptions.Subscription
   alias Ecto.Multi
 
   # How long a `:delivered` command may sit without a reported result before it
@@ -198,54 +201,53 @@ defmodule ControlPlane.Provisioning do
       |> Map.put(:owner_id, owner_id)
       |> Map.put(:owner_email, email)
 
-    # The quota gate + durable :queued insert run in ONE short transaction: the
-    # per-owner advisory lock (auto-released at commit) serialises concurrent
-    # creates against the quota check, so two can't both pass the cap (TOCTOU).
-    #
-    # Placement + dispatch deliberately run AFTER this commits — each in its own
+    # Placement + dispatch deliberately run AFTER the insert commits — each in its own
     # top-level transaction, never nested inside this one. Ecto uses no savepoint
     # for a nested transaction, so a normal placement failure (fleet full, IP
     # collision) inside the scheduler's `Repo.transaction` would otherwise poison
     # this enclosing transaction, and the following `mark_vps_failed`/reservation-
     # release update would raise "current transaction is aborted" → HTTP 500
     # instead of a clean {:error, :no_capacity} (→ 409).
-    case Repo.transaction(fn ->
-           :ok = Locks.take(Repo, :owner_quota, owner_id)
-
-           if count_live_vpses(owner_id) >= max_vpses_per_owner() do
-             Repo.rollback(:quota_exceeded)
-           else
-             case Repo.insert(vps_changeset(full)) do
-               {:ok, vps} -> vps
-               {:error, changeset} -> Repo.rollback(changeset)
-             end
-           end
-         end) do
-      {:error, reason} ->
-        {:error, reason}
-
-      {:ok, %Vps{} = vps} ->
-        req = %{
-          region_id: full[:region_id] || full["region_id"],
-          vcpu: full[:vcpu] || full["vcpu"],
-          ram_mb: full[:ram_mb] || full["ram_mb"],
-          disk_gb: full[:disk_gb] || full["disk_gb"]
-        }
-
-        case place_and_dispatch(vps, req, full) do
-          {:ok, %{vps: vps}} ->
-            ControlPlane.Subscriptions.create_for_vps(
-              vps,
-              owner_id,
-              full[:package_id] || full["package_id"]
-            )
-
-            {:ok, %{vps: vps}}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+    with {:ok, %Vps{} = vps} <- insert_within_quota(owner_id, full),
+         {:ok, %{vps: placed}} <- place_and_dispatch(vps, placement_request(full), full) do
+      start_subscription(placed, owner_id, full)
+      {:ok, %{vps: placed}}
     end
+  end
+
+  # The quota gate and the durable :queued insert, in one short transaction: the
+  # per-owner advisory lock (auto-released at commit) serialises concurrent
+  # creates against the quota check, so two cannot both pass the cap.
+  defp insert_within_quota(owner_id, attrs) do
+    Repo.transaction(fn ->
+      :ok = Locks.take(Repo, :owner_quota, owner_id)
+
+      if count_live_vpses(owner_id) >= max_vpses_per_owner() do
+        Repo.rollback(:quota_exceeded)
+      else
+        insert_or_rollback(attrs)
+      end
+    end)
+  end
+
+  defp insert_or_rollback(attrs) do
+    case Repo.insert(vps_changeset(attrs)) do
+      {:ok, vps} -> vps
+      {:error, changeset} -> Repo.rollback(changeset)
+    end
+  end
+
+  defp placement_request(attrs) do
+    %{
+      region_id: attrs[:region_id] || attrs["region_id"],
+      vcpu: attrs[:vcpu] || attrs["vcpu"],
+      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
+      disk_gb: attrs[:disk_gb] || attrs["disk_gb"]
+    }
+  end
+
+  defp start_subscription(%Vps{} = vps, owner_id, attrs) do
+    Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
   end
 
   @doc """
@@ -345,7 +347,7 @@ defmodule ControlPlane.Provisioning do
     else
       :ok = Locks.take(repo, :node_allocation, node.id)
 
-      case ControlPlane.Fleet.IpPool.allocate(node) do
+      case IpPool.allocate(node) do
         {:ok, %{ip: ip, config: cfg}} ->
           {:ok, {attrs |> Map.put(:ip_config, cfg) |> Map.put(:ip_address, ip), ip}}
 
@@ -410,7 +412,7 @@ defmodule ControlPlane.Provisioning do
     # Deleting a VPS ends its subscription — do it up front so recurring billing
     # stops immediately, even while an async teardown is still in flight.
     # Idempotent: a no-op if it's already cancelled or the VPS doesn't exist.
-    _ = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
+    _ = Subscriptions.cancel_for_vps(vps_id)
 
     case Repo.get(Vps, vps_id) do
       nil ->
@@ -1086,7 +1088,7 @@ defmodule ControlPlane.Provisioning do
 
   defp refund_failed_provision(repo, vps_id) do
     case repo.one(
-           from s in ControlPlane.Subscriptions.Subscription,
+           from s in Subscription,
              where: s.vps_id == ^vps_id and s.status != :cancelled
          ) do
       nil ->
@@ -1103,7 +1105,7 @@ defmodule ControlPlane.Provisioning do
             "Terugbetaling: provisioning mislukt"
           )
 
-        {:ok, _} = ControlPlane.Subscriptions.cancel_for_vps(vps_id)
+        {:ok, _} = Subscriptions.cancel_for_vps(vps_id)
         {:ok, :refunded}
     end
   end

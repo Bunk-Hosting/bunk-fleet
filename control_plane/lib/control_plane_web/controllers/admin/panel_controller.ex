@@ -94,16 +94,14 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     with {:ok, uid} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
          %User{} = user <- Accounts.get_user(uid) || :not_found,
          {:ok, role} <- parse_role(params) do
-      cond do
-        # Never let an admin strip their OWN admin role (self-lockout guard).
-        user.id == conn.assigns.current_user.id and role != :admin ->
-          error(conn, :unprocessable_entity, "cannot_demote_self")
-
-        true ->
-          case Accounts.update_user_role(user, role) do
-            {:ok, u} -> json(conn, %{id: u.id, role: u.role})
-            {:error, _} -> error(conn, :unprocessable_entity, "update_failed")
-          end
+      # Never let an admin strip their OWN admin role (self-lockout guard).
+      if user.id == conn.assigns.current_user.id and role != :admin do
+        error(conn, :unprocessable_entity, "cannot_demote_self")
+      else
+        case Accounts.update_user_role(user, role) do
+          {:ok, u} -> json(conn, %{id: u.id, role: u.role})
+          {:error, _} -> error(conn, :unprocessable_entity, "update_failed")
+        end
       end
     else
       :not_found -> error(conn, :not_found, "not_found")

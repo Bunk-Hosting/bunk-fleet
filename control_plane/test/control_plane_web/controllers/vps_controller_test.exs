@@ -4,6 +4,7 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   import ControlPlane.Fixtures
 
   alias ControlPlane.Accounts
+  alias ControlPlane.Backups.VpsBackup
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Package
@@ -160,8 +161,8 @@ defmodule ControlPlaneWeb.VpsControllerTest do
 
   describe "backups" do
     defp done_backup(vps) do
-      %ControlPlane.Backups.VpsBackup{}
-      |> ControlPlane.Backups.VpsBackup.changeset(%{
+      %VpsBackup{}
+      |> VpsBackup.changeset(%{
         vps_id: vps.id,
         node_id: vps.node_id,
         status: :done,

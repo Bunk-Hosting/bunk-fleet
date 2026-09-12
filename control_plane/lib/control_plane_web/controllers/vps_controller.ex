@@ -45,8 +45,9 @@ defmodule ControlPlaneWeb.VpsController do
   def create(conn, params) do
     user = conn.assigns.current_user
 
-    with attrs = build_attrs(params),
-         :ok <- validate_provision_input(attrs),
+    attrs = build_attrs(params)
+
+    with :ok <- validate_provision_input(attrs),
          {:ok, region_id} <- resolve_region_id(params, attrs),
          attrs = Map.put(attrs, :region_id, region_id),
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),

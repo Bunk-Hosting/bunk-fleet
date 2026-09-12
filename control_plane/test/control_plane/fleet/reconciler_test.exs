@@ -5,6 +5,7 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Reconciler
   alias ControlPlane.Fleet.Region
+  alias Ecto.Adapters.SQL.Sandbox
 
   # --- inline insert helpers -------------------------------------------------
 
@@ -109,7 +110,7 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
       stale = insert_node(region, %{status: :online, last_heartbeat_at: stale_at()})
 
       {:ok, pid} = Reconciler.start_link(interval_ms: 5)
-      Ecto.Adapters.SQL.Sandbox.allow(ControlPlane.Repo, self(), pid)
+      Sandbox.allow(Repo, self(), pid)
 
       assert eventually(fn -> reload(stale).status == :offline end)
     end

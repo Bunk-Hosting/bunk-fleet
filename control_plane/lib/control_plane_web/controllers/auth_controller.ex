@@ -209,7 +209,7 @@ defmodule ControlPlaneWeb.AuthController do
   def logout(conn, _params) do
     # Extract from header OR the HttpOnly cookie so a cookie-based browser session
     # revokes the exact token it presented, then always clear the cookie.
-    with {:ok, encoded} <- ControlPlaneWeb.Plugs.Bearer.session_token(conn),
+    with {:ok, encoded} <- Bearer.session_token(conn),
          {:ok, token} <- Base.url_decode64(encoded, padding: false) do
       Accounts.delete_user_session_token(token)
     end
