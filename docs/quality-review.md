@@ -141,12 +141,26 @@ De Nederlandse teksten die overblijven staan in de server-gerenderde inlogformul
 waar het de zin is die iemand leest en geen code waar een client op schakelt. Dat is
 goed zo; de review las dat als een probleem en dat was het niet.
 
+De E2E-suite dekt nu elke pagina die een klant of beheerder zelf kan openen:
+/dashboard, /dashboard/vps/new, /dashboard/billing/invoices,
+/dashboard/billing/settings, /dashboard/beveiliging en /dashboard/beheer/nodes
+kwamen erbij. 63 tests over Chromium, Firefox en Mobile Chrome.
+
+De Firefox-flake die elke run op de eerste test terugkwam is opgelost nadat hij
+gemeten was in plaats van weggetimeout: Firefox' eerste navigatie tegen deze app
+kost 8,3 s koud tegen 0,4 s daarna, en daar komt het starten van het browserproces
+bovenop — samen genoeg om de standaard 30 s te halen. Het Firefox-project staat nu
+op 60 s, met de meting in het commentaar.
+
+Terzijde uit diezelfde meting: `waitUntil: "networkidle"` is tegen deze app
+onbruikbaar. Cloudflare's eigen bot-managementscript vraagt een per-bezoeker
+gegenereerde subdomeinnaam op die in een container niet resolveert, dus netwerkstilte
+komt er nooit. De specs wachten daarom op elementen, niet op stilte.
+
 ## Nog open
 
 ### Control plane
 - **[MED]** `@spec` op de publieke Fleet/Provisioning/Billing/Credits/Accounts-API.
-- **[LOW]** De `attrs[:x] || attrs["x"]`-dans normaliseren op de grens van
-  `create_vps/1` in plaats van overal.
 
 ### Agent
 - **[AFGEWEZEN]** `withClient(ctx, fn)` voor de connect-en-defer-logout-boilerplate
@@ -160,7 +174,9 @@ goed zo; de review las dat als een probleem en dat was het niet.
 ### Frontend
 - **[MED]** 17 pagina's schrijven hun eigen loading/error/try-catch. Een
   `useApiData(fetcher)`-hook haalt dat weg; dit is de grootste resterende
-  onderhoudswinst aan die kant.
+  onderhoudswinst aan die kant. Wacht bewust op dekking: elke pagina die de hook
+  raakt heeft nu een E2E-test die aantoont dat hij rendert (zie hieronder), dus
+  de migratie is verifieerbaar geworden in plaats van blind.
 - **[LOW]** Commentaar staat door elkaar in Nederlands en Engels (`safeNext` is in
   allebei becommentarieerd).
 

@@ -56,12 +56,7 @@ defmodule ControlPlane.Provisioning do
   (default `%{}`), `:ip_config` (default `nil`).
   """
   def create_vps(attrs) do
-    req = %{
-      region_id: attrs[:region_id] || attrs["region_id"],
-      vcpu: attrs[:vcpu] || attrs["vcpu"],
-      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
-      disk_gb: attrs[:disk_gb] || attrs["disk_gb"]
-    }
+    req = placement_request(attrs)
 
     # Persist the VPS up front so that even a placement failure leaves a durable,
     # `:failed` record for the customer rather than rolling everything back.
@@ -236,17 +231,22 @@ defmodule ControlPlane.Provisioning do
     end
   end
 
+  # Callers arrive from two directions: a controller with string keys off the
+  # wire, and internal code with atom keys. Both are accepted here, at the one
+  # boundary, so nothing further in returns to guessing which it got.
   defp placement_request(attrs) do
     %{
-      region_id: attrs[:region_id] || attrs["region_id"],
-      vcpu: attrs[:vcpu] || attrs["vcpu"],
-      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
-      disk_gb: attrs[:disk_gb] || attrs["disk_gb"]
+      region_id: field(attrs, :region_id),
+      vcpu: field(attrs, :vcpu),
+      ram_mb: field(attrs, :ram_mb),
+      disk_gb: field(attrs, :disk_gb)
     }
   end
 
+  defp field(attrs, key), do: attrs[key] || attrs[Atom.to_string(key)]
+
   defp start_subscription(%Vps{} = vps, owner_id, attrs) do
-    Subscriptions.create_for_vps(vps, owner_id, attrs[:package_id] || attrs["package_id"])
+    Subscriptions.create_for_vps(vps, owner_id, field(attrs, :package_id))
   end
 
   @doc """
@@ -335,13 +335,13 @@ defmodule ControlPlane.Provisioning do
   # (admin override) wins; otherwise a per-node advisory lock serialises pool
   # allocation so concurrent creates can't pick the same address.
   defp allocate_ip(repo, attrs, node) do
-    cfg = attrs[:ip_config] || attrs["ip_config"]
+    cfg = field(attrs, :ip_config)
 
     if cfg do
       # Derive ip_address from the explicit config (or a passed ip_address) so the
       # control plane's record IS the assigned address — the authoritative console
       # target — rather than leaving it nil and later trusting the agent's report.
-      ip = attrs[:ip_address] || attrs["ip_address"] || Net.from_ip_config(cfg)
+      ip = field(attrs, :ip_address) || Net.from_ip_config(cfg)
       {:ok, {Map.put(attrs, :ip_address, ip), ip}}
     else
       :ok = Locks.take(repo, :node_allocation, node.id)
@@ -668,14 +668,14 @@ defmodule ControlPlane.Provisioning do
 
   defp vps_changeset(attrs) do
     Vps.changeset(%Vps{}, %{
-      name: attrs[:name] || attrs["name"],
-      region_id: attrs[:region_id] || attrs["region_id"],
-      vcpu: attrs[:vcpu] || attrs["vcpu"],
-      ram_mb: attrs[:ram_mb] || attrs["ram_mb"],
-      disk_gb: attrs[:disk_gb] || attrs["disk_gb"],
-      owner_email: attrs[:owner_email] || attrs["owner_email"],
-      owner_id: attrs[:owner_id] || attrs["owner_id"],
-      ip_address: attrs[:ip_address] || attrs["ip_address"],
+      name: field(attrs, :name),
+      region_id: field(attrs, :region_id),
+      vcpu: field(attrs, :vcpu),
+      ram_mb: field(attrs, :ram_mb),
+      disk_gb: field(attrs, :disk_gb),
+      owner_email: field(attrs, :owner_email),
+      owner_id: field(attrs, :owner_id),
+      ip_address: field(attrs, :ip_address),
       status: :queued
     })
   end
@@ -687,10 +687,10 @@ defmodule ControlPlane.Provisioning do
       "vcpu" => vps.vcpu,
       "ram_mb" => vps.ram_mb,
       "disk_gb" => vps.disk_gb,
-      "template_id" => attrs[:template_id] || attrs["template_id"] || default_template_id(),
-      "cloud_init" => attrs[:cloud_init] || attrs["cloud_init"] || %{},
-      "ssh_keys" => (attrs[:ssh_keys] || attrs["ssh_keys"] || []) ++ console_public_keys(),
-      "ip_config" => attrs[:ip_config] || attrs["ip_config"]
+      "template_id" => field(attrs, :template_id) || default_template_id(),
+      "cloud_init" => field(attrs, :cloud_init) || %{},
+      "ssh_keys" => (field(attrs, :ssh_keys) || []) ++ console_public_keys(),
+      "ip_config" => field(attrs, :ip_config)
     }
   end
 

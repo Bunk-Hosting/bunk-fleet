@@ -28,4 +28,25 @@ test.describe("Dashboard navigatie", () => {
     await page.goto("/dashboard/vps/99999");
     await expect(page.getByText(/niet gevonden/i).first()).toBeVisible({ timeout: 10000 });
   });
+
+  // Elke pagina die een klant zelf kan openen, met de kop als bewijs dat hij ook
+  // echt gerenderd is. Deze vijf stonden er nog niet in, en het zijn juist de
+  // pagina's waar data gehaald wordt zonder dat iets anders het opmerkt als dat
+  // stilvalt.
+  const pages: Array<[string, RegExp]> = [
+    ["/dashboard", /welkom terug/i],
+    ["/dashboard/vps/new", /nieuwe vps/i],
+    ["/dashboard/billing/invoices", /facturen/i],
+    ["/dashboard/billing/settings", /factuurinstellingen/i],
+    ["/dashboard/beveiliging", /beveiliging/i],
+  ];
+
+  for (const [path, heading] of pages) {
+    test(`${path} rendert`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible({
+        timeout: 15000,
+      });
+    });
+  }
 });

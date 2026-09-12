@@ -41,6 +41,13 @@ export default defineConfig({
     {
       name: "firefox",
       use: { ...devices["Desktop Firefox"] },
+      // Firefox' eerste navigatie van een run kost ~8s tegen deze app (gemeten:
+      // domcontentloaded 8,3s koud, 0,4s daarna) en daar komt het starten van het
+      // browserproces met een verse profielmap bovenop. Met de standaard van 30s
+      // viel de eerste test elke run om op een timeout die niets over de app zei.
+      // Alleen de eerste test heeft dit nodig, maar Playwright kent geen
+      // per-test-timeout per project, dus staat het op het project.
+      timeout: 60_000,
     },
     {
       name: "Mobile Chrome",

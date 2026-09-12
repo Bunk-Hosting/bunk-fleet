@@ -48,4 +48,12 @@ test.describe("Beheerpaneel", () => {
     await page.goto("/dashboard/beheer/users/99999");
     await expect(page.locator("body")).toContainText(/niet gevonden|404/i, { timeout: 10000 });
   });
+
+  test("een admin ziet het nodeoverzicht", async ({ page }) => {
+    await page.goto("/dashboard/beheer/nodes");
+
+    await expect(page.getByRole("heading", { name: "Nodes", exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+  });
 });
