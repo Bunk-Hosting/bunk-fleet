@@ -17,6 +17,7 @@ defmodule ControlPlane.Provisioning do
   alias Ecto.Multi
   alias ControlPlane.Repo
   alias ControlPlane.Fleet.{Command, Node, PortPool, Reservation, Vps}
+  alias ControlPlane.Locks
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Scheduler
 
@@ -89,9 +90,7 @@ defmodule ControlPlane.Provisioning do
     # release update would raise "current transaction is aborted" → HTTP 500
     # instead of a clean {:error, :no_capacity} (→ 409).
     case Repo.transaction(fn ->
-           Repo.query!("SELECT pg_advisory_xact_lock($1)", [
-             :erlang.phash2({:owner_vps, owner_id})
-           ])
+           :ok = Locks.take(Repo, :owner_quota, owner_id)
 
            if count_live_vpses(owner_id) >= max_vpses_per_owner() do
              Repo.rollback(:quota_exceeded)
@@ -224,7 +223,7 @@ defmodule ControlPlane.Provisioning do
       ip = attrs[:ip_address] || attrs["ip_address"] || ip_from_config(cfg)
       {:ok, {Map.put(attrs, :ip_address, ip), ip}}
     else
-      repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:vps_ip, node.id})])
+      :ok = Locks.take(repo, :node_allocation, node.id)
 
       case ControlPlane.Fleet.IpPool.allocate(node) do
         {:ok, %{ip: ip, config: cfg}} ->

@@ -105,10 +105,7 @@ defmodule ControlPlane.Fleet.Subnets do
   A transaction-scoped advisory lock rather than row locks: the thing being
   claimed is the *absence* of a row, which has nothing to lock.
   """
-  def lock(repo) do
-    repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:fleet_subnets, @supernet})])
-    :ok
-  end
+  def lock(repo), do: ControlPlane.Locks.take(repo, :fleet_subnets, @supernet)
 
   # A single-element list so callers can flat_map over a column that may hold an
   # address outside the supernet, or nothing at all.

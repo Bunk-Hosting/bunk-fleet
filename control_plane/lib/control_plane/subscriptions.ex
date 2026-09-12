@@ -175,7 +175,8 @@ defmodule ControlPlane.Subscriptions do
     cents = to_cents(sub.price_monthly)
 
     Repo.transaction(fn ->
-      Repo.query!("SELECT pg_advisory_xact_lock($1)", [:erlang.phash2({:wallet, sub.owner_id})])
+      # Same class and key as Credits.charge/4: these are one critical section.
+      :ok = ControlPlane.Locks.take(Repo, :wallet, sub.owner_id)
 
       # Atomically CLAIM this billing period: advance the date only while the row is
       # still due AND still carries the anchor we read (so a concurrent settler that
