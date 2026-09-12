@@ -32,6 +32,7 @@ defmodule ControlPlane.Fleet.Reconciler do
   alias ControlPlane.Backups
   alias ControlPlane.Billing
   alias ControlPlane.Fleet
+  alias ControlPlane.Provisioning
   alias ControlPlane.Subscriptions
 
   @default_interval_ms 30_000
@@ -87,6 +88,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     # Each sub-step is isolated so a failure in one still lets the other run.
     reconcile_nodes()
     reclaim_reservations()
+    fail_stuck_creates()
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
     settle_subscriptions()
@@ -157,6 +159,37 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler reservation reclaim failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  defp fail_stuck_creates do
+    count = Provisioning.fail_stuck_queued_vpses()
+
+    if count > 0 do
+      # Loud, and to a person: each of these is a customer who was charged for a
+      # VPS that was never created. The sweep can end the row's limbo; only
+      # someone looking at the ledger can end theirs.
+      Logger.error("failed #{count} vps(es) that were queued but never dispatched")
+
+      ControlPlane.Notifier.deliver_operational_alert(
+        "#{count} VPS(es) were charged for but never created",
+        """
+        #{count} VPS row(s) sat :queued past the grace period with no command
+        behind them, which means the control plane stopped between persisting
+        them and dispatching them. They have been marked :failed.
+
+        The customer was charged before the create. The ledger records charges
+        against a user rather than a VPS, so the refund cannot be made
+        automatically — find the vps_charge entries near these VPSes' timestamps
+        and reverse them.
+        """
+      )
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler stuck-create sweep failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end

@@ -63,6 +63,51 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Fails VPSes that were persisted but never dispatched, and says how many.
+
+  `create_vps/1` inserts the row `:queued` and then places it. Between those two
+  the control plane can stop — a deploy, a crash — and what is left is a row
+  nobody will ever act on: no command, no reservation, no node, and a customer
+  who has already been charged. It counts against their quota and shows in their
+  dashboard as something about to happen, forever.
+
+  Marking it `:failed` is the honest end state: the customer can see it went
+  wrong and delete it, and it stops occupying a quota slot. It is deliberately
+  not refunded here. The ledger records a charge against a user, not against a
+  VPS, so a sweeper cannot tell which entry to reverse without guessing — and
+  guessing with someone's money is worse than telling a person to look.
+  """
+  def fail_stuck_queued_vpses(grace_seconds \\ 600) do
+    cutoff = DateTime.utc_now() |> DateTime.add(-grace_seconds, :second)
+
+    stuck =
+      Repo.all(
+        from v in Vps,
+          as: :vps,
+          where: v.status == :queued and v.inserted_at < ^cutoff,
+          # A row with a command is mid-dispatch, not abandoned.
+          where: not exists(from c in Command, where: c.vps_id == parent_as(:vps).id, select: 1),
+          select: v.id
+      )
+
+    Enum.each(stuck, fn vps_id ->
+      Logger.error(
+        "vps #{vps_id} was queued but never dispatched; failing it. " <>
+          "The customer may have been charged — check the ledger."
+      )
+    end)
+
+    {count, _} =
+      Repo.update_all(
+        from(v in Vps, where: v.id in ^stuck),
+        set: [status: :failed, updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+      )
+
+    if count > 0, do: Events.broadcast_changed(:vps)
+    count
+  end
+
+  @doc """
   Creates a VPS on behalf of an authenticated owner, enforcing the per-owner quota
   and stamping ownership from the trusted session (never the request body).
 
