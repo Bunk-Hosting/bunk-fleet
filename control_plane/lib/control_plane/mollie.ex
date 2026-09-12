@@ -67,9 +67,17 @@ defmodule ControlPlane.Mollie do
       (rem(cents, 100) |> Integer.to_string() |> String.pad_leading(2, "0"))
   end
 
+  # `:req_options` is how the test suite points this client at a stub instead of
+  # api.mollie.com. Nothing sets it in production, and the two lines that read it
+  # are the only difference between what the tests exercise and what runs live —
+  # the request building, the status handling and the money parsing are shared.
   defp req do
-    Req.new(base_url: @base, auth: {:bearer, api_key()})
+    [base_url: @base, auth: {:bearer, api_key()}]
+    |> Keyword.merge(config(:req_options) || [])
+    |> Req.new()
   end
 
-  defp api_key, do: Application.get_env(:control_plane, :mollie)[:api_key]
+  defp api_key, do: config(:api_key)
+
+  defp config(key), do: Application.get_env(:control_plane, :mollie, [])[key]
 end

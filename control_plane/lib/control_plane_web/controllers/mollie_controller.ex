@@ -85,7 +85,6 @@ defmodule ControlPlaneWeb.MollieController do
 
   def webhook(conn, _params), do: send_resp(conn, 200, "")
 
-  # Mollie payment ids look like `tr_<alnum>`.
   # What Mollie says the payment did. The webhook itself carries no state — it is
   # only a nudge to re-fetch — so everything below is driven by the fetch.
   defp settle(payment_id, {:ok, %{status: "paid", amount: amount}}) do
@@ -125,6 +124,7 @@ defmodule ControlPlaneWeb.MollieController do
   defp credited(_payment_id, other),
     do: Logger.warning("mollie webhook credit: #{inspect(other)}")
 
+  # Mollie payment ids look like `tr_<alnum>`.
   defp valid_mollie_id?(id), do: String.match?(id, ~r/\Atr_[A-Za-z0-9]+\z/)
 
   defp parse_amount(%{"amount_cents" => v}) do

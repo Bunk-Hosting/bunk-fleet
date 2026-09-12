@@ -52,3 +52,10 @@ config :control_plane, start_reconciler: false
 # Capture sent mail in the test process's mailbox (assert_email_sent/1) instead
 # of hitting any real adapter.
 config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Test
+
+# The Mollie client talks to a Req stub instead of api.mollie.com. An api_key has
+# to be present or `Mollie.configured?/0` turns the endpoints off and the tests
+# would be asserting against a disabled feature rather than the real one.
+config :control_plane, :mollie,
+  api_key: "test_stub_key",
+  req_options: [plug: {Req.Test, ControlPlane.Mollie}]
