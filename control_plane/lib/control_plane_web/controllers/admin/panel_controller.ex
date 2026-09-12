@@ -26,7 +26,9 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   def stats(conn, _params) do
     by_role = count_by(from(u in User), :role)
     by_status = count_by(from(v in Vps), :status)
-    node_statuses = Repo.all(from n in Node, select: n.status)
+    # Counted in the database like its two neighbours, rather than pulled into
+    # memory a row at a time to be counted here.
+    by_node_status = count_by(from(n in Node), :status)
 
     outstanding =
       Repo.one(from e in LedgerEntry, select: coalesce(sum(e.amount_cents), 0)) || 0
@@ -45,8 +47,8 @@ defmodule ControlPlaneWeb.Admin.PanelController do
         failed: Map.get(by_status, :failed, 0)
       },
       nodes: %{
-        total: length(node_statuses),
-        online: Enum.count(node_statuses, &(&1 == :online))
+        total: map_total(by_node_status),
+        online: Map.get(by_node_status, :online, 0)
       },
       credit_outstanding_cents: outstanding
     })

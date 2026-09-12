@@ -154,23 +154,36 @@ defmodule ControlPlane.Backups do
           offset: ^keep()
       )
 
-    Enum.each(stale, fn backup ->
-      vps = Repo.get(Vps, vps_id)
-
-      if vps && backup.node_id do
-        Repo.insert(
-          Command.changeset(%Command{}, %{
-            node_id: backup.node_id,
-            vps_id: vps_id,
-            kind: :delete_backup,
-            status: :pending,
-            payload: %{"volid" => backup.volid, "backup_id" => backup.id}
-          })
-        )
+    # One lookup, not one per stale row: vps_id does not change inside the loop.
+    # A VPS that is already gone queues nothing — the node tore its archives down
+    # with it, and a delete_backup command for a VPS row that no longer exists
+    # cannot be finalised.
+    queued =
+      case Repo.get(Vps, vps_id) do
+        nil -> 0
+        %Vps{} -> Enum.count(stale, &queue_archive_delete(&1, vps_id))
       end
-    end)
 
-    {:ok, length(stale)}
+    {:ok, queued}
+  end
+
+  # True when a command was actually queued, so prune/1 reports what it did
+  # rather than what it found.
+  defp queue_archive_delete(%VpsBackup{node_id: nil}, _vps_id), do: false
+
+  defp queue_archive_delete(%VpsBackup{} = backup, vps_id) do
+    result =
+      %Command{}
+      |> Command.changeset(%{
+        node_id: backup.node_id,
+        vps_id: vps_id,
+        kind: :delete_backup,
+        status: :pending,
+        payload: %{"volid" => backup.volid, "backup_id" => backup.id}
+      })
+      |> Repo.insert()
+
+    match?({:ok, _}, result)
   end
 
   @doc "Forgets a backup the node has confirmed it deleted."
