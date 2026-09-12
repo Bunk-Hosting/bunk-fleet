@@ -8,6 +8,11 @@ const WS_URL  = (process.env.NEXT_PUBLIC_WS_URL  || "wss://app.bunkhosting.nl").
 // reporting was decoration. This matches the route the control plane serves.
 const CSP_REPORT_URI = `${API_URL}/api/v1/security/csp-report`;
 
+// The Content-Security-Policy is NOT here: it carries a per-request nonce and
+// therefore lives in src/middleware.ts. A policy shipped from this file would be
+// static, and a static policy has to allow 'unsafe-inline' for Next's hydration
+// bootstrap — which is exactly the thing worth getting rid of.
+//
 // Only the headers that are specific to the HTML this app serves. Everything
 // else — frame options, nosniff, HSTS, referrer policy, permissions policy,
 // COOP — is set once at the nginx edge, which also fronts the API and is
@@ -24,40 +29,6 @@ const securityHeaders = [
       max_age: 10886400,
       endpoints: [{ url: CSP_REPORT_URI }],
     }),
-  },
-  // Content-Security-Policy
-  // - script-src: Next.js heeft 'unsafe-inline' nodig voor hydration-scripts;
-  //   Cloudflare Turnstile vereist challenges.cloudflare.com
-  // - style-src: 'unsafe-inline' nodig voor Tailwind utility classes;
-  //   fonts.googleapis.com voor Material Symbols stylesheet
-  // - img-src: data: voor TOTP QR-codes; blob: voor xterm canvas
-  // - font-src: fonts.gstatic.com voor Material Symbols woff2-bestanden
-  // - connect-src: API + WebSocket endpoints + Turnstile + CSP-report endpoint
-  // - frame-src: Cloudflare Turnstile widget (iframe)
-  // - worker-src: blob: voor xterm.js Web Worker
-  // - report-uri: legacy + report-to: modern → backend security endpoint
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com`,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      // No remote images are ever loaded (QR codes are data: URLs, xterm uses
-      // blob:) — drop the https: wildcard to shut off tracking-pixel/exfil vectors.
-      "img-src 'self' data: blob:",
-      "font-src 'self' data: https://fonts.gstatic.com",
-      `connect-src 'self' ${API_URL} ${WS_URL} https://challenges.cloudflare.com`,
-      "frame-src 'self' https://challenges.cloudflare.com",
-      "frame-ancestors 'none'",
-      // No <object>/<embed>/<applet> anywhere; block them outright.
-      "object-src 'none'",
-      "worker-src blob:",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "upgrade-insecure-requests",
-      `report-uri ${CSP_REPORT_URI}`,
-      "report-to csp-endpoint",
-    ].join("; "),
   },
 ];
 
