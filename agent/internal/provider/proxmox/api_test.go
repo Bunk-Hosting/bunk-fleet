@@ -1,0 +1,394 @@
+package proxmox
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
+)
+
+// The driver's pure helpers are covered elsewhere; what is exercised here is the
+// part that talks to Proxmox — the request it builds, the task it waits for, and
+// what it does when a step fails halfway through. That matters more than the
+// helpers: this code destroys customer machines.
+
+// recorder is a stand-in PVE API. Handlers are keyed by "METHOD /path"; every
+// request is recorded so a test can assert on what was actually sent.
+type recorder struct {
+	mu       sync.Mutex
+	requests []recorded
+	handlers map[string]http.HandlerFunc
+	srv      *httptest.Server
+}
+
+type recorded struct {
+	method string
+	path   string
+	form   url.Values
+	auth   string
+}
+
+func newRecorder(t *testing.T) *recorder {
+	t.Helper()
+	r := &recorder{handlers: map[string]http.HandlerFunc{}}
+
+	r.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = req.ParseForm()
+		path := strings.TrimPrefix(req.URL.Path, "/api2/json")
+
+		r.mu.Lock()
+		r.requests = append(r.requests, recorded{
+			method: req.Method,
+			path:   path,
+			form:   req.PostForm,
+			auth:   req.Header.Get("Authorization"),
+		})
+		handler, ok := r.handlers[req.Method+" "+path]
+		r.mu.Unlock()
+
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"errors":"no such endpoint"}`))
+			return
+		}
+		handler(w, req)
+	}))
+
+	t.Cleanup(r.srv.Close)
+	return r
+}
+
+func (r *recorder) on(route string, body string) {
+	r.handlers[route] = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+func (r *recorder) onStatus(route string, status int, body string) {
+	r.handlers[route] = func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+func (r *recorder) seen(method, path string) (recorded, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, req := range r.requests {
+		if req.method == method && req.path == path {
+			return req, true
+		}
+	}
+	return recorded{}, false
+}
+
+func (r *recorder) count(method, path string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, req := range r.requests {
+		if req.method == method && req.path == path {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *recorder) client(t *testing.T, mutate ...func(*Config)) *Client {
+	t.Helper()
+	cfg := Config{
+		Host:        r.srv.URL,
+		Node:        "pve",
+		TokenID:     "root@pam!agent",
+		TokenSecret: "secret-value",
+		VerifySSL:   false,
+	}
+	for _, m := range mutate {
+		m(&cfg)
+	}
+	c, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	c.http = r.srv.Client()
+	return c
+}
+
+// A UPID that the recorder resolves to a finished, successful task.
+const okTask = `{"data":"UPID:pve:0000:OK::task"}`
+
+func (r *recorder) taskSucceeds() {
+	r.on("GET /nodes/pve/tasks/UPID:pve:0000:OK::task/status",
+		`{"data":{"status":"stopped","exitstatus":"OK"}}`)
+}
+
+func (r *recorder) taskFails(reason string) {
+	r.on("GET /nodes/pve/tasks/UPID:pve:0000:OK::task/status",
+		fmt.Sprintf(`{"data":{"status":"stopped","exitstatus":%q}}`, reason))
+}
+
+func TestCreateVMHappyPath(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"131"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	r.on("PUT /nodes/pve/qemu/131/resize", okTask)
+	r.on("POST /nodes/pve/qemu/131/config", `{"data":null}`)
+	r.on("POST /nodes/pve/qemu/131/status/start", okTask)
+	r.taskSucceeds()
+
+	c := r.client(t, func(cfg *Config) { cfg.Bridge = "vmbr1"; cfg.VLAN = 42 })
+
+	got, err := c.CreateVM(context.Background(), provider.VMSpec{
+		Name:       "web-1",
+		TemplateID: 9000,
+		VCPU:       2,
+		RAMMB:      2048,
+		DiskGB:     40,
+		SSHKeys:    []string{"ssh-ed25519 AAAA test@host"},
+		IPConfig:   "ip=10.10.0.21/22,gw=10.10.0.1",
+		CloudInit:  map[string]string{"user": "bunk", "password": "pw"},
+	})
+	if err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+	if got.ID != "131" || got.State != "provisioning" {
+		t.Fatalf("CreateVM = %+v, want id 131 provisioning", got)
+	}
+
+	clone, ok := r.seen("POST", "/nodes/pve/qemu/9000/clone")
+	if !ok {
+		t.Fatal("the template was never cloned")
+	}
+	// A linked clone shares the template's disk: deleting the template would take
+	// the customer's machine with it.
+	if clone.form.Get("full") != "1" {
+		t.Errorf("clone full = %q, want 1", clone.form.Get("full"))
+	}
+	if clone.form.Get("newid") != "131" {
+		t.Errorf("clone newid = %q, want 131", clone.form.Get("newid"))
+	}
+	if clone.auth != "PVEAPIToken=root@pam!agent=secret-value" {
+		t.Errorf("Authorization = %q", clone.auth)
+	}
+
+	resize, _ := r.seen("PUT", "/nodes/pve/qemu/131/resize")
+	if resize.form.Get("size") != "40G" || resize.form.Get("disk") != "scsi0" {
+		t.Errorf("resize = %v, want scsi0 40G", resize.form)
+	}
+
+	cfg, _ := r.seen("POST", "/nodes/pve/qemu/131/config")
+	for field, want := range map[string]string{
+		"cores":      "2",
+		"memory":     "2048",
+		"ipconfig0":  "ip=10.10.0.21/22,gw=10.10.0.1",
+		"net0":       "virtio,bridge=vmbr1,tag=42",
+		"ciuser":     "bunk",
+		"cipassword": "pw",
+	} {
+		if cfg.form.Get(field) != want {
+			t.Errorf("config %s = %q, want %q", field, cfg.form.Get(field), want)
+		}
+	}
+}
+
+func TestCreateVMRollsBackAfterTheCloneSucceeds(t *testing.T) {
+	// Once the clone lands the VM physically exists. A failure after that point
+	// must not leave it running on the node, unbilled and unreachable.
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"140"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	r.onStatus("PUT /nodes/pve/qemu/140/resize", http.StatusInternalServerError, `{"errors":"storage full"}`)
+	r.on("GET /nodes/pve/qemu/140/status/current", `{"data":{"status":"stopped"}}`)
+	r.on("DELETE /nodes/pve/qemu/140", okTask)
+	r.taskSucceeds()
+
+	c := r.client(t)
+
+	_, err := c.CreateVM(context.Background(), provider.VMSpec{Name: "x", TemplateID: 9000, DiskGB: 40})
+	if err == nil {
+		t.Fatal("CreateVM returned no error after the resize failed")
+	}
+	if r.count("DELETE", "/nodes/pve/qemu/140") != 1 {
+		t.Error("the half-created VM was not rolled back")
+	}
+}
+
+func TestCreateVMSurfacesTheIDWhenRollbackAlsoFails(t *testing.T) {
+	// If even the cleanup fails, the vm id has to come back in the status so the
+	// control plane can reconcile it later rather than losing track of it.
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"141"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	r.onStatus("POST /nodes/pve/qemu/141/config", http.StatusBadRequest, `{"errors":"bad"}`)
+	r.on("GET /nodes/pve/qemu/141/status/current", `{"data":{"status":"stopped"}}`)
+	r.onStatus("DELETE /nodes/pve/qemu/141", http.StatusInternalServerError, `{"errors":"locked"}`)
+	r.taskSucceeds()
+
+	c := r.client(t)
+
+	got, err := c.CreateVM(context.Background(), provider.VMSpec{Name: "x", TemplateID: 9000})
+	if err == nil {
+		t.Fatal("CreateVM returned no error")
+	}
+	if got.ID != "141" {
+		t.Errorf("status ID = %q, want 141 so the orphan can be reconciled", got.ID)
+	}
+	if !strings.Contains(err.Error(), "rollback") {
+		t.Errorf("error does not mention the failed rollback: %v", err)
+	}
+}
+
+func TestCreateVMRefusesWithoutATemplate(t *testing.T) {
+	r := newRecorder(t)
+	c := r.client(t)
+
+	if _, err := c.CreateVM(context.Background(), provider.VMSpec{Name: "x"}); err == nil {
+		t.Fatal("CreateVM accepted a zero TemplateID")
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("it talked to Proxmox anyway: %v", r.requests)
+	}
+}
+
+func TestCreateVMFailsWhenTheCloneTaskFails(t *testing.T) {
+	// The task returns a UPID immediately; only polling it reveals the failure.
+	// Treating the 200 as success would report a VM that does not exist.
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"150"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	r.taskFails("clone failed: no space left on device")
+
+	c := r.client(t)
+
+	_, err := c.CreateVM(context.Background(), provider.VMSpec{Name: "x", TemplateID: 9000})
+	if err == nil {
+		t.Fatal("a failed clone task was reported as success")
+	}
+	if !strings.Contains(err.Error(), "no space left") {
+		t.Errorf("the reason was lost: %v", err)
+	}
+}
+
+func TestDeleteVMStopsARunningGuestFirst(t *testing.T) {
+	// Proxmox refuses to destroy a running VM. Skipping the stop leaves the
+	// customer's machine alive and the control plane believing it is gone.
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/status/current", `{"data":{"status":"running"}}`)
+	r.on("POST /nodes/pve/qemu/131/status/stop", okTask)
+	r.on("DELETE /nodes/pve/qemu/131", okTask)
+	r.taskSucceeds()
+
+	if err := r.client(t).DeleteVM(context.Background(), "131"); err != nil {
+		t.Fatalf("DeleteVM: %v", err)
+	}
+	if r.count("POST", "/nodes/pve/qemu/131/status/stop") != 1 {
+		t.Error("the running guest was not stopped before the destroy")
+	}
+}
+
+func TestDeleteVMSkipsTheStopWhenAlreadyStopped(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/status/current", `{"data":{"status":"stopped"}}`)
+	r.on("DELETE /nodes/pve/qemu/131", okTask)
+	r.taskSucceeds()
+
+	if err := r.client(t).DeleteVM(context.Background(), "131"); err != nil {
+		t.Fatalf("DeleteVM: %v", err)
+	}
+	if r.count("POST", "/nodes/pve/qemu/131/status/stop") != 0 {
+		t.Error("it stopped a guest that was already stopped")
+	}
+}
+
+func TestDeleteVMTreatsAMissingGuestAsDone(t *testing.T) {
+	// Delete commands are re-delivered. The second one finds nothing and must
+	// still report success, or the VPS never leaves :deleting.
+	r := newRecorder(t)
+	r.onStatus("GET /nodes/pve/qemu/999/status/current", http.StatusInternalServerError,
+		`{"errors":"Configuration file 'nodes/pve/qemu-server/999.conf' does not exist"}`)
+	r.onStatus("DELETE /nodes/pve/qemu/999", http.StatusInternalServerError,
+		`{"errors":"Configuration file 'nodes/pve/qemu-server/999.conf' does not exist"}`)
+
+	if err := r.client(t).DeleteVM(context.Background(), "999"); err != nil {
+		t.Fatalf("DeleteVM on a missing guest = %v, want nil", err)
+	}
+}
+
+func TestDeleteVMRefusesANonNumericID(t *testing.T) {
+	r := newRecorder(t)
+
+	if err := r.client(t).DeleteVM(context.Background(), "131/../../etc"); err == nil {
+		t.Fatal("DeleteVM accepted a non-numeric id")
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("it built a request out of it: %v", r.requests)
+	}
+}
+
+func TestDeleteVMFailsWhenTheDestroyTaskFails(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/status/current", `{"data":{"status":"stopped"}}`)
+	r.on("DELETE /nodes/pve/qemu/131", okTask)
+	r.taskFails("destroy failed: volume in use")
+
+	if err := r.client(t).DeleteVM(context.Background(), "131"); err == nil {
+		t.Fatal("a failed destroy task was reported as success")
+	}
+}
+
+func TestDoJSONReportsTheBodyOnAnErrorStatus(t *testing.T) {
+	// The agent hands this string to the control plane, which shows it to an
+	// operator. A bare "status 500" is not something anyone can act on.
+	r := newRecorder(t)
+	r.onStatus("GET /cluster/nextid", http.StatusForbidden, `{"errors":"permission denied"}`)
+
+	_, err := r.client(t).CreateVM(context.Background(), provider.VMSpec{Name: "x", TemplateID: 9000})
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("error = %v, want it to carry the PVE message", err)
+	}
+}
+
+func TestCancelledContextStopsTheTaskPoll(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"160"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	// Never finishes: without honouring cancellation this poll runs forever.
+	r.on("GET /nodes/pve/tasks/UPID:pve:0000:OK::task/status", `{"data":{"status":"running"}}`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := r.client(t).CreateVM(ctx, provider.VMSpec{Name: "x", TemplateID: 9000})
+	if err == nil {
+		t.Fatal("a cancelled context did not stop the create")
+	}
+}
+
+func TestNewRefusesAnIncompleteConfig(t *testing.T) {
+	for name, cfg := range map[string]Config{
+		"no host":   {Node: "pve", TokenID: "a", TokenSecret: "b"},
+		"no node":   {Host: "https://x", TokenID: "a", TokenSecret: "b"},
+		"no token":  {Host: "https://x", Node: "pve", TokenSecret: "b"},
+		"no secret": {Host: "https://x", Node: "pve", TokenID: "a"},
+	} {
+		if _, err := New(cfg); err == nil {
+			t.Errorf("New accepted a config with %s", name)
+		}
+	}
+}
+
+func TestBaseURLToleratesATrailingSlash(t *testing.T) {
+	c, err := New(Config{Host: "https://pve.example:8006/", Node: "pve", TokenID: "a", TokenSecret: "b"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c.base != "https://pve.example:8006/api2/json" {
+		t.Errorf("base = %q", c.base)
+	}
+}
