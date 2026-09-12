@@ -18,18 +18,25 @@ defmodule ControlPlaneWeb.UserRegistrationController do
         |> UserAuth.log_in_user(user)
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        errors =
-          Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-            Regex.replace(~r"%{(\w+)}", msg, fn _, k ->
-              opts |> Keyword.get(String.to_existing_atom(k), k) |> to_string()
-            end)
-          end)
-          |> Enum.flat_map(fn {field, msgs} -> Enum.map(msgs, &"#{field}: #{&1}") end)
-
         conn
         |> put_layout(html: false)
         |> put_status(:unprocessable_entity)
-        |> render(:new, errors: errors)
+        |> render(:new, errors: error_messages(changeset))
     end
+  end
+
+  # Ecto's messages carry their interpolations separately ("should be at least
+  # %{count} character(s)"); fill them in so the form shows a sentence rather than
+  # a template.
+  defp error_messages(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(&interpolate/1)
+    |> Enum.flat_map(fn {field, msgs} -> Enum.map(msgs, &"#{field}: #{&1}") end)
+  end
+
+  defp interpolate({msg, opts}) do
+    Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+      opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+    end)
   end
 end

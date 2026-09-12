@@ -93,21 +93,25 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   def update_user(conn, %{"id" => id} = params) do
     with {:ok, uid} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
          %User{} = user <- Accounts.get_user(uid) || :not_found,
-         {:ok, role} <- parse_role(params) do
-      # Never let an admin strip their OWN admin role (self-lockout guard).
-      if user.id == conn.assigns.current_user.id and role != :admin do
-        error(conn, :unprocessable_entity, "cannot_demote_self")
-      else
-        case Accounts.update_user_role(user, role) do
-          {:ok, u} -> json(conn, %{id: u.id, role: u.role})
-          {:error, _} -> error(conn, :unprocessable_entity, "update_failed")
-        end
-      end
+         {:ok, role} <- parse_role(params),
+         :ok <- keeps_own_admin(conn, user, role),
+         {:ok, u} <- Accounts.update_user_role(user, role) do
+      json(conn, %{id: u.id, role: u.role})
     else
       :not_found -> error(conn, :not_found, "not_found")
       {:error, :invalid_role} -> error(conn, :unprocessable_entity, "invalid_role")
+      {:error, :self_demotion} -> error(conn, :unprocessable_entity, "cannot_demote_self")
+      {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "update_failed")
       _ -> error(conn, :not_found, "not_found")
     end
+  end
+
+  # Never let an admin strip their OWN admin role: the last admin demoting
+  # themselves locks the whole panel, and nothing in the panel can undo it.
+  defp keeps_own_admin(conn, %User{} = user, role) do
+    if user.id == conn.assigns.current_user.id and role != :admin,
+      do: {:error, :self_demotion},
+      else: :ok
   end
 
   def credit_user(conn, %{"id" => id} = params) do

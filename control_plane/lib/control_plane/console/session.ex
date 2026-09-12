@@ -63,22 +63,27 @@ defmodule ControlPlane.Console.Session do
         connect_timeout: 10_000
       ]
 
-      case connect(st, opts) do
-        {:ok, conn} ->
-          case open_shell(conn) do
-            {:ok, chan} ->
-              {:noreply, %{st | conn: conn, chan: chan}}
-
-            {:error, reason} ->
-              :ssh.close(conn)
-              notify_closed(st.owner, reason)
-              {:stop, :normal, st}
-          end
-
+      with {:ok, conn} <- connect(st, opts),
+           {:ok, chan} <- open_shell_or_close(conn) do
+        {:noreply, %{st | conn: conn, chan: chan}}
+      else
         {:error, reason} ->
           notify_closed(st.owner, reason)
           {:stop, :normal, st}
       end
+    end
+  end
+
+  # A connection whose shell won't open is a connection nobody will ever close,
+  # so close it here rather than leaking it into the caller's error path.
+  defp open_shell_or_close(conn) do
+    case open_shell(conn) do
+      {:ok, chan} ->
+        {:ok, chan}
+
+      {:error, reason} ->
+        :ssh.close(conn)
+        {:error, reason}
     end
   end
 

@@ -17,6 +17,10 @@ defmodule ControlPlaneWeb.MollieController do
   alias ControlPlane.Credits
   alias ControlPlane.Mollie
 
+  # Mollie states that mean the money will never arrive. Anything else is either
+  # paid or still in flight, and a topup in flight stays pending.
+  @unpaid_terminal ["expired", "canceled", "failed"]
+
   @min_cents 500
   @max_cents 100_000
   # A user can't stack unbounded unpaid checkouts: each one fans out an
@@ -70,48 +74,9 @@ defmodule ControlPlaneWeb.MollieController do
     # Validate the id shape BEFORE any outbound fetch: rejects malformed ids (path
     # smuggling into the Mollie API) and cheap garbage that would otherwise fan out
     # one authenticated HTTPS call to Mollie per request.
-    if valid_mollie_id?(payment_id) do
-      case Mollie.get_payment(payment_id) do
-        {:ok, %{status: "paid", amount: amount}} ->
-          # Credit only after verifying the amount Mollie actually settled matches
-          # the amount we recorded — defence-in-depth against adjustable-amount
-          # payment types ever being enabled.
-          case Credits.mark_topup_paid_by_mollie_id(payment_id, amount) do
-            {:ok, _} ->
-              :ok
-
-            {:error, :not_pending} ->
-              :ok
-
-            # A verified *paid* payment with no matching topup row means a real
-            # customer payment we can't reconcile — never swallow it silently.
-            {:error, :not_found} ->
-              Logger.error(
-                "mollie webhook: PAID payment #{payment_id} has no matching topup_request — possible lost payment, reconcile manually"
-              )
-
-            {:error, :amount_mismatch} ->
-              Logger.error("mollie webhook amount mismatch for #{payment_id}")
-
-            other ->
-              Logger.warning("mollie webhook credit: #{inspect(other)}")
-          end
-
-        {:ok, %{status: status}} when status in ["expired", "canceled", "failed"] ->
-          # Terminal, unpaid: release the pending row so it stops counting against
-          # the user's pending-topup cap.
-          Credits.cancel_topup_by_mollie_id(payment_id)
-          Logger.info("mollie webhook #{payment_id} status=#{status} (topup cancelled)")
-
-        {:ok, %{status: status}} ->
-          Logger.info("mollie webhook #{payment_id} status=#{status} (no credit)")
-
-        {:error, reason} ->
-          Logger.warning("mollie webhook fetch failed for #{payment_id}: #{inspect(reason)}")
-      end
-    else
-      Logger.info("mollie webhook: ignoring malformed payment id")
-    end
+    if valid_mollie_id?(payment_id),
+      do: settle(payment_id, Mollie.get_payment(payment_id)),
+      else: Logger.info("mollie webhook: ignoring malformed payment id")
 
     # Always 200: the work is idempotent and we don't want Mollie to retry on our
     # transient errors forever in a way that hammers us.
@@ -121,6 +86,45 @@ defmodule ControlPlaneWeb.MollieController do
   def webhook(conn, _params), do: send_resp(conn, 200, "")
 
   # Mollie payment ids look like `tr_<alnum>`.
+  # What Mollie says the payment did. The webhook itself carries no state — it is
+  # only a nudge to re-fetch — so everything below is driven by the fetch.
+  defp settle(payment_id, {:ok, %{status: "paid", amount: amount}}) do
+    # Credit only after verifying the amount Mollie actually settled matches the
+    # amount we recorded — defence-in-depth against adjustable-amount payment
+    # types ever being enabled.
+    credited(payment_id, Credits.mark_topup_paid_by_mollie_id(payment_id, amount))
+  end
+
+  defp settle(payment_id, {:ok, %{status: status}}) when status in @unpaid_terminal do
+    # Terminal, unpaid: release the pending row so it stops counting against the
+    # user's pending-topup cap.
+    Credits.cancel_topup_by_mollie_id(payment_id)
+    Logger.info("mollie webhook #{payment_id} status=#{status} (topup cancelled)")
+  end
+
+  defp settle(payment_id, {:ok, %{status: status}}),
+    do: Logger.info("mollie webhook #{payment_id} status=#{status} (no credit)")
+
+  defp settle(payment_id, {:error, reason}),
+    do: Logger.warning("mollie webhook fetch failed for #{payment_id}: #{inspect(reason)}")
+
+  defp credited(_payment_id, {:ok, _}), do: :ok
+  defp credited(_payment_id, {:error, :not_pending}), do: :ok
+
+  # A verified *paid* payment with no matching topup row means a real customer
+  # payment we can't reconcile — never swallow it silently.
+  defp credited(payment_id, {:error, :not_found}) do
+    Logger.error(
+      "mollie webhook: PAID payment #{payment_id} has no matching topup_request — possible lost payment, reconcile manually"
+    )
+  end
+
+  defp credited(payment_id, {:error, :amount_mismatch}),
+    do: Logger.error("mollie webhook amount mismatch for #{payment_id}")
+
+  defp credited(_payment_id, other),
+    do: Logger.warning("mollie webhook credit: #{inspect(other)}")
+
   defp valid_mollie_id?(id), do: String.match?(id, ~r/\Atr_[A-Za-z0-9]+\z/)
 
   defp parse_amount(%{"amount_cents" => v}) do

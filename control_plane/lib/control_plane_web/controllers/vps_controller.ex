@@ -204,20 +204,30 @@ defmodule ControlPlaneWeb.VpsController do
          ssh_keys: ssh,
          cloud_init: ci
        }) do
+    with :ok <- valid_spec(vcpu, ram_mb, disk_gb), do: bounded_input(ssh, ci)
+  end
+
+  # Reject an out-of-bounds spec up front (matches Vps.validate_spec) so an
+  # invalid request fails with a clear `invalid_vps` rather than slipping through
+  # to package pricing and surfacing as `no_matching_package`.
+  defp valid_spec(vcpu, ram_mb, disk_gb) do
+    if valid_spec_field?(vcpu, 64) and valid_spec_field?(ram_mb, 262_144) and
+         valid_spec_field?(disk_gb, 8_192),
+       do: :ok,
+       else: {:error, :invalid_spec}
+  end
+
+  defp bounded_input(ssh, cloud_init) do
     cond do
-      # Reject an out-of-bounds spec up front (matches Vps.validate_spec) so an
-      # invalid request fails with a clear `invalid_vps` rather than slipping
-      # through to package pricing and surfacing as `no_matching_package`.
-      not valid_spec_field?(vcpu, 64) -> {:error, :invalid_spec}
-      not valid_spec_field?(ram_mb, 262_144) -> {:error, :invalid_spec}
-      not valid_spec_field?(disk_gb, 8_192) -> {:error, :invalid_spec}
       not is_list(ssh) -> {:error, :input_too_large}
       length(ssh) > 20 -> {:error, :input_too_large}
-      Enum.any?(ssh, &(not is_binary(&1) or byte_size(&1) > 4096)) -> {:error, :input_too_large}
-      encoded_size(ci) > 16_384 -> {:error, :input_too_large}
+      Enum.any?(ssh, &oversized_key?/1) -> {:error, :input_too_large}
+      encoded_size(cloud_init) > 16_384 -> {:error, :input_too_large}
       true -> :ok
     end
   end
+
+  defp oversized_key?(key), do: not is_binary(key) or byte_size(key) > 4096
 
   defp valid_spec_field?(v, max) when is_integer(v), do: v > 0 and v <= max
   defp valid_spec_field?(_v, _max), do: false

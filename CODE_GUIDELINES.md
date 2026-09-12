@@ -246,8 +246,6 @@ Known oddities:   - `:ssh.connect/3` with an already-connected socket does not c
                     plane records the result and silently drops the payload.
                   - systemd parses `OnFailure` only in `[Unit]`. In `[Service]` it logs
                     "Unknown key" and the alarm is wired to nothing.
-                  - `.credo.exs` raises two thresholds to today's worst value. That is a
-                    ratchet to lower, not an exemption — see the comment there.
                   - The `.html.eex` mail templates are a pixel port of the previous
                     platform's branding. Do not restyle them casually.
 

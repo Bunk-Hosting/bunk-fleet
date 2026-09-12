@@ -112,29 +112,31 @@ defmodule ControlPlane.Backups do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     case Repo.get(VpsBackup, backup_id) do
-      nil ->
-        {:error, :not_found}
-
-      %VpsBackup{} = backup ->
-        attrs =
-          case result do
-            %{"status" => "done"} = r ->
-              %{
-                status: :done,
-                volid: r["volid"],
-                size_bytes: sane_size(r["size_bytes"]),
-                finished_at: now
-              }
-
-            r ->
-              %{status: :failed, error: to_string(r["error"] || "unknown"), finished_at: now}
-          end
-
-        with {:ok, saved} <- backup |> VpsBackup.changeset(attrs) |> Repo.update() do
-          if saved.status == :done, do: prune(saved.vps_id)
-          {:ok, saved}
-        end
+      nil -> {:error, :not_found}
+      %VpsBackup{} = backup -> save_and_prune(backup, result_attrs(result, now))
     end
+  end
+
+  defp save_and_prune(backup, attrs) do
+    with {:ok, saved} <- backup |> VpsBackup.changeset(attrs) |> Repo.update() do
+      if saved.status == :done, do: prune(saved.vps_id)
+      {:ok, saved}
+    end
+  end
+
+  # The allow-list that turns an agent's reported result into columns. Only these
+  # fields are ever written; anything else the agent sends is ignored.
+  defp result_attrs(%{"status" => "done"} = result, now) do
+    %{
+      status: :done,
+      volid: result["volid"],
+      size_bytes: sane_size(result["size_bytes"]),
+      finished_at: now
+    }
+  end
+
+  defp result_attrs(result, now) do
+    %{status: :failed, error: to_string(result["error"] || "unknown"), finished_at: now}
   end
 
   @doc """
@@ -197,18 +199,7 @@ defmodule ControlPlane.Backups do
     with %VpsBackup{} = backup <- Repo.get(VpsBackup, backup_id),
          :ok <- restorable(vps, backup) do
       Multi.new()
-      |> Multi.run(:vps, fn repo, _ ->
-        # FOR UPDATE, and re-check the status inside the lock: two restores
-        # dispatched at once would otherwise both pass the check above and both
-        # tell the node to overwrite the same disk.
-        locked = repo.one!(from v in Vps, where: v.id == ^vps.id, lock: "FOR UPDATE")
-
-        if locked.status in [:active, :stopped] do
-          locked |> Vps.changeset(%{status: :restoring}) |> repo.update()
-        else
-          {:error, {:invalid_status, locked.status}}
-        end
-      end)
+      |> Multi.run(:vps, fn repo, _ -> begin_restoring(repo, vps.id) end)
       |> Multi.insert(:command, fn %{vps: locked} ->
         Command.changeset(%Command{}, %{
           node_id: locked.node_id,
@@ -233,6 +224,17 @@ defmodule ControlPlane.Backups do
       nil -> {:error, :not_found}
       {:error, _} = error -> error
     end
+  end
+
+  # FOR UPDATE, and re-check the status inside the lock: two restores dispatched
+  # at once would otherwise both pass restorable/2 and both tell the node to
+  # overwrite the same disk.
+  defp begin_restoring(repo, vps_id) do
+    locked = repo.one!(from v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE")
+
+    if locked.status in [:active, :stopped],
+      do: locked |> Vps.changeset(%{status: :restoring}) |> repo.update(),
+      else: {:error, {:invalid_status, locked.status}}
   end
 
   defp restorable(%Vps{} = vps, %VpsBackup{} = backup) do

@@ -133,70 +133,13 @@ defmodule ControlPlane.Provisioning.Results do
 
     multi
     |> Multi.run(:vps, fn repo, _changes ->
-      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
-      # row; locking it here serialises them so a provision-done can't overwrite a
-      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
-      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
-
-      cond do
-        # A delete was requested while this provision was in flight (deferred
-        # teardown): the VM now exists, so record its id and stay :deleting — the
-        # compensating :delete below tears it down. Never activate a VPS the
-        # customer already deleted.
-        vps.status in [:deleting, :deleted] and is_binary(vm_id) ->
-          vps |> Vps.changeset(%{provider_vm_id: vm_id}) |> repo.update()
-
-        # Delete requested but the provision produced no usable VM id → nothing to
-        # tear down, so finish the delete now.
-        vps.status in [:deleting, :deleted] ->
-          vps |> Vps.changeset(%{status: :deleted}) |> repo.update()
-
-        # Normal path: activate. The browser console SSHes to exactly
-        # vps.ip_address, so this MUST stay the CP-allocated address (see
-        # console_ip/3) — never one the untrusted agent reports.
-        true ->
-          ip = console_ip(result["ip"], vps, repo)
-
-          vps
-          |> Vps.changeset(%{status: :active, provider_vm_id: vm_id, ip_address: ip})
-          |> repo.update()
-      end
+      settle_provisioned_vps(repo, vps_id, vm_id, result["ip"])
     end)
     |> Multi.run(:reservation, fn repo, %{vps: vps} ->
-      case Reservations.held(repo, vps_id) do
-        nil ->
-          if vps.status not in [:deleted],
-            do: Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
-
-          {:ok, nil}
-
-        held ->
-          if vps.status == :deleted do
-            # No VM was created and the customer deleted it → free capacity now.
-            with {:ok, _} <- Reservations.release(repo, held),
-                 do: Reservations.restore_capacity(repo, held)
-          else
-            # Active, or :deleting-with-a-VM: commit the booking. For the latter the
-            # committed reservation is what the delete-done path releases, so
-            # capacity is freed exactly once — on confirmed teardown.
-            held |> Reservation.changeset(%{status: :committed}) |> repo.update()
-          end
-      end
+      commit_or_free_reservation(repo, vps_id, vps)
     end)
     |> Multi.run(:compensate, fn repo, %{vps: vps} ->
-      if vps.status in [:deleting] and is_binary(vm_id) do
-        %Command{}
-        |> Command.changeset(%{
-          node_id: vps.node_id,
-          vps_id: vps_id,
-          kind: :delete,
-          status: :pending,
-          payload: %{"vm_id" => vm_id}
-        })
-        |> repo.insert()
-      else
-        {:ok, nil}
-      end
+      compensate_deferred_teardown(repo, vps_id, vps, vm_id)
     end)
   end
 
@@ -286,33 +229,7 @@ defmodule ControlPlane.Provisioning.Results do
         :pause -> :paused
       end
 
-    Multi.run(multi, :vps, fn repo, _changes ->
-      # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
-      # row; locking it here serialises them so a provision-done can't overwrite a
-      # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
-      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
-
-      if vps.status in [:active, :stopped, :paused] do
-        changeset = Vps.changeset(vps, %{status: target})
-
-        # Resuming into :active: reset the meter watermark to now so the interval
-        # the VPS spent stopped/paused is NEVER billed. The meter only runs on
-        # :active VPSes and computes `now - last_metered_at`; without this reset,
-        # the first tick after resume would span the entire downtime, over-charging
-        # the customer and over-paying the operator for time the VM never served.
-        changeset =
-          if target == :active do
-            now = DateTime.truncate(DateTime.utc_now(), :second)
-            Ecto.Changeset.put_change(changeset, :last_metered_at, now)
-          else
-            changeset
-          end
-
-        repo.update(changeset)
-      else
-        {:ok, vps}
-      end
-    end)
+    Multi.run(multi, :vps, fn repo, _changes -> apply_power_state(repo, vps_id, target) end)
   end
 
   # Power command failed: leave the VPS as-is; the error is recorded on the
@@ -367,37 +284,7 @@ defmodule ControlPlane.Provisioning.Results do
        when not is_nil(vps_id) do
     target = if p["start_after"], do: :active, else: :stopped
 
-    Multi.run(multi, :vps, fn repo, _changes ->
-      vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
-
-      if vps.status == :restoring do
-        # Reset the meter watermark: the VPS was not serving anyone while its
-        # disk was being overwritten, and metering charges `now - last_metered_at`.
-        attrs = %{status: target}
-        changeset = Vps.changeset(vps, attrs)
-
-        changeset =
-          if target == :active,
-            do:
-              Ecto.Changeset.put_change(
-                changeset,
-                :last_metered_at,
-                DateTime.utc_now() |> DateTime.truncate(:second)
-              ),
-            else: changeset
-
-        # The disk is older, so the guest's SSH host key is older too. TOFU would
-        # read that as exactly the attack it exists to catch and refuse the
-        # console — locking the customer out of the thing they would use to check
-        # the restore worked. Forget the pin; the next connection pins afresh.
-        HostKeys.forget(vps.id)
-
-        repo.update(changeset)
-      else
-        # Something else moved it — a delete that raced the restore. Leave it be.
-        {:ok, vps}
-      end
-    end)
+    Multi.run(multi, :vps, fn repo, _changes -> land_restored_vps(repo, vps_id, target) end)
   end
 
   defp finalize_vps(multi, %Command{kind: :restore_backup, vps_id: vps_id}, :failed, result)
@@ -420,6 +307,129 @@ defmodule ControlPlane.Provisioning.Results do
   # Non-provision/non-delete commands (or those without an associated VPS) only
   # update the command itself.
   defp finalize_vps(multi, _command, _outcome, _result), do: multi
+
+  # The VPS row after a successful provision. Three outcomes, because a delete can
+  # have been requested while the provision was still in flight.
+  defp settle_provisioned_vps(repo, vps_id, vm_id, reported_ip) do
+    # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+    # row; locking it here serialises them so a provision-done can't overwrite a
+    # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+    vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
+
+    cond do
+      # A delete was requested while this provision was in flight (deferred
+      # teardown): the VM now exists, so record its id and stay :deleting — the
+      # compensating :delete tears it down. Never activate a VPS the customer
+      # already deleted.
+      vps.status in [:deleting, :deleted] and is_binary(vm_id) ->
+        vps |> Vps.changeset(%{provider_vm_id: vm_id}) |> repo.update()
+
+      # Delete requested but the provision produced no usable VM id → nothing to
+      # tear down, so finish the delete now.
+      vps.status in [:deleting, :deleted] ->
+        vps |> Vps.changeset(%{status: :deleted}) |> repo.update()
+
+      # Normal path: activate. The browser console SSHes to exactly
+      # vps.ip_address, so this MUST stay the CP-allocated address (see
+      # console_ip/3) — never one the untrusted agent reports.
+      true ->
+        ip = console_ip(reported_ip, vps, repo)
+
+        vps
+        |> Vps.changeset(%{status: :active, provider_vm_id: vm_id, ip_address: ip})
+        |> repo.update()
+    end
+  end
+
+  # A provision holds a reservation until the node confirms. What happens to it
+  # depends on where settle_provisioned_vps/4 just left the VPS.
+  defp commit_or_free_reservation(repo, vps_id, %Vps{status: :deleted}) do
+    # No VM was created and the customer deleted it → free capacity now.
+    case Reservations.held(repo, vps_id) do
+      nil ->
+        {:ok, nil}
+
+      held ->
+        with {:ok, _} <- Reservations.release(repo, held),
+             do: Reservations.restore_capacity(repo, held)
+    end
+  end
+
+  defp commit_or_free_reservation(repo, vps_id, %Vps{}) do
+    case Reservations.held(repo, vps_id) do
+      nil ->
+        Logger.warning("provision done for vps #{vps_id}: no held reservation to commit")
+        {:ok, nil}
+
+      held ->
+        # Active, or :deleting-with-a-VM: commit the booking. For the latter the
+        # committed reservation is what the delete-done path releases, so capacity
+        # is freed exactly once — on confirmed teardown.
+        held |> Reservation.changeset(%{status: :committed}) |> repo.update()
+    end
+  end
+
+  # A VPS left in :deleting by a provision that succeeded too late still has a
+  # real VM behind it. Queue the teardown the customer already asked for.
+  defp compensate_deferred_teardown(repo, vps_id, %Vps{status: :deleting} = vps, vm_id)
+       when is_binary(vm_id) do
+    %Command{}
+    |> Command.changeset(%{
+      node_id: vps.node_id,
+      vps_id: vps_id,
+      kind: :delete,
+      status: :pending,
+      payload: %{"vm_id" => vm_id}
+    })
+    |> repo.insert()
+  end
+
+  defp compensate_deferred_teardown(_repo, _vps_id, %Vps{}, _vm_id), do: {:ok, nil}
+
+  # Power commands only move a VPS between the three states a running machine can
+  # be in. Anything else (a delete that raced the power command) wins.
+  defp apply_power_state(repo, vps_id, target) do
+    # FOR UPDATE: apply_result and a concurrent delete_vps both transition this
+    # row; locking it here serialises them so a provision-done can't overwrite a
+    # just-committed :deleting/:deleted (TOCTOU → free-running / orphaned VM).
+    vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
+
+    if vps.status in [:active, :stopped, :paused],
+      do: repo.update(status_changeset(vps, target)),
+      else: {:ok, vps}
+  end
+
+  # A VPS entering :active starts a fresh metering interval. The meter runs only
+  # on :active VPSes and charges `now - last_metered_at`, so without resetting the
+  # watermark the first tick after a resume or a restore would span the entire
+  # downtime — over-charging the customer and over-paying the operator for time
+  # the VM never served.
+  defp status_changeset(vps, :active) do
+    now = DateTime.truncate(DateTime.utc_now(), :second)
+
+    vps
+    |> Vps.changeset(%{status: :active})
+    |> Ecto.Changeset.put_change(:last_metered_at, now)
+  end
+
+  defp status_changeset(vps, status), do: Vps.changeset(vps, %{status: status})
+
+  defp land_restored_vps(repo, vps_id, target) do
+    vps = repo.one!(from(v in Vps, where: v.id == ^vps_id, lock: "FOR UPDATE"))
+
+    if vps.status == :restoring do
+      # The disk is older, so the guest's SSH host key is older too. TOFU would
+      # read that as exactly the attack it exists to catch and refuse the console
+      # — locking the customer out of the thing they would use to check the
+      # restore worked. Forget the pin; the next connection pins afresh.
+      HostKeys.forget(vps.id)
+
+      repo.update(status_changeset(vps, target))
+    else
+      # Something else moved it — a delete that raced the restore. Leave it be.
+      {:ok, vps}
+    end
+  end
 
   defp maybe_cleanup_orphan(multi, _vps_id, nil), do: multi
 

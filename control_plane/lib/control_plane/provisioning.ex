@@ -419,13 +419,8 @@ defmodule ControlPlane.Provisioning do
       %Vps{status: :deleted} ->
         {:error, :already_deleting}
 
-      # Already :deleting: only block if a delete command is still in flight. If a
-      # previous delete terminally failed (e.g. a transient Proxmox error), allow
-      # a fresh attempt so a VPS can never get permanently stuck undeletable.
       %Vps{status: :deleting} = vps ->
-        if delete_in_flight?(vps.id),
-          do: {:error, :already_deleting},
-          else: dispatch_delete(vps)
+        redispatch_delete(vps)
 
       # A :failed VPS has no live VM and no held reservation (the reservation, if
       # any, was already released when provisioning failed), so it can be cleaned
@@ -438,20 +433,33 @@ defmodule ControlPlane.Provisioning do
       %Vps{node_id: nil} = vps ->
         mark_vps_deleted(vps)
 
-      # Scheduled (capacity reserved) but no live VM recorded yet. If the provision
-      # command is still in flight (delivered to the agent), the agent may be
-      # mid-CreateVM; force-failing it now would orphan the VM it produces AND
-      # double-count the freed capacity. Defer: mark :deleting and let the
-      # provision-done result run the compensating teardown. Only when nothing is
-      # in flight is it safe to cancel-and-release immediately.
+      # Scheduled (capacity reserved) but no live VM recorded yet.
       %Vps{provider_vm_id: nil} = vps ->
-        if provision_in_flight?(vps.id),
-          do: defer_teardown(vps),
-          else: cancel_and_release(vps)
+        teardown_unprovisioned(vps)
 
       %Vps{} = vps ->
         dispatch_delete(vps)
     end
+  end
+
+  # Already :deleting: only block if a delete command is still in flight. If a
+  # previous delete terminally failed (e.g. a transient Proxmox error), allow a
+  # fresh attempt so a VPS can never get permanently stuck undeletable.
+  defp redispatch_delete(vps) do
+    if delete_in_flight?(vps.id),
+      do: {:error, :already_deleting},
+      else: dispatch_delete(vps)
+  end
+
+  # If the provision command is still in flight (delivered to the agent), the
+  # agent may be mid-CreateVM; force-failing it now would orphan the VM it
+  # produces AND double-count the freed capacity. Defer: mark :deleting and let
+  # the provision-done result run the compensating teardown. Only when nothing is
+  # in flight is it safe to cancel-and-release immediately.
+  defp teardown_unprovisioned(vps) do
+    if provision_in_flight?(vps.id),
+      do: defer_teardown(vps),
+      else: cancel_and_release(vps)
   end
 
   # True if a delete command for this VPS is still pending/delivered (in flight).
@@ -548,37 +556,42 @@ defmodule ControlPlane.Provisioning do
       %Vps{provider_vm_id: nil} ->
         {:error, :not_provisioned}
 
-      %Vps{status: status} = vps ->
-        cond do
-          status not in allowed ->
-            {:error, {:invalid_status, status}}
+      %Vps{} = vps ->
+        power_if_allowed(vps, kind, allowed)
+    end
+  end
 
-          # R5: an identical power command is already queued/delivered (e.g. a
-          # double-clicked Stop) — don't enqueue a duplicate. Idempotent no-op.
-          power_in_flight?(vps_id, kind) ->
-            {:ok, %{vps: vps, command: nil}}
+  defp power_if_allowed(%Vps{status: status} = vps, kind, allowed) do
+    if status in allowed,
+      do: enqueue_power_command(vps, kind),
+      else: {:error, {:invalid_status, status}}
+  end
 
-          true ->
-            multi =
-              Multi.insert(Multi.new(), :command, fn _ ->
-                Command.changeset(%Command{}, %{
-                  node_id: vps.node_id,
-                  vps_id: vps.id,
-                  kind: kind,
-                  status: :pending,
-                  payload: %{"vm_id" => vps.provider_vm_id}
-                })
-              end)
+  defp enqueue_power_command(vps, kind) do
+    # R5: an identical power command is already queued/delivered (e.g. a
+    # double-clicked Stop) — don't enqueue a duplicate. Idempotent no-op.
+    if power_in_flight?(vps.id, kind) do
+      {:ok, %{vps: vps, command: nil}}
+    else
+      multi =
+        Multi.insert(Multi.new(), :command, fn _ ->
+          Command.changeset(%Command{}, %{
+            node_id: vps.node_id,
+            vps_id: vps.id,
+            kind: kind,
+            status: :pending,
+            payload: %{"vm_id" => vps.provider_vm_id}
+          })
+        end)
 
-            case Repo.transaction(multi) do
-              {:ok, %{command: command}} ->
-                Events.broadcast_changed(:vps)
-                {:ok, %{vps: vps, command: command}}
+      case Repo.transaction(multi) do
+        {:ok, %{command: command}} ->
+          Events.broadcast_changed(:vps)
+          {:ok, %{vps: vps, command: command}}
 
-              {:error, _step, reason, _changes} ->
-                {:error, reason}
-            end
-        end
+        {:error, _step, reason, _changes} ->
+          {:error, reason}
+      end
     end
   end
 

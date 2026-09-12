@@ -121,14 +121,7 @@
           #
           {Credo.Check.Refactor.Apply, []},
           {Credo.Check.Refactor.CondStatements, []},
-          # Ratchet, not an exemption: 11 is today's worst, so anything more
-          # tangled than what already exists fails the build, and the number
-          # comes down as the offenders are simplified. Leaving the default and
-          # letting CI sit red until a multi-day refactor lands produces a gate
-          # everyone learns to ignore, which is worse than no gate.
-          # Offenders: MollieController.webhook, Provisioning.apply_result (11);
-          # delete_vps, validate_provision_input, dispatch_power (10).
-          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 11]},
+          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 9]},
           {Credo.Check.Refactor.FilterCount, []},
           {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.FunctionArity, []},
@@ -137,9 +130,7 @@
           {Credo.Check.Refactor.MatchInCondition, []},
           {Credo.Check.Refactor.NegatedConditionsInUnless, []},
           {Credo.Check.Refactor.NegatedConditionsWithElse, []},
-          # Same ratchet. One site at depth 4 (place_and_dispatch) and ten at
-          # depth 3; the default is 2.
-          {Credo.Check.Refactor.Nesting, [max_nesting: 4]},
+          {Credo.Check.Refactor.Nesting, [max_nesting: 2]},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},

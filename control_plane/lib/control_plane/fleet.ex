@@ -105,20 +105,22 @@ defmodule ControlPlane.Fleet do
         {:error, :not_found}
 
       %Node{status: current} = node when current != status ->
-        if current in from do
-          node
-          |> Node.mark_online_changeset(%{status: status})
-          |> Repo.update()
-          |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
-        else
-          {:error, {:invalid_status, current}}
-        end
+        if current in from,
+          do: transition_node(node, status),
+          else: {:error, {:invalid_status, current}}
 
       %Node{} = node ->
         # Already there. Draining a draining node is not an error; it is the
         # state the caller asked for.
         {:ok, node}
     end
+  end
+
+  defp transition_node(node, status) do
+    node
+    |> Node.mark_online_changeset(%{status: status})
+    |> Repo.update()
+    |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
   end
 
   @doc """
