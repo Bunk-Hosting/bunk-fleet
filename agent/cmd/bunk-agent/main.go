@@ -231,11 +231,13 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command, assigned *net.IPNet) {
 	// H4: replay protection. A MITM on a cleartext channel (or a buggy CP) could
 	// re-deliver a previously-seen command — e.g. replay a delete{vm_id} after
-	// that VMID has been reassigned to another tenant. Process each Command.ID at
-	// most once (bounded FIFO so the set can't grow without limit).
+	// that VMID has been reassigned to another tenant. Each Command.ID is executed
+	// at most once (bounded FIFO so the set can't grow without limit) — but a
+	// redelivery of a FINISHED command is answered with the result it produced,
+	// because the control plane only asks again when it never got one. See
+	// commandMemos.
 	const maxSeen = 1024
-	seen := make(map[string]struct{}, maxSeen)
-	order := make([]string, 0, maxSeen)
+	memos := newCommandMemos(maxSeen)
 	for {
 		select {
 		case <-ctx.Done():
@@ -246,17 +248,19 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 				logger.Info("command stream closed")
 				return
 			}
-			if cmd.ID != "" {
-				if _, dup := seen[cmd.ID]; dup {
-					logger.Warn("ignoring duplicate command (replay protection)", "id", cmd.ID, "kind", string(cmd.Kind))
-					continue
+			if prior := memos.accept(cmd.ID); prior != nil {
+				if prior.done {
+					// The control plane is asking again because it never got the
+					// answer. Give it the same one rather than doing the work twice
+					// — or, worse, staying silent and leaving the command wedged.
+					logger.Info("re-reporting a result the control plane did not receive",
+						"id", cmd.ID, "kind", string(cmd.Kind), "status", prior.result.Status)
+					reportResult(ctx, logger, cp, memos, cmd.ID, prior.result)
+				} else {
+					logger.Info("command already running; its result is still coming",
+						"id", cmd.ID, "kind", string(cmd.Kind))
 				}
-				seen[cmd.ID] = struct{}{}
-				order = append(order, cmd.ID)
-				if len(order) > maxSeen {
-					delete(seen, order[0])
-					order = order[1:]
-				}
+				continue
 			}
 			// A console request is not a command: nothing converges, nothing is
 			// reported, and it must not sit inside handleCommand's 15-minute
@@ -266,7 +270,7 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 				continue
 			}
 
-			handleCommand(ctx, logger, prov, cp, cmd)
+			handleCommand(ctx, logger, prov, cp, memos, cmd)
 		}
 	}
 }
@@ -274,7 +278,7 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 // handleCommand executes a single dispatched command and reports its outcome to
 // the control plane. All errors are turned into a "failed" result; they are
 // never propagated so a single bad command cannot take the agent down.
-func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmd transport.Command) {
+func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, memos *commandMemos, cmd transport.Command) {
 	// R1: bound every command so a hung hypervisor task (e.g. a stuck PVE clone)
 	// can't make a provider call poll forever and wedge the consumer.
 	ctx, cancel := context.WithTimeout(parentCtx, 15*time.Minute)
@@ -288,7 +292,7 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 			rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer rcancel()
 			logger.Error("command handler panicked", "id", cmd.ID, "kind", string(cmd.Kind), "panic", r)
-			reportResult(rctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: fmt.Sprintf("agent panic: %v", r)})
+			reportResult(rctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: fmt.Sprintf("agent panic: %v", r)})
 		}
 	}()
 
@@ -299,7 +303,7 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		var spec provider.VMSpec
 		if err := json.Unmarshal(cmd.Payload, &spec); err != nil {
 			logger.Error("provision: bad payload", "id", cmd.ID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 			return
 		}
 		logger.Info("provisioning vm", "id", cmd.ID, "name", spec.Name)
@@ -309,7 +313,7 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		// with this name already exists, adopt it instead of cloning a duplicate.
 		if existing, found, err := prov.FindByName(ctx, spec.Name); err != nil {
 			logger.Error("provision: existing-vm lookup failed", "id", cmd.ID, "name", spec.Name, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 			return
 		} else if found {
 			// A guest with this name already exists, but FindByName only reports
@@ -321,18 +325,18 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 			status, err := prov.StatusVM(ctx, existing.ID)
 			if err != nil {
 				logger.Error("provision: status of existing vm failed", "id", cmd.ID, "vm_id", existing.ID, "err", err)
-				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: existing.ID, Error: err.Error()})
+				reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: existing.ID, Error: err.Error()})
 				return
 			}
 			if status.State == "running" {
 				logger.Info("adopted existing vm", "id", cmd.ID, "vm_id", status.ID, "ip", status.IP)
-				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: status.ID, IP: status.IP})
+				reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: status.ID, IP: status.IP})
 				return
 			}
 			// Stopped or half-configured: fail so the control plane drives a clean
 			// retry (which can delete and re-provision) rather than adopting it.
 			logger.Warn("existing vm not running; not adopting", "id", cmd.ID, "vm_id", status.ID, "state", status.State)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 				Status: "failed",
 				VMID:   status.ID,
 				Error:  "existing vm in state " + status.State + " (not running)",
@@ -345,11 +349,11 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 			// st.ID is set when a partial VM could not be rolled back, so the
 			// control plane can still reconcile/delete the orphan.
 			logger.Error("provision failed", "id", cmd.ID, "vm_id", st.ID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: st.ID, Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: st.ID, Error: err.Error()})
 			return
 		}
 		logger.Info("provision done", "id", cmd.ID, "vm_id", st.ID, "ip", st.IP)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: st.ID, IP: st.IP})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: st.ID, IP: st.IP})
 
 	case transport.CmdDelete:
 		var del struct {
@@ -357,20 +361,20 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		}
 		if err := json.Unmarshal(cmd.Payload, &del); err != nil {
 			logger.Error("delete: bad payload", "id", cmd.ID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 			return
 		}
 		logger.Info("deleting vm", "id", cmd.ID, "vm_id", del.VMID)
 		if err := prov.DeleteVM(ctx, del.VMID); err != nil {
 			logger.Error("delete failed", "id", cmd.ID, "vm_id", del.VMID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: del.VMID, Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: del.VMID, Error: err.Error()})
 			return
 		}
 		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
 
 	case transport.CmdBackup, transport.CmdDeleteBackup, transport.CmdRestoreBackup:
-		handleBackupCommand(ctx, logger, prov, cp, cmd)
+		handleBackupCommand(ctx, logger, prov, cp, memos, cmd)
 
 	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
 		var p struct {
@@ -378,7 +382,7 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		}
 		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
 			logger.Error("power: bad payload", "id", cmd.ID, "kind", string(cmd.Kind), "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 			return
 		}
 		var err error
@@ -394,31 +398,39 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		}
 		if err != nil {
 			logger.Error("power command failed", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", VMID: p.VMID, Error: err.Error()})
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: p.VMID, Error: err.Error()})
 			return
 		}
 		logger.Info("power command done", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
 
 	default:
 		logger.Warn("unknown command kind; ignoring", "id", cmd.ID, "kind", string(cmd.Kind))
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})
 	}
 }
 
 // reportResult posts a command outcome with a bounded timeout, logging (but not
 // propagating) any reporting failure.
-func reportResult(ctx context.Context, logger *slog.Logger, cp *transport.Client, commandID string, res transport.CommandResult) {
+func reportResult(ctx context.Context, logger *slog.Logger, cp *transport.Client, memos *commandMemos, commandID string, res transport.CommandResult) {
 	// Detach from the command's own deadline before applying a fresh 15s cap.
 	// The command context carries a 15-MINUTE ceiling (handleCommand); when a
 	// command actually hits that ceiling — the exact "hung hypervisor" case the
 	// timeout exists for — `ctx` is already expired, so deriving the report
 	// context from it would fail instantly and the "failed" outcome would never
-	// reach the control plane (which then re-delivers, and replay-dedup silently
-	// drops it, wedging the command). WithoutCancel strips the deadline while
-	// retaining request-scoped values.
+	// reach the control plane. WithoutCancel strips the deadline while retaining
+	// request-scoped values.
+	//
+	// A send that still fails is survivable now: the result is memoised first, so
+	// the control plane's next redelivery is answered with it instead of being
+	// dropped as a duplicate.
 	rptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
+	// Remember it before trying to send. A report that fails is exactly the case
+	// the memo exists for: the control plane will ask again, and the answer has to
+	// still be here when it does.
+	memos.record(commandID, res)
+
 	if err := cp.ReportResult(rptCtx, commandID, res); err != nil {
 		logger.Error("report result failed", "id", commandID, "status", res.Status, "err", err)
 	}

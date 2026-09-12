@@ -15,11 +15,11 @@ import (
 // work a provider may simply not be able to do: ESXi archives guests by a
 // different mechanism entirely, so its provider does not implement
 // provider.Backups and says so here rather than failing obscurely later.
-func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmd transport.Command) {
+func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, memos *commandMemos, cmd transport.Command) {
 	backups, ok := prov.(provider.Backups)
 	if !ok {
 		logger.Error("backup: this hypervisor cannot archive guests", "provider", prov.Name())
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 			Status: "failed",
 			Error:  "backups are not supported on " + prov.Name(),
 		})
@@ -33,7 +33,7 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 	}
 	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
 		logger.Error("backup: bad payload", "id", cmd.ID, "err", err)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
 		return
 	}
 
@@ -44,7 +44,7 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 		archive, err := backups.BackupVM(ctx, p.VMID)
 		if err != nil {
 			logger.Error("backup failed", "id", cmd.ID, "vm_id", p.VMID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 				Status: "failed", VMID: p.VMID, Error: err.Error(),
 			})
 			return
@@ -52,7 +52,7 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 
 		logger.Info("backup done", "id", cmd.ID, "vm_id", p.VMID,
 			"volid", archive.VolID, "size_bytes", archive.SizeBytes)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 			Status: "done", VMID: p.VMID, VolID: archive.VolID, SizeBytes: archive.SizeBytes,
 		})
 
@@ -61,13 +61,13 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 
 		if err := backups.DeleteBackup(ctx, p.VolID); err != nil {
 			logger.Error("backup deletion failed", "id", cmd.ID, "volid", p.VolID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 				Status: "failed", Error: err.Error(),
 			})
 			return
 		}
 
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done"})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done"})
 
 	case transport.CmdRestoreBackup:
 		// Loud on purpose: this overwrites a customer's disk, and the log is the
@@ -77,7 +77,7 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 
 		if err := backups.RestoreVM(ctx, p.VMID, p.VolID); err != nil {
 			logger.Error("restore failed", "id", cmd.ID, "vm_id", p.VMID, "err", err)
-			reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 				Status: "failed", VMID: p.VMID, Error: err.Error(),
 			})
 			return
@@ -90,7 +90,7 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 			if err := prov.PowerOn(ctx, p.VMID); err != nil {
 				logger.Error("restored, but could not start the guest again",
 					"id", cmd.ID, "vm_id", p.VMID, "err", err)
-				reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{
+				reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
 					Status: "failed", VMID: p.VMID,
 					Error: "restored from backup, but starting it again failed: " + err.Error(),
 				})
@@ -99,6 +99,6 @@ func handleBackupCommand(ctx context.Context, logger *slog.Logger, prov provider
 		}
 
 		logger.Info("restore done", "id", cmd.ID, "vm_id", p.VMID, "started", p.StartAfter)
-		reportResult(ctx, logger, cp, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
+		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
 	}
 }
