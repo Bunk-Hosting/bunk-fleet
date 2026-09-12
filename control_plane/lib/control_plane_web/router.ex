@@ -22,6 +22,13 @@ defmodule ControlPlaneWeb.Router do
     plug :require_authenticated_user
   end
 
+  # The mirror image: someone already signed in has no business on the login or
+  # registration form, and showing it to them invites a second session for the
+  # same person. Not applied to /logout, which is for exactly those users.
+  pipeline :redirect_if_authenticated do
+    plug :redirect_if_user_is_authenticated
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -47,14 +54,21 @@ defmodule ControlPlaneWeb.Router do
 
   # Customer portal: public auth pages.
   scope "/", ControlPlaneWeb do
-    pipe_through [:browser, :auth_throttle]
+    pipe_through [:browser, :auth_throttle, :redirect_if_authenticated]
 
     get "/login", UserSessionController, :new
     post "/login", UserSessionController, :create
+    # Mid-MFA there is no session token yet, so the redirect above never fires
+    # here — the second factor is still ahead of the user.
     get "/login/mfa", UserSessionController, :mfa_new
     post "/login/mfa", UserSessionController, :mfa_create
     get "/register", UserRegistrationController, :new
     post "/register", UserRegistrationController, :create
+  end
+
+  scope "/", ControlPlaneWeb do
+    pipe_through :browser
+
     delete "/logout", UserSessionController, :delete
   end
 

@@ -190,13 +190,28 @@ defmodule ControlPlane.Console.Relay do
     spawn_link(fn ->
       case :gen_tcp.accept(listener, @attach_timeout_ms) do
         {:ok, socket} ->
-          :ok = :gen_tcp.controlling_process(socket, relay)
-          send(relay, {:accepted, socket})
+          hand_over(socket, relay)
 
         {:error, reason} ->
           send(relay, {:accept_failed, reason})
       end
     end)
+  end
+
+  # The relay can be gone by the time a connection lands on the listener — its
+  # attach timeout is running the whole time accept/2 blocks. controlling_process
+  # then answers {:error, :badarg}, and matching that against :ok would crash this
+  # task, which is spawn_linked: a relay that was merely late would be taken down
+  # by its own acceptor. Close the socket instead of leaking it, and report.
+  defp hand_over(socket, relay) do
+    case :gen_tcp.controlling_process(socket, relay) do
+      :ok ->
+        send(relay, {:accepted, socket})
+
+      {:error, reason} ->
+        :gen_tcp.close(socket)
+        send(relay, {:accept_failed, reason})
+    end
   end
 
   @impl true
