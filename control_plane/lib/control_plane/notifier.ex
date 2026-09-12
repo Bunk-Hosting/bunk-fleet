@@ -83,6 +83,18 @@ defmodule ControlPlane.Notifier do
     })
   end
 
+  @doc """
+  True when there is an address for operational alerts to reach. Read at boot by
+  `ControlPlane.SecurityPosture`, so an unset OPS_EMAIL is noticed before the
+  alert that needed it.
+  """
+  def ops_email_configured? do
+    case Application.get_env(:control_plane, :ops_email) do
+      to when is_binary(to) and to != "" -> true
+      _ -> false
+    end
+  end
+
   # Takes a map instead of four positional arguments: `to`/`subject`/`text`/`html`
   # are all strings, so a positional `deliver(to, subject, text, html)` reads
   # fine at the definition but is a silent transposition hazard at every call

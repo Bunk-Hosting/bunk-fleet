@@ -5,6 +5,10 @@ defmodule ControlPlane.Application do
 
   use Application
 
+  # Compiled in, because Mix is not loaded inside a release. Skipped in :test,
+  # where every protection is deliberately off and the warnings would be noise.
+  @report_posture Mix.env() != :test
+
   @impl true
   def start(_type, _args) do
     children =
@@ -32,7 +36,13 @@ defmodule ControlPlane.Application do
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: ControlPlane.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # After the tree is up, so the warnings land in the same log stream as
+    # everything else rather than ahead of the logger's own configuration.
+    if @report_posture, do: ControlPlane.SecurityPosture.report()
+
+    result
   end
 
   # The node-health reconciler is skipped in the test env (see config/test.exs)

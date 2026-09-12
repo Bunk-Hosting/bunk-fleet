@@ -40,7 +40,11 @@ defmodule ControlPlane.Turnstile do
   defp do_verify(token, remote_ip) do
     form = %{secret: secret(), response: token} |> put_ip(remote_ip)
 
-    case Req.post(@endpoint, form: form, receive_timeout: 5_000, retry: false) do
+    options =
+      [url: @endpoint, form: form, receive_timeout: 5_000, retry: false] ++
+        (config(:req_options) || [])
+
+    case Req.post(options) do
       {:ok, %{status: 200, body: %{"success" => true}}} ->
         :ok
 
@@ -60,5 +64,9 @@ defmodule ControlPlane.Turnstile do
   defp put_ip(form, ip) when is_binary(ip) and ip != "", do: Map.put(form, :remoteip, ip)
   defp put_ip(form, _), do: form
 
-  defp secret, do: Application.get_env(:control_plane, :turnstile, [])[:secret_key]
+  defp secret, do: config(:secret_key)
+
+  # `:req_options` is how the test suite points this at a stub instead of
+  # Cloudflare. Nothing sets it in production.
+  defp config(key), do: Application.get_env(:control_plane, :turnstile, [])[key]
 end
