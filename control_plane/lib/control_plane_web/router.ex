@@ -100,6 +100,15 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :api
   end
 
+  # Where browsers post CSP violations. Unauthenticated by necessity — a browser
+  # sends these with no credentials — so it is rate-limited instead, on its own
+  # bucket: a flood of reports must not use up the budget that protects login.
+  scope "/api/v1", ControlPlaneWeb do
+    pipe_through :csp_report
+
+    post "/security/csp-report", SecurityController, :csp_report
+  end
+
   # Public worker installer script (curl | bash).
   scope "/", ControlPlaneWeb do
     pipe_through :api
@@ -111,6 +120,14 @@ defmodule ControlPlaneWeb.Router do
   pipeline :auth_public do
     plug :accepts, ["json"]
     plug ControlPlaneWeb.Plugs.RateLimit, bucket: "auth", max: 30, window_ms: 60_000
+  end
+
+  # CSP violation reports arrive from browsers with no credentials, so the only
+  # control available is volume. Its own bucket: a page generating violations in
+  # a loop must not exhaust the budget that protects login.
+  pipeline :csp_report do
+    plug :accepts, ["json"]
+    plug ControlPlaneWeb.Plugs.RateLimit, bucket: "csp", max: 60, window_ms: 60_000
   end
 
   # Public node enrollment is unauthenticated (the single-use enroll token is the

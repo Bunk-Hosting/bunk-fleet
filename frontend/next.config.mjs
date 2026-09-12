@@ -3,22 +3,18 @@
 // Fallbacks are the live origin; api.bunkhosting.nl has no DNS/tunnel.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://app.bunkhosting.nl";
 const WS_URL  = (process.env.NEXT_PUBLIC_WS_URL  || "wss://app.bunkhosting.nl").replace(/^http/, "ws");
-const CSP_REPORT_URI = `${API_URL}/api/v1/security/csp-report/`;
+// No trailing slash: that was a Django-era path, and the endpoint it pointed at
+// did not exist — every violation report a browser sent got a 404, so the
+// reporting was decoration. This matches the route the control plane serves.
+const CSP_REPORT_URI = `${API_URL}/api/v1/security/csp-report`;
 
+// Only the headers that are specific to the HTML this app serves. Everything
+// else — frame options, nosniff, HSTS, referrer policy, permissions policy,
+// COOP — is set once at the nginx edge, which also fronts the API and is
+// therefore the only layer that can cover every response. Setting them in both
+// places is how a policy drifts apart: you change one and the other keeps
+// answering.
 const securityHeaders = [
-  // Clickjacking: pagina mag niet in een iframe worden geladen
-  { key: "X-Frame-Options",           value: "DENY" },
-  // Voorkom MIME-type sniffing
-  { key: "X-Content-Type-Options",    value: "nosniff" },
-  // HSTS: forceer HTTPS voor 1 jaar, inclusief subdomeinen
-  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
-  // Stuur geen volledige Referer-header mee naar externe sites
-  { key: "Referrer-Policy",           value: "strict-origin-when-cross-origin" },
-  // Schakel ongebruikte browser-API's uit
-  { key: "Permissions-Policy",        value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
-  // Cross-origin-isolation: voorkomt dat een andere site dezelfde window-
-  // groep deelt (Spectre/XS-Leaks defence-in-depth).
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   // Reporting API (modern). Browsers die alleen report-uri ondersteunen
   // vallen terug op de directive 'report-uri' verderop in de CSP.
   {
