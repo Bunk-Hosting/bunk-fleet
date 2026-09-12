@@ -8,7 +8,7 @@ defmodule ControlPlaneWeb.Admin.TopupControllerTest do
   defp auth(conn), do: put_req_header(conn, "authorization", "Bearer " <> @admin_token)
 
   defp user(email) do
-    {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})
+    {:ok, u} = Accounts.register_user(%{email: email, password: "test-only-password-4f2b9c1e"})
     u
   end
 

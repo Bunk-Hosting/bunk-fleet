@@ -3,7 +3,7 @@ defmodule ControlPlaneWeb.UserSessionMfaTest do
 
   alias ControlPlane.Accounts
 
-  @pw "Rookworst31!secure"
+  @pw "test-only-password-4f2b9c1e"
 
   defp mfa_user(email) do
     {:ok, u} = Accounts.register_user(%{email: email, password: @pw})

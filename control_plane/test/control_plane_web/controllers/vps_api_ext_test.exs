@@ -10,7 +10,9 @@ defmodule ControlPlaneWeb.VpsApiExtTest do
   end
 
   defp user(email) do
-    {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure", name: "T"})
+    {:ok, u} =
+      Accounts.register_user(%{email: email, password: "test-only-password-4f2b9c1e", name: "T"})
+
     u
   end
 

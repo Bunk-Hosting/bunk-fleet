@@ -24,7 +24,11 @@ defmodule ControlPlane.Fixtures do
 
   # Long enough for the 12-character minimum in User.registration_changeset/2;
   # tests that log in with a password pass their own.
-  @default_password "Rookworst31!secure"
+  # Obviously fake, and deliberately so: this used to be a real credential from
+  # the operator's own estate with a suffix, committed across seven files and
+  # recoverable from the git history. A fixture password must be recognisable as
+  # a fixture at a glance.
+  @default_password "test-only-password-4f2b9c1e"
 
   @doc """
   Registers a user, confirms their email address, and returns the confirmed

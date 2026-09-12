@@ -5,7 +5,7 @@ defmodule ControlPlane.CreditsTopupTest do
   alias ControlPlane.Credits
 
   defp user(email) do
-    {:ok, u} = Accounts.register_user(%{email: email, password: "Rookworst31!secure"})
+    {:ok, u} = Accounts.register_user(%{email: email, password: "test-only-password-4f2b9c1e"})
     u
   end
 
