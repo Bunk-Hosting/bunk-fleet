@@ -239,7 +239,7 @@ defmodule ControlPlaneWeb.VpsController do
       disk_gb: params["disk_gb"],
       template_id: default_template_id(),
       ssh_keys: params["ssh_keys"] || [],
-      cloud_init: params["cloud_init"] || %{}
+      cloud_init: allowed_cloud_init(params["cloud_init"])
       # SECURITY: never accept ip_config/ip_address from the self-service body. It
       # is a staff-only override (admin controller sets it); letting a customer set
       # it bypasses IpPool.allocate — they could pin a co-tenant's or the gateway's
@@ -247,6 +247,22 @@ defmodule ControlPlaneWeb.VpsController do
       # vpses_active_node_ip_uidx uniqueness backstop. Force allocation via the pool.
     }
   end
+
+  # An allow-list, not a size cap. The agent reads exactly two cloud-init keys;
+  # everything else was stored in the command payload forever and then ignored,
+  # which is retention without a purpose. Anything not named here is dropped.
+  @cloud_init_keys ~w(user password)
+  @max_cloud_init_value 128
+
+  defp allowed_cloud_init(%{} = cloud_init) do
+    cloud_init
+    |> Map.take(@cloud_init_keys)
+    |> Map.filter(fn {_key, value} ->
+      is_binary(value) and value != "" and byte_size(value) <= @max_cloud_init_value
+    end)
+  end
+
+  defp allowed_cloud_init(_), do: %{}
 
   defp resolve_region_id(%{"region_id" => region_id}, _attrs) when is_binary(region_id) do
     case valid_id(region_id) do

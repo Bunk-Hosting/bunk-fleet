@@ -688,7 +688,11 @@ defmodule ControlPlane.Provisioning do
           else: {:ok, locked}
       end)
       |> Multi.update(:command, fn %{lock: locked} ->
-        Command.changeset(locked, %{status: outcome, result: result})
+        Command.changeset(locked, %{
+          status: outcome,
+          result: result,
+          payload: scrub_secrets(locked.payload)
+        })
       end)
       |> finalize_vps(command, outcome, result)
 
@@ -707,6 +711,25 @@ defmodule ControlPlane.Provisioning do
   end
 
   # --- internal helpers -----------------------------------------------------
+
+  # A provision payload can carry a cloud-init password, which the node needs
+  # while it builds the guest and nobody needs afterwards. Commands are durable
+  # rows: without this the secret would sit in the database for the life of the
+  # platform, in plaintext, long after the VPS it belonged to was deleted. It is
+  # scrubbed the moment the command reaches a terminal state.
+  @secret_payload_keys ~w(password)
+
+  defp scrub_secrets(%{} = payload) do
+    case payload["cloud_init"] do
+      %{} = cloud_init ->
+        Map.put(payload, "cloud_init", Map.drop(cloud_init, @secret_payload_keys))
+
+      _ ->
+        payload
+    end
+  end
+
+  defp scrub_secrets(payload), do: payload
 
   # Provision succeeded: activate the VPS (recording provider id / ip) and commit
   # the held reservation. Capacity stays decremented.

