@@ -26,3 +26,4 @@ erl_crash.dump
 control_plane-*.tar
 
 dist/
+priv/plts

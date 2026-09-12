@@ -1,5 +1,10 @@
 name: CI
 
+# Everything that must be true before code reaches a customer. The guidelines ask
+# for a linter and a type checker with warnings treated as errors, and for code to
+# be scanned before deployment; this is where that is enforced rather than
+# remembered. Local runs (tools/check.sh) are the fast loop — this is the gate.
+
 on:
   push:
     branches: [main]
@@ -7,7 +12,7 @@ on:
 
 jobs:
   agent:
-    name: Go agent (build + test)
+    name: Go agent
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -18,17 +23,45 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          # Kept current on purpose: the agent runs on hardware we do not own and
+          # speaks TLS to the control plane, so its standard library is part of
+          # the attack surface. See the note in go.mod.
+          go-version: "1.25"
           cache-dependency-path: agent/go.sum
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Static analysis
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          working-directory: agent
+          install-go: false
 
       - name: Build
         run: go build ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Test (with the race detector)
+        # The agent runs a command consumer, a heartbeat loop, a forward sync and
+        # one goroutine per console session against shared state. Races here are
+        # the kind that only show up on a customer's node.
+        run: go test -race ./...
+
+      - name: Known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   control_plane:
-    name: Elixir control plane (compile + test)
+    name: Elixir control plane
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,8 +108,62 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
+      - name: Formatting
+        run: mix format --check-formatted
+
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
 
+      - name: Lint
+        run: mix credo --strict
+
+      - name: Known vulnerabilities
+        run: mix deps.audit
+
       - name: Run tests
         run: mix test
+
+      # Dialyzer last: it is the slowest step and the least likely to fail, so
+      # everything cheaper gets to report first.
+      - name: Restore Dialyzer PLT
+        uses: actions/cache@v4
+        with:
+          path: control_plane/priv/plts
+          key: ${{ runner.os }}-plt-${{ hashFiles('control_plane/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-plt-
+
+      - name: Type check
+        run: mix dialyzer --format github
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx next lint --max-warnings 0
+
+      - name: Known vulnerabilities
+        # Production dependencies only: a dev-tool advisory should not block a
+        # deploy, but anything that ships to a browser should.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build
+        run: npm run build
