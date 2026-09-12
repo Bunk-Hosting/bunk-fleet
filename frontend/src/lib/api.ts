@@ -236,6 +236,12 @@ function transformUser(u: BunkUser): User {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────
+/** What a login attempt can tell the caller beyond "it worked". */
+export type LoginResult = {
+  totp_required?: boolean;
+  verification_required?: boolean;
+};
+
 export const authApi = {
   register: async (name: string, email: string, password: string, _passwordConfirm: string, captcha?: string) => {
     // The control plane sets the HttpOnly session cookie on this response; there
@@ -251,8 +257,12 @@ export const authApi = {
     return { data: { detail: "ok" } };
   },
 
-  // bunk-fleet login is single-step (password → token); the frontend's optional
-  // OTP/TOTP steps simply never trigger because no *_required flag is returned.
+  // Login is one step (password → session cookie) unless the account has TOTP on,
+  // in which case the control plane withholds the cookie and asks for a code.
+  // `verification_required` never comes back on this call — an unconfirmed
+  // account is rejected with an error, and the caller reads that flag off the
+  // error body, not off a success. It is named here because the login page's
+  // one branch switches on it.
   login: async (email: string, password: string, captcha?: string, code?: string) => {
     const res = await api.post<{ user?: BunkUser; token?: string; totp_required?: boolean }>(
       "/auth/login",
@@ -265,13 +275,15 @@ export const authApi = {
         ...(code ? { code } : {}),
       },
     );
-    // 2FA gate: the backend returns { totp_required: true } and does NOT set the
-    // session cookie until a valid TOTP code is supplied.
+
+    // 2FA gate: the control plane returns { totp_required: true } and does NOT
+    // set the session cookie until a valid TOTP code is supplied.
     if (res.data.totp_required) {
-      return { data: { totp_required: true } as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
+      return { data: { totp_required: true } as LoginResult };
     }
+
     // On success the control plane sets the HttpOnly session cookie on this response.
-    return { data: {} as { otp_required?: boolean; totp_required?: boolean; verification_required?: boolean } };
+    return { data: {} as LoginResult };
   },
 
 

@@ -11,7 +11,7 @@ defmodule ControlPlane.Fleet.Node do
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Net
 
-  # Sane upper bounds on a single node's advertised capacity (O-24). A node's
+  # Sane upper bounds on a single node's advertised capacity. A node's
   # totals come from its untrusted agent; without a ceiling a hostile community
   # node could advertise absurd capacity to always look least-loaded and win every
   # placement, drawing other tenants' VPSes onto hardware whose operator has full

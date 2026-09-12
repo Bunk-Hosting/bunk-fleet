@@ -229,7 +229,7 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 // cancellation or a fatal poll error) and dispatches each command. A panic or
 // failure handling one command must not stop the loop.
 func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command, assigned *net.IPNet) {
-	// H4: replay protection. A MITM on a cleartext channel (or a buggy CP) could
+	// Replay protection. A MITM on a cleartext channel (or a buggy CP) could
 	// re-deliver a previously-seen command — e.g. replay a delete{vm_id} after
 	// that VMID has been reassigned to another tenant. Each Command.ID is executed
 	// at most once (bounded FIFO so the set can't grow without limit) — but a
@@ -279,12 +279,12 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 // the control plane. All errors are turned into a "failed" result; they are
 // never propagated so a single bad command cannot take the agent down.
 func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, memos *commandMemos, cmd transport.Command) {
-	// R1: bound every command so a hung hypervisor task (e.g. a stuck PVE clone)
+	// Bound every command so a hung hypervisor task (e.g. a stuck PVE clone)
 	// can't make a provider call poll forever and wedge the consumer.
 	ctx, cancel := context.WithTimeout(parentCtx, 15*time.Minute)
 	defer cancel()
 
-	// R5: a panic in any provider/govmomi path must not crash the whole agent
+	// A panic in any provider/govmomi path must not crash the whole agent
 	// (which would kill heartbeats + the command stream). Recover, report the
 	// command failed on a DETACHED context, and keep the loop alive.
 	defer func() {
@@ -298,116 +298,165 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 
 	logger.Info("command received", "id", cmd.ID, "kind", string(cmd.Kind))
 
+	c := command{ctx: ctx, logger: logger, prov: prov, cp: cp, memos: memos, cmd: cmd}
+
 	switch cmd.Kind {
 	case transport.CmdProvision:
-		var spec provider.VMSpec
-		if err := json.Unmarshal(cmd.Payload, &spec); err != nil {
-			logger.Error("provision: bad payload", "id", cmd.ID, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
-			return
-		}
-		logger.Info("provisioning vm", "id", cmd.ID, "name", spec.Name)
-
-		// Idempotency: the control plane may re-deliver a provision command
-		// (e.g. after an agent crash before the result was reported). If a guest
-		// with this name already exists, adopt it instead of cloning a duplicate.
-		if existing, found, err := prov.FindByName(ctx, spec.Name); err != nil {
-			logger.Error("provision: existing-vm lookup failed", "id", cmd.ID, "name", spec.Name, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
-			return
-		} else if found {
-			// A guest with this name already exists, but FindByName only reports
-			// its list-level state and never an IP. A previous attempt may have
-			// crashed mid-flight (clone→resize→config→start), leaving the guest
-			// stopped or half-configured. Re-check its real state and IP via
-			// StatusVM before adopting it, so we never mark a broken VPS active.
-			logger.Info("vm already exists (idempotent)", "id", cmd.ID, "name", spec.Name, "vm_id", existing.ID)
-			status, err := prov.StatusVM(ctx, existing.ID)
-			if err != nil {
-				logger.Error("provision: status of existing vm failed", "id", cmd.ID, "vm_id", existing.ID, "err", err)
-				reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: existing.ID, Error: err.Error()})
-				return
-			}
-			if status.State == "running" {
-				logger.Info("adopted existing vm", "id", cmd.ID, "vm_id", status.ID, "ip", status.IP)
-				reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: status.ID, IP: status.IP})
-				return
-			}
-			// Stopped or half-configured: fail so the control plane drives a clean
-			// retry (which can delete and re-provision) rather than adopting it.
-			logger.Warn("existing vm not running; not adopting", "id", cmd.ID, "vm_id", status.ID, "state", status.State)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{
-				Status: "failed",
-				VMID:   status.ID,
-				Error:  "existing vm in state " + status.State + " (not running)",
-			})
-			return
-		}
-
-		st, err := prov.CreateVM(ctx, spec)
-		if err != nil {
-			// st.ID is set when a partial VM could not be rolled back, so the
-			// control plane can still reconcile/delete the orphan.
-			logger.Error("provision failed", "id", cmd.ID, "vm_id", st.ID, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: st.ID, Error: err.Error()})
-			return
-		}
-		logger.Info("provision done", "id", cmd.ID, "vm_id", st.ID, "ip", st.IP)
-		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: st.ID, IP: st.IP})
+		handleProvision(c)
 
 	case transport.CmdDelete:
-		var del struct {
-			VMID string `json:"vm_id"`
-		}
-		if err := json.Unmarshal(cmd.Payload, &del); err != nil {
-			logger.Error("delete: bad payload", "id", cmd.ID, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
-			return
-		}
-		logger.Info("deleting vm", "id", cmd.ID, "vm_id", del.VMID)
-		if err := prov.DeleteVM(ctx, del.VMID); err != nil {
-			logger.Error("delete failed", "id", cmd.ID, "vm_id", del.VMID, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: del.VMID, Error: err.Error()})
-			return
-		}
-		logger.Info("delete done", "id", cmd.ID, "vm_id", del.VMID)
-		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: del.VMID})
+		handleDelete(c)
 
 	case transport.CmdBackup, transport.CmdDeleteBackup, transport.CmdRestoreBackup:
 		handleBackupCommand(ctx, logger, prov, cp, memos, cmd)
 
 	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
-		var p struct {
-			VMID string `json:"vm_id"`
-		}
-		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-			logger.Error("power: bad payload", "id", cmd.ID, "kind", string(cmd.Kind), "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: err.Error()})
-			return
-		}
-		var err error
-		switch cmd.Kind {
-		case transport.CmdStart:
-			err = prov.PowerOn(ctx, p.VMID)
-		case transport.CmdStop:
-			err = prov.PowerOff(ctx, p.VMID)
-		case transport.CmdPause:
-			err = prov.Suspend(ctx, p.VMID)
-		case transport.CmdResume:
-			err = prov.Resume(ctx, p.VMID)
-		}
-		if err != nil {
-			logger.Error("power command failed", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID, "err", err)
-			reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", VMID: p.VMID, Error: err.Error()})
-			return
-		}
-		logger.Info("power command done", "id", cmd.ID, "kind", string(cmd.Kind), "vm_id", p.VMID)
-		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "done", VMID: p.VMID})
+		handlePower(c)
 
 	default:
 		logger.Warn("unknown command kind; ignoring", "id", cmd.ID, "kind", string(cmd.Kind))
-		reportResult(ctx, logger, cp, memos, cmd.ID, transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})
+		c.report(transport.CommandResult{Status: "failed", Error: "unknown command kind: " + string(cmd.Kind)})
 	}
+}
+
+// command is one dispatched instruction plus everything handling it needs. It
+// exists so the handlers below can say `c.report(...)` instead of threading five
+// unchanging arguments through every one of their exits — and they have many
+// exits, because every step of talking to a hypervisor can fail.
+type command struct {
+	ctx    context.Context
+	logger *slog.Logger
+	prov   provider.Provider
+	cp     *transport.Client
+	memos  *commandMemos
+	cmd    transport.Command
+}
+
+func (c command) report(res transport.CommandResult) {
+	reportResult(c.ctx, c.logger, c.cp, c.memos, c.cmd.ID, res)
+}
+
+// failed reports the command failed and logs why. `vmID` is empty when there is
+// no guest to point at yet; when there is one, it must be carried so the control
+// plane can reconcile whatever was left behind.
+func (c command) failed(msg string, vmID string, err error) {
+	c.logger.Error(msg, "id", c.cmd.ID, "kind", string(c.cmd.Kind), "vm_id", vmID, "err", err)
+	c.report(transport.CommandResult{Status: "failed", VMID: vmID, Error: err.Error()})
+}
+
+func handleProvision(c command) {
+	var spec provider.VMSpec
+	if err := json.Unmarshal(c.cmd.Payload, &spec); err != nil {
+		c.failed("provision: bad payload", "", err)
+		return
+	}
+	c.logger.Info("provisioning vm", "id", c.cmd.ID, "name", spec.Name)
+
+	// Idempotency: the control plane may re-deliver a provision command (e.g.
+	// after an agent crash before the result was reported). If a guest with this
+	// name already exists, adopt it instead of cloning a duplicate.
+	existing, found, err := c.prov.FindByName(c.ctx, spec.Name)
+	if err != nil {
+		c.failed("provision: existing-vm lookup failed", "", err)
+		return
+	}
+	if found {
+		adoptExisting(c, spec, existing)
+		return
+	}
+
+	st, err := c.prov.CreateVM(c.ctx, spec)
+	if err != nil {
+		// st.ID is set when a partial VM could not be rolled back, so the control
+		// plane can still reconcile/delete the orphan.
+		c.failed("provision failed", st.ID, err)
+		return
+	}
+	c.logger.Info("provision done", "id", c.cmd.ID, "vm_id", st.ID, "ip", st.IP)
+	c.report(transport.CommandResult{Status: "done", VMID: st.ID, IP: st.IP})
+}
+
+// A guest with this name already exists, but FindByName only reports its
+// list-level state and never an IP. A previous attempt may have crashed
+// mid-flight (clone→resize→config→start), leaving the guest stopped or
+// half-configured. Re-check its real state and IP before adopting it, so a
+// broken VPS is never marked active.
+func adoptExisting(c command, spec provider.VMSpec, existing provider.VMStatus) {
+	c.logger.Info("vm already exists (idempotent)", "id", c.cmd.ID, "name", spec.Name, "vm_id", existing.ID)
+
+	status, err := c.prov.StatusVM(c.ctx, existing.ID)
+	if err != nil {
+		c.failed("provision: status of existing vm failed", existing.ID, err)
+		return
+	}
+
+	if status.State == "running" {
+		c.logger.Info("adopted existing vm", "id", c.cmd.ID, "vm_id", status.ID, "ip", status.IP)
+		c.report(transport.CommandResult{Status: "done", VMID: status.ID, IP: status.IP})
+		return
+	}
+
+	// Stopped or half-configured: fail so the control plane drives a clean retry
+	// (which can delete and re-provision) rather than adopting it.
+	c.logger.Warn("existing vm not running; not adopting", "id", c.cmd.ID, "vm_id", status.ID, "state", status.State)
+	c.report(transport.CommandResult{
+		Status: "failed",
+		VMID:   status.ID,
+		Error:  "existing vm in state " + status.State + " (not running)",
+	})
+}
+
+func handleDelete(c command) {
+	vmID, ok := payloadVMID(c, "delete")
+	if !ok {
+		return
+	}
+
+	c.logger.Info("deleting vm", "id", c.cmd.ID, "vm_id", vmID)
+	if err := c.prov.DeleteVM(c.ctx, vmID); err != nil {
+		c.failed("delete failed", vmID, err)
+		return
+	}
+	c.logger.Info("delete done", "id", c.cmd.ID, "vm_id", vmID)
+	c.report(transport.CommandResult{Status: "done", VMID: vmID})
+}
+
+func handlePower(c command) {
+	vmID, ok := payloadVMID(c, "power")
+	if !ok {
+		return
+	}
+
+	var err error
+	switch c.cmd.Kind {
+	case transport.CmdStart:
+		err = c.prov.PowerOn(c.ctx, vmID)
+	case transport.CmdStop:
+		err = c.prov.PowerOff(c.ctx, vmID)
+	case transport.CmdPause:
+		err = c.prov.Suspend(c.ctx, vmID)
+	case transport.CmdResume:
+		err = c.prov.Resume(c.ctx, vmID)
+	}
+	if err != nil {
+		c.failed("power command failed", vmID, err)
+		return
+	}
+	c.logger.Info("power command done", "id", c.cmd.ID, "kind", string(c.cmd.Kind), "vm_id", vmID)
+	c.report(transport.CommandResult{Status: "done", VMID: vmID})
+}
+
+// Every command that acts on an existing guest carries its id the same way.
+// Returns false once the failure has already been reported.
+func payloadVMID(c command, what string) (string, bool) {
+	var payload struct {
+		VMID string `json:"vm_id"`
+	}
+	if err := json.Unmarshal(c.cmd.Payload, &payload); err != nil {
+		c.failed(what+": bad payload", "", err)
+		return "", false
+	}
+	return payload.VMID, true
 }
 
 // reportResult posts a command outcome with a bounded timeout, logging (but not

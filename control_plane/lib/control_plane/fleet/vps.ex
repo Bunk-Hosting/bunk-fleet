@@ -52,7 +52,7 @@ defmodule ControlPlane.Fleet.Vps do
 
     # TOFU-pinned SSH host-key fingerprint (SHA256:...), recorded on the first
     # browser-console connection and verified on every later one to detect a
-    # hypervisor-operator MITM of the console (see Console.HostKeys, O-33).
+    # hypervisor-operator MITM of the console (see Console.HostKeys).
     field :ssh_host_key, :string
 
     # Accrual-metering watermark: the timestamp through which this VPS has

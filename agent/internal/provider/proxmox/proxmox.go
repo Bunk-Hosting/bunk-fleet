@@ -460,12 +460,24 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 	}, nil
 }
 
+// parseVMID turns the control plane's vm id string into the integer Proxmox
+// addresses guests by. It is the first thing every lifecycle call does: the id
+// arrives over the wire and goes straight into a URL path, so anything that is
+// not a plain number has to stop here rather than downstream.
+func parseVMID(id string) (int, error) {
+	vmid, err := strconv.Atoi(id)
+	if err != nil {
+		return 0, fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+	}
+	return vmid, nil
+}
+
 // DeleteVM implements provider.Provider. It stops the guest (best effort) and
 // then destroys it. A missing guest is treated as success.
 func (c *Client) DeleteVM(ctx context.Context, id string) error {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return err
 	}
 	node := url.PathEscape(c.cfg.Node)
 
@@ -525,9 +537,9 @@ func (c *Client) powerOp(ctx context.Context, vmid int, op string) error {
 
 // PowerOn implements provider.Provider; idempotent if the guest already runs.
 func (c *Client) PowerOn(ctx context.Context, id string) error {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return err
 	}
 	status, _, err := c.currentState(ctx, vmid)
 	if err != nil {
@@ -541,9 +553,9 @@ func (c *Client) PowerOn(ctx context.Context, id string) error {
 
 // PowerOff implements provider.Provider; idempotent if already stopped.
 func (c *Client) PowerOff(ctx context.Context, id string) error {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return err
 	}
 	status, _, err := c.currentState(ctx, vmid)
 	if err != nil {
@@ -557,9 +569,9 @@ func (c *Client) PowerOff(ctx context.Context, id string) error {
 
 // Suspend implements provider.Provider (suspend-to-RAM); idempotent if paused.
 func (c *Client) Suspend(ctx context.Context, id string) error {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return err
 	}
 	status, qmp, err := c.currentState(ctx, vmid)
 	if err != nil {
@@ -576,9 +588,9 @@ func (c *Client) Suspend(ctx context.Context, id string) error {
 
 // Resume implements provider.Provider; idempotent if already running.
 func (c *Client) Resume(ctx context.Context, id string) error {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return err
 	}
 	status, qmp, err := c.currentState(ctx, vmid)
 	if err != nil {
@@ -614,9 +626,9 @@ type vmAgentIfaces struct {
 // StatusVM implements provider.Provider. It reports lifecycle state and, when
 // the guest agent is available, the primary non-loopback IPv4 address.
 func (c *Client) StatusVM(ctx context.Context, id string) (provider.VMStatus, error) {
-	vmid, err := strconv.Atoi(id)
+	vmid, err := parseVMID(id)
 	if err != nil {
-		return provider.VMStatus{}, fmt.Errorf("proxmox: invalid vm id %q: %w", id, err)
+		return provider.VMStatus{}, err
 	}
 	node := url.PathEscape(c.cfg.Node)
 

@@ -128,7 +128,7 @@ defmodule ControlPlane.Accounts do
   Returns `{:ok, user}` or `{:error, changeset}` (e.g. duplicate email, short
   password). The signup bonus is granted on email confirmation (`confirm_user/1`),
   NOT here — crediting it at registration is what let a throwaway, unverified
-  address farm free wallet balance (misuse case O-7).
+  address farm free wallet balance.
   """
   def register_user(attrs) do
     case %User{} |> User.registration_changeset(attrs) |> Repo.insert() do

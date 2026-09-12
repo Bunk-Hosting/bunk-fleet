@@ -446,7 +446,7 @@ defmodule ControlPlane.Provisioning do
   # previous delete terminally failed (e.g. a transient Proxmox error), allow a
   # fresh attempt so a VPS can never get permanently stuck undeletable.
   defp redispatch_delete(vps) do
-    if delete_in_flight?(vps.id),
+    if in_flight?(vps.id, :delete),
       do: {:error, :already_deleting},
       else: dispatch_delete(vps)
   end
@@ -462,24 +462,22 @@ defmodule ControlPlane.Provisioning do
       else: cancel_and_release(vps)
   end
 
-  # True if a delete command for this VPS is still pending/delivered (in flight).
-  defp power_in_flight?(vps_id, kind) do
+  # True if a command of this kind for this VPS is queued or already with the
+  # agent, and so has not reported back yet.
+  defp in_flight?(vps_id, kind) do
     Repo.exists?(
       from c in Command,
         where: c.vps_id == ^vps_id and c.kind == ^kind and c.status in [:pending, :delivered]
     )
   end
 
-  defp delete_in_flight?(vps_id) do
-    Repo.exists?(
-      from c in Command,
-        where: c.vps_id == ^vps_id and c.kind == :delete and c.status in [:pending, :delivered]
-    )
-  end
-
   # A provision command already handed to the agent (:delivered). Distinct from a
   # merely :pending one, which the agent has not started — that one is safe to
   # cancel outright.
+  # Deliberately narrower than in_flight?/2: only :delivered counts, not
+  # :pending. A provision still sitting in the queue has produced no VM, so it
+  # can be cancelled outright; one the agent has taken may be mid-CreateVM, and
+  # failing that now would orphan whatever it is about to produce.
   defp provision_in_flight?(vps_id) do
     Repo.exists?(
       from c in Command,
@@ -568,9 +566,9 @@ defmodule ControlPlane.Provisioning do
   end
 
   defp enqueue_power_command(vps, kind) do
-    # R5: an identical power command is already queued/delivered (e.g. a
+    # An identical power command is already queued/delivered (e.g. a
     # double-clicked Stop) — don't enqueue a duplicate. Idempotent no-op.
-    if power_in_flight?(vps.id, kind) do
+    if in_flight?(vps.id, kind) do
       {:ok, %{vps: vps, command: nil}}
     else
       multi =

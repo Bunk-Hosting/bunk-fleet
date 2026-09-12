@@ -230,7 +230,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   defp settle_subscriptions do
     # Charge subscriptions that have come due and suspend/resume VPSes on the
-    # customer's wallet balance (O-10). Cheap on an idle day: the due-query is
+    # customer's wallet balance. Cheap on an idle day: the due-query is
     # indexed and each due subscription advances its own date, so a subscription
     # is touched at most once per day regardless of the 30s tick.
     summary = Subscriptions.settle_due()

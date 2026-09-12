@@ -34,3 +34,106 @@ Craftsmanship/maintainability review (2026-06-29) across control plane (Elixir),
 - **[MED] Dead VPS sudo-password UI** (`vpsApi.credentials` hardcodes null) + extract a `<ConfirmDialog>` (Start/Stop/Delete dialogs are 3 near-clones, repeated again in beheer).
 - **[MED] `adminApi` `/beheer/*`** surface 404s on bunk-fleet — quarantine or implement (parity scaffolding).
 - **[LOW] Dead exports** `types.ts JwtPayload`, `api.ts loginTotp`/`resendVerification`; named `LoginResult` type instead of the twice-inlined cast; pick one comment language (safeNext is commented in both NL and EN).
+
+
+---
+
+# Ronde 2 — 2026-09-12
+
+Alles uit de backlog hierboven is nagelopen. Wat nu nog open staat, staat onderaan.
+
+## Afgehandeld sinds ronde 1
+
+**Control plane.** De dubbele klant-UI is weg (de LiveView-portalen bestaan niet
+meer). `ControlPlaneWeb.ApiResponse`, `Plugs.Bearer`, `ControlPlaneWeb.TimeWindow`,
+`ControlPlane.Net` en `Node.add_capacity/2` bestaan en worden overal gebruikt.
+`ControlPlane.Locks` geeft de vijf advisory-lockplekken een naam in plaats van een
+getal. `Fleet.record_heartbeat/2` en `Provisioning.pending_commands_for_node/1` zijn
+verdwenen; `delete_in_flight?/1` is opgegaan in `in_flight?/2` en het verschil met
+`provision_in_flight?/1` — alleen `:delivered` telt daar, want een provision die nog
+in de wachtrij staat heeft nog niets gemaakt — staat nu opgeschreven in plaats van
+dat het op een vergissing lijkt. `provisioning.ex` is gesplitst in
+`Provisioning` / `Provisioning.Results` / `Provisioning.Reservations`.
+`UserAuth.redirect_if_user_is_authenticated/2` was niet dood maar niet aangesloten;
+hij hangt nu aan /login, /login/mfa en /register.
+
+**Agent.** `parseVMID` vervangt zes kopieën van dezelfde Atoi-en-wrap.
+`handleCommand` is een dispatch van vijf regels geworden, met `handleProvision`,
+`adoptExisting`, `handleDelete`, `handlePower` en `payloadVMID` eronder; de
+`command`-struct draagt de vijf argumenten die anders door elke exit van elke
+handler mee moesten. De backlog-ID's (`H4:`, `R1:`, `R5:`, `R3:`, `O-…`) zijn uit de
+commentaren gehaald — de reden blijft staan, het label zei een toekomstige lezer
+niets.
+
+**Frontend.** De dode e-mail-OTP-loginstroom is weg, net als `JwtPayload`,
+`loginTotp` en `resendVerification`. `ConfirmDialog` is geëxtraheerd. `api.ts` lekt
+geen `AxiosResponse` meer naar aanroepers. Het tweemaal inline gecaste
+loginresultaat heet nu `LoginResult`, met daarin alleen de vlaggen die echt
+voorkomen.
+
+## Talen en frameworks — zijn het de juiste geweest?
+
+**Elixir/Phoenix voor de control plane: ja, en het is de keuze die het meest
+oplevert.** De werklast is precies waar de BEAM voor gebouwd is: honderden
+langlopende verbindingen (agent-polls, console-WebSockets), toezicht op
+stateful processen (de relay, elke consolesessie) en een reconciler-lus die
+naast alles door draait. Het console-relay is daar het scherpste voorbeeld van —
+een loopback-listener, een WebSocket en een SSH-client die door één supervisor bij
+elkaar gehouden worden, met een timeout per sessie. In Go of Node is dat allemaal
+te bouwen; hier was het een GenServer.
+
+**Go voor de agent: ja, zonder voorbehoud.** Eén statisch binair bestand, geen
+runtime om op iemands node te installeren, cross-compileert. Dat is de hele
+eisenlijst voor een agent en Go vinkt hem af.
+
+**Next.js voor de frontend: het zwaarste onderdeel van de stapel, en het levert
+het minste op.** 20 van de 22 app-router-bestanden beginnen met `"use client"`, en
+elke `async function` in die bestanden is een `useEffect`-fetcher tegen de JSON-API.
+Er is geen server component die data haalt, geen server action, geen streaming.
+Sinds de nonce-CSP staat elke route bovendien op `force-dynamic`, dus ook de
+statische generatie — het laatste stuk Next dat nog meedeed — is uit.
+
+Wat er overblijft is Next als router en bundler voor een SPA. Een Vite + React-SPA
+zou hetzelfde doen met minder bewegende delen, en Phoenix LiveView zou de hele
+API-laag overbodig maken.
+
+**Toch geen aanbeveling om te migreren.** De app werkt, laadt in 80–95 ms door
+Cloudflare, en heeft 1,9 MB aan statische chunks — niets daarvan is een probleem
+dat een klant merkt. De prijs van Next is complexiteit die je pas voelt als je iets
+ongewoons wilt, en dat gebeurt hier zelden. Dit is een observatie voor als er ooit
+een reden is om de frontend aan te raken, geen werk dat op zichzelf de moeite waard
+is.
+
+## Nog open
+
+### Control plane
+- **[MED]** `@spec` op de publieke Fleet/Provisioning/Billing/Credits/Accounts-API.
+- **[MED]** Eén gedeelde `ControlPlane.Time.now/0` (nu 3× gedefinieerd).
+- **[MED]** Foutmeldingen spreken door elkaar heen: machinecodes, Engelse zinnen en
+  Nederlands. Nederlandse klantteksten zitten nog in de `Credits`-context in plaats
+  van in de weblaag.
+- **[LOW]** De `attrs[:x] || attrs["x"]`-dans normaliseren op de grens van
+  `create_vps/1` in plaats van overal.
+
+### Agent
+- **[MED]** `withClient(ctx, fn)` voor de connect-en-defer-logout-boilerplate, die
+  in esxi.go veertien keer staat.
+- **[LOW]** `esxi.go isNotFound` kan `errors.As` gebruiken; `Overlay.HubIP` wordt
+  gedecodeerd maar nooit gelezen, net als `persistedState.WGPublicKey` en
+  `OverlayCIDR`.
+
+### Frontend
+- **[MED]** 17 pagina's schrijven hun eigen loading/error/try-catch. Een
+  `useApiData(fetcher)`-hook haalt dat weg; dit is de grootste resterende
+  onderhoudswinst aan die kant.
+- **[LOW]** Commentaar staat door elkaar in Nederlands en Engels (`safeNext` is in
+  allebei becommentarieerd).
+
+### Wat bewust NIET gedaan is
+- **Paginering op de beheertabellen.** De grootste tabel is `usage_records` met 205
+  rijen; `users` heeft er zes. De lijst-endpoints hebben al een `limit` van 500/1000
+  en de indexen die er bij groei toe doen staan er. Bouwen voor een schaal die er
+  niet is kost onderhoud zonder afnemer.
+- **`usage_records` partitioneren.** Zelfde reden. Bij 100 actieve VPSen is dat
+  ~876k rijen per jaar; de `metered_at`-index draagt dat ruim. Terugkomen als het
+  tienvoudige in zicht is.

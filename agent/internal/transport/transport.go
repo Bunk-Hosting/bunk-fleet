@@ -323,7 +323,7 @@ func (c *Client) Commands(ctx context.Context) (<-chan Command, error) {
 				case out <- cmd:
 				}
 			}
-			// R3: the control plane answers command polls immediately (no
+			// The control plane answers command polls immediately (no
 			// server-side long-poll), so on an empty result floor-sleep before
 			// re-polling — otherwise this is a tight CPU loop hammering the CP.
 			if len(cmds) == 0 {
