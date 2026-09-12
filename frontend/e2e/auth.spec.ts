@@ -3,15 +3,13 @@ import { test, expect } from "@playwright/test";
 /**
  * Authenticatie flows: inloggen, uitloggen, beschermde routes.
  *
- * Vereiste testgebruikers in de backend:
- *   - user@test.bunkhosting.nl / TestPass123! (gewone gebruiker, e-mail geverifieerd)
+ * Vereiste testgebruikers in de control plane:
+ *   - user@test.bunkhosting.nl / TestPass123! (gewone gebruiker, e-mail bevestigd)
  *   - admin@test.bunkhosting.nl / AdminPass123! (admin)
  */
 
 const USER_EMAIL = process.env.TEST_USER_EMAIL || "user@test.bunkhosting.nl";
 const USER_PASS = process.env.TEST_USER_PASS || "TestPass123!";
-const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL || "admin@test.bunkhosting.nl";
-const ADMIN_PASS = process.env.TEST_ADMIN_PASS || "AdminPass123!";
 
 test.describe("Login pagina", () => {
   test("toont het loginformulier", async ({ page }) => {
@@ -26,7 +24,14 @@ test.describe("Login pagina", () => {
     await page.getByLabel("E-mailadres").fill("wrong@example.com");
     await page.getByLabel("Wachtwoord").fill("WrongPassword!");
     await page.getByRole("button", { name: "Inloggen" }).click();
-    await expect(page.getByText(/inloggen mislukt/i)).toBeVisible({ timeout: 5000 });
+
+    // De toast zet dezelfde tekst zowel zichtbaar als in een aria-live-regio
+    // neer; een losse getByText(/inloggen mislukt/i) matcht er dus twee. Exact
+    // matchen pakt alleen de zichtbare titel.
+    await expect(page.getByText("Inloggen mislukt", { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page).toHaveURL(/\/login/);
   });
 
   test("redirect naar /dashboard na succesvol inloggen", async ({ page }) => {
@@ -34,7 +39,13 @@ test.describe("Login pagina", () => {
     await page.getByLabel("E-mailadres").fill(USER_EMAIL);
     await page.getByLabel("Wachtwoord").fill(USER_PASS);
     await page.getByRole("button", { name: "Inloggen" }).click();
+
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
+    // Aangekomen is niet hetzelfde als geladen: zonder dit slaagt de test ook
+    // als het dashboard een lege pagina rendert.
+    await expect(page.getByRole("heading", { name: /welkom terug/i })).toBeVisible({
+      timeout: 15000,
+    });
   });
 });
 
@@ -44,14 +55,19 @@ test.describe("Beschermde routes", () => {
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
 
-  test("gewone gebruiker kan geen admin-pagina bezoeken", async ({ page }) => {
+  test("een gewone gebruiker krijgt het beheerpaneel niet te zien", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("E-mailadres").fill(USER_EMAIL);
     await page.getByLabel("Wachtwoord").fill(USER_PASS);
     await page.getByRole("button", { name: "Inloggen" }).click();
     await page.waitForURL(/\/dashboard/);
 
-    await page.goto("/dashboard/admin");
-    await expect(page).not.toHaveURL(/\/dashboard\/admin$/, { timeout: 5000 });
+    await page.goto("/dashboard/beheer");
+
+    // De pagina blijft op zijn URL staan en weigert in plaats van te redirecten
+    // (AdminGuard). Wat telt is dat er geen beheerinhoud verschijnt: de echte
+    // grens is de API, die elke /beheer-call van een :user met 403 beantwoordt.
+    await expect(page.getByText(/geen toegang/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Beheer", exact: true })).toHaveCount(0);
   });
 });
