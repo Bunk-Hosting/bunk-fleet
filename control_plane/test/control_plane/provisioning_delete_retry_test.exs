@@ -131,7 +131,7 @@ defmodule ControlPlane.ProvisioningDeleteRetryTest do
 
   test "a VPS with no failed teardown behind it is not retried" do
     r = region()
-    vps = deleting_vps(r, node_in(r))
+    _vps = deleting_vps(r, node_in(r))
 
     assert Provisioning.retry_stuck_deletes(300) == 0
   end

@@ -23,6 +23,22 @@ defmodule ControlPlane.Net do
     a * 16_777_216 + b * 65_536 + c * 256 + d
   end
 
+  @doc """
+  The address out of a Proxmox-native `ip_config` string, or nil.
+
+  The string looks like `ip=10.10.4.20/22,gw=10.10.4.1`. Returns nil for anything
+  that does not carry a valid dotted-quad, so a malformed config cannot become an
+  address the control plane then treats as authoritative.
+  """
+  def from_ip_config(config) when is_binary(config) do
+    case Regex.run(~r/\bip=(\d+\.\d+\.\d+\.\d+)/, config) do
+      [_, ip] -> if valid?(ip), do: ip, else: nil
+      _ -> nil
+    end
+  end
+
+  def from_ip_config(_), do: nil
+
   @doc "Unpacks a 32-bit integer back into a dotted-quad string."
   def from_int(n) do
     "#{div(n, 16_777_216)}.#{rem(div(n, 65_536), 256)}.#{rem(div(n, 256), 256)}.#{rem(n, 256)}"
