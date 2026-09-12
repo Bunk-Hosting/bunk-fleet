@@ -1,10 +1,12 @@
 defmodule ControlPlane.Fleet.ReconcilerTest do
-  use ControlPlane.DataCase, async: true
+  use ControlPlane.DataCase, async: false
 
+  alias ControlPlane.Billing.UsageRecord
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Reconciler
   alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Vps
   alias Ecto.Adapters.SQL.Sandbox
 
   # --- inline insert helpers -------------------------------------------------
@@ -114,6 +116,72 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
 
       assert eventually(fn -> reload(stale).status == :offline end)
     end
+
+    test "one tick converges every condition it finds, not just the first" do
+      # The sub-steps are independent and run in sequence. If an early one were to
+      # short-circuit the tick, the fleet would converge one problem per interval
+      # and a busy fleet would never catch up.
+      region = insert_region()
+      stale = insert_node(region, %{status: :online, last_heartbeat_at: stale_at()})
+      queued = insert_stuck_queued_vps(region)
+
+      {:ok, pid} = Reconciler.start_link(interval_ms: 5)
+      Sandbox.allow(Repo, self(), pid)
+
+      assert eventually(fn ->
+               reload(stale).status == :offline and Repo.get!(Vps, queued.id).status == :failed
+             end)
+    end
+
+    test "a database that refuses the reconciler does not kill it" do
+      # No Sandbox.allow: every Repo call inside the tick raises. Each sub-step
+      # rescues its own failure, so the process must keep ticking rather than
+      # crash — a reconciler that dies on a bad tick stops metering, stops
+      # reclaiming capacity and stops retrying teardowns, silently.
+      Process.flag(:trap_exit, true)
+      {:ok, pid} = Reconciler.start_link(interval_ms: 5)
+
+      # Several intervals' worth: long enough for a tick to have raised and for
+      # the next one to have been scheduled.
+      Process.sleep(60)
+
+      assert Process.alive?(pid)
+      refute_received {:EXIT, ^pid, _}
+    end
+
+    test "metering is gated by its own interval, not by the tick rate" do
+      # Ticks are seconds apart and metering is hourly. Metering on every tick
+      # would bill each VPS once per tick — the interval gate is the only thing
+      # standing between a customer and a bill multiplied by 3600.
+      {:ok, pid} = Reconciler.start_link(interval_ms: 5, meter_interval_ms: 3_600_000)
+      Sandbox.allow(Repo, self(), pid)
+
+      before = Repo.aggregate(UsageRecord, :count, :id)
+      Process.sleep(60)
+
+      # The first tick meters (catching up any elapsed runtime); no later tick in
+      # this window may add another record.
+      assert Repo.aggregate(UsageRecord, :count, :id) == before
+    end
+  end
+
+  # A VPS that was persisted but never dispatched: the control plane stopped
+  # between the two. Aged past the grace period so the sweep picks it up.
+  defp insert_stuck_queued_vps(region) do
+    old = DateTime.add(now(), -7200, :second)
+
+    %Vps{}
+    |> Vps.changeset(%{
+      name: "v-#{System.unique_integer([:positive])}",
+      region_id: region.id,
+      vcpu: 1,
+      ram_mb: 1024,
+      disk_gb: 10,
+      status: :queued
+    })
+    |> Ecto.Changeset.put_change(:inserted_at, old)
+    |> Ecto.Changeset.put_change(:updated_at, old)
+    |> Repo.insert!()
   end
 
   # Polls `fun` until it returns a truthy value or the timeout elapses.
