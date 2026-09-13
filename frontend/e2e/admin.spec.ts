@@ -57,9 +57,13 @@ test.describe("Beheerpaneel", () => {
     });
     await expect(page.getByText(/capaciteit per node/i)).toBeVisible();
 
-    // De belofte van de pagina, afgedwongen waar iemand hem zou breken: er mag
-    // geen e-mailadres op staan.
-    await expect(page.locator("body")).not.toContainText("@");
+    // De belofte van de pagina, afgedwongen waar iemand hem zou breken: in de
+    // inhoud mag geen e-mailadres staan. Niet op de body, want de zijbalk toont
+    // het adres van wie er zelf is ingelogd — dat is de app-omlijsting, geen
+    // klantgegeven dat deze pagina laat zien.
+    const content = page.getByRole("heading", { name: "Cijfers", exact: true })
+      .locator("xpath=ancestor::div[contains(@class,'space-y-8')][1]");
+    await expect(content).not.toContainText("@");
   });
 
   test("een admin ziet het nodeoverzicht", async ({ page }) => {
