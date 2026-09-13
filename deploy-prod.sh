@@ -81,6 +81,13 @@ docker run --rm --network "$NET" \
   "$IMG" eval "ControlPlane.Release.migrate()" 2>&1 | tail -4
 
 # 5. (Re)start the control-plane server
+# The -e list below is an ALLOW-LIST, not a pass-through: a variable added to
+# .env.prod and not added here never reaches the container, and the app behaves
+# as if it were unset. That is deliberate — a stray variable in the env file
+# should not silently change production — but it means this list has to be
+# extended whenever a new one is introduced. ControlPlane.SecurityPosture prints
+# at boot which optional protections it found switched off, which is what catches
+# the mistake.
 docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -p 127.0.0.1:4000:4000 \
@@ -102,6 +109,7 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e MAIL_FROM_ADDRESS \
   -e MAIL_FROM_NAME \
   -e OPS_EMAIL \
+  -e TURNSTILE_SECRET_KEY \
   "$IMG" >/dev/null
 echo "STARTED $CPNAME on :4000"
 
