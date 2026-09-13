@@ -91,9 +91,16 @@ func handleConsoleConnect(ctx context.Context, logger *slog.Logger, cp *transpor
 
 		target := net.JoinHostPort(req.Host, fmt.Sprint(req.Port))
 
-		vps, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", target)
+		vps, err := dialVPS(ctx, target)
 		if err != nil {
 			logger.Warn("console: cannot reach the VPS", "target", target, "err", err)
+			// Dial back and close straight away. The relay carries SSH, not
+			// text — anything written here would reach the control plane's SSH
+			// client as a corrupt banner — so the message belongs on that side.
+			// What this does is let the control plane find out NOW instead of
+			// after the 15-second attach timeout, so the customer gets the
+			// explanation while they are still looking at the screen.
+			hangUp(ctx, logger, cp, req.Token)
 			return
 		}
 		defer vps.Close()
@@ -109,6 +116,49 @@ func handleConsoleConnect(ctx context.Context, logger *slog.Logger, cp *transpor
 		pipe(relay, vps)
 		logger.Info("console session closed", "vps", req.VpsID)
 	}()
+}
+
+// How long to keep trying the VPS's SSH port before giving up on the session.
+// A guest that has just been provisioned refuses the connection outright rather
+// than timing out — sshd is not listening yet — so a single attempt fails in
+// milliseconds and reports a machine that is merely still booting as unreachable.
+const (
+	consoleDialWindow  = 12 * time.Second
+	consoleDialRetryIn = 1500 * time.Millisecond
+)
+
+func dialVPS(ctx context.Context, target string) (net.Conn, error) {
+	deadline := time.Now().Add(consoleDialWindow)
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+
+	for {
+		conn, err := dialer.DialContext(ctx, "tcp", target)
+		if err == nil {
+			return conn, nil
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(consoleDialRetryIn):
+		}
+	}
+}
+
+// hangUp attaches to the relay and closes it immediately, which is how the agent
+// says "there is nothing on the other end" without inventing a message channel.
+// The control plane's SSH client sees the connection go, gives up, and tells the
+// browser why in words the customer can act on.
+func hangUp(ctx context.Context, logger *slog.Logger, cp *transport.Client, token string) {
+	relay, err := cp.DialConsoleRelay(ctx, token)
+	if err != nil {
+		logger.Warn("console: cannot dial the control plane back to end the session", "err", err)
+		return
+	}
+	_ = relay.Close()
+	logger.Info("console: ended the session because the VPS did not answer")
 }
 
 // pipe copies in both directions and returns once either side closes, so a

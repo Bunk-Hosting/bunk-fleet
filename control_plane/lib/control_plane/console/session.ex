@@ -126,7 +126,12 @@ defmodule ControlPlane.Console.Session do
     end
   end
 
-  defp notify_closed(owner, reason), do: send(owner, {:console_closed, reason})
+  # Logged as well as sent on: the customer gets a sentence, and whoever is asked
+  # "why could they not reach their machine" gets the term OTP actually produced.
+  defp notify_closed(owner, reason) do
+    Logger.info("console session ended: #{inspect(reason)}")
+    send(owner, {:console_closed, reason})
+  end
 
   @impl true
   def handle_cast({:input, data}, %{conn: conn, chan: chan} = st)

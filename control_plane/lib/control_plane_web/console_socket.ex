@@ -71,8 +71,55 @@ defmodule ControlPlaneWeb.ConsoleSocket do
 
   @impl true
   def handle_info({:console_output, data}, state), do: {:push, {:binary, data}, state}
-  def handle_info({:console_closed, _reason}, state), do: {:stop, :normal, state}
+  # Say why, in the terminal, before the socket goes. Closing silently leaves the
+  # customer with the frontend's generic "Verbinding verbroken" and no idea
+  # whether their machine is broken, their session expired, or the platform is
+  # having a bad day. The console is a byte stream a terminal renders, so a
+  # sentence needs no protocol — only a frame.
+  def handle_info({:console_closed, reason}, state) do
+    {:push, {:binary, closing_message(reason)}, {:stop, :normal, state}}
+  end
+
   def handle_info(_msg, state), do: {:ok, state}
+
+  # Red, and with the next step in it. Every one of these is a moment where
+  # someone is looking at a black rectangle wondering what they did wrong.
+  defp closing_message(reason) do
+    "\r\n\e[31m" <> explain(reason) <> "\e[0m\r\n"
+  end
+
+  defp explain(:econnrefused),
+    do:
+      "De VPS reageert nog niet op SSH. Vlak na het aanmaken duurt dat meestal nog\r\n" <>
+        "een halve minuut. Sluit dit venster en probeer het zo opnieuw."
+
+  defp explain(:etimedout),
+    do: "De VPS antwoordde niet op tijd. Draait hij nog? Probeer het anders opnieuw."
+
+  defp explain(:no_console_key),
+    do: "Deze installatie heeft geen consolesleutel. Dit is een storing bij ons, niet bij jou."
+
+  defp explain({:host_key_mismatch, _}),
+    do:
+      "De SSH-sleutel van deze VPS is veranderd. Dat gebeurt na het terugzetten van\r\n" <>
+        "een back-up; is dat niet zo, neem dan contact op voordat je verder gaat."
+
+  defp explain(:relay_timeout),
+    do:
+      "De node reageerde niet op tijd. Hij is mogelijk net offline gegaan;\r\n" <>
+        "probeer het over een minuut opnieuw."
+
+  # The catch-all covers every way an SSH handshake can fail after the node
+  # attached, and by far the most common one is a machine that is up but whose
+  # sshd is not listening yet. Saying that here is not a guess dressed as a fact:
+  # the second sentence covers the rest, and both are things the customer can act
+  # on. A bare "de verbinding is verbroken" is neither.
+  defp explain(_other),
+    do:
+      "De console kon geen verbinding maken met de VPS.\r\n" <>
+        "Vlak na het aanmaken duurt het meestal nog een halve minuut voordat de machine\r\n" <>
+        "SSH aanneemt; probeer het dan opnieuw. Blijft het gebeuren, dan staat de VPS uit\r\n" <>
+        "of luistert er niets op poort 22."
 
   @impl true
   def terminate(_reason, _state), do: :ok

@@ -15,6 +15,7 @@ defmodule ControlPlane.Provisioning do
   require Logger
 
   alias ControlPlane.Clock
+
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.IpPool
@@ -28,6 +29,28 @@ defmodule ControlPlane.Provisioning do
   alias ControlPlane.Repo
   alias ControlPlane.Subscriptions
   alias Ecto.Multi
+
+  @typedoc """
+  What a lifecycle call hands back: the VPS row and the command dispatched to its
+  node. `command` is `nil` when nothing needed dispatching — an already-stopped
+  VPS asked to stop, or a teardown with no VM behind it.
+  """
+  @type dispatch :: %{vps: Vps.t(), command: Command.t() | nil}
+
+  @typedoc """
+  Why a lifecycle call refused. Every one of these becomes an API error code, so
+  adding one here means adding a translation in the frontend too.
+  """
+  @type refusal ::
+          :not_found
+          | :not_provisioned
+          | :no_node
+          | :no_capacity
+          | :already_deleting
+          | :quota_exceeded
+          | :insufficient_credits
+          | :port_pool_exhausted
+          | {:invalid_status, atom()}
 
   # How long a `:delivered` command may sit without a reported result before it
   # is considered lost (agent crashed mid-flight) and becomes eligible for
@@ -55,6 +78,7 @@ defmodule ControlPlane.Provisioning do
   `:owner_email`, `:template_id`, `:ssh_keys` (default `[]`), `:cloud_init`
   (default `%{}`), `:ip_config` (default `nil`).
   """
+  @spec create_vps(map()) :: {:ok, dispatch()} | {:error, refusal() | Ecto.Changeset.t()}
   def create_vps(attrs) do
     req = placement_request(attrs)
 
@@ -80,6 +104,7 @@ defmodule ControlPlane.Provisioning do
   VPS, so a sweeper cannot tell which entry to reverse without guessing — and
   guessing with someone's money is worse than telling a person to look.
   """
+  @spec fail_stuck_queued_vpses(non_neg_integer()) :: non_neg_integer()
   def fail_stuck_queued_vpses(grace_seconds \\ 600) do
     cutoff = DateTime.utc_now() |> DateTime.add(-grace_seconds, :second)
 
@@ -129,6 +154,7 @@ defmodule ControlPlane.Provisioning do
   customer clear it from their list while its VM kept running and its capacity
   stayed booked — tidy for them, a leak for the fleet.
   """
+  @spec retry_stuck_deletes(non_neg_integer(), non_neg_integer()) :: non_neg_integer()
   def retry_stuck_deletes(grace_seconds \\ 300, max_backoff_seconds \\ 6 * 3600) do
     now = DateTime.utc_now()
 
@@ -188,6 +214,8 @@ defmodule ControlPlane.Provisioning do
   `{:error, :quota_exceeded}` when the owner already holds the maximum number of
   live (non-`:deleted`/non-`:failed`) VPSes.
   """
+  @spec create_vps_for_owner(%{id: binary(), email: binary()}, map()) ::
+          {:ok, dispatch()} | {:error, refusal() | Ecto.Changeset.t()}
   def create_vps_for_owner(%{id: owner_id, email: email}, attrs) do
     full =
       attrs
@@ -253,6 +281,7 @@ defmodule ControlPlane.Provisioning do
   Counts an owner's live VPSes — everything except `:deleted`/`:failed`, which no
   longer occupy capacity and so don't count against quota.
   """
+  @spec count_live_vpses(binary()) :: non_neg_integer()
   def count_live_vpses(owner_id) do
     Repo.one(
       from v in Vps,
@@ -407,6 +436,7 @@ defmodule ControlPlane.Provisioning do
   on a node / provisioned (no `node_id` or `provider_vm_id`) and so has nothing
   for an agent to delete.
   """
+  @spec delete_vps(binary()) :: {:ok, dispatch() | map()} | {:error, refusal()}
   def delete_vps(vps_id) do
     # Deleting a VPS ends its subscription — do it up front so recurring billing
     # stops immediately, even while an async teardown is still in flight.
@@ -539,9 +569,13 @@ defmodule ControlPlane.Provisioning do
   Returns `{:ok, %{vps: vps, command: command}}`, or `{:error, reason}` where reason
   is `:not_found`, `:not_provisioned`, or `{:invalid_status, status}`.
   """
+  @spec start_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
   def start_vps(vps_id), do: dispatch_power(vps_id, :start, [:stopped])
+  @spec stop_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
   def stop_vps(vps_id), do: dispatch_power(vps_id, :stop, [:active, :paused])
+  @spec pause_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
   def pause_vps(vps_id), do: dispatch_power(vps_id, :pause, [:active])
+  @spec resume_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
   def resume_vps(vps_id), do: dispatch_power(vps_id, :resume, [:paused])
 
   defp dispatch_power(vps_id, kind, allowed) do
@@ -609,6 +643,7 @@ defmodule ControlPlane.Provisioning do
   provision/delete for an already-processed VM must be a safe no-op that
   re-reports the original outcome.
   """
+  @spec deliverable_commands_for_node(Node.t()) :: [Command.t()]
   def deliverable_commands_for_node(%Node{id: node_id}) do
     cutoff = Clock.shift(-@redelivery_ttl_seconds)
 
@@ -629,6 +664,7 @@ defmodule ControlPlane.Provisioning do
   Re-delivering an already-`:delivered` command simply refreshes `delivered_at`,
   resetting its redelivery window.
   """
+  @spec mark_delivered(Command.t()) :: {:ok, Command.t()} | {:error, Ecto.Changeset.t()}
   def mark_delivered(%Command{} = command) do
     command
     |> Command.changeset(%{status: :delivered, delivered_at: Clock.now()})
@@ -640,6 +676,7 @@ defmodule ControlPlane.Provisioning do
   calling `mark_delivered/1` per command (including resetting `delivered_at` for a
   redelivery) but without the N+1. Returns `{count, nil}`.
   """
+  @spec mark_delivered_all([Command.t()]) :: {non_neg_integer(), nil}
   def mark_delivered_all([]), do: {0, nil}
 
   def mark_delivered_all(commands) do

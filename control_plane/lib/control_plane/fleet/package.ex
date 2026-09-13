@@ -3,6 +3,8 @@ defmodule ControlPlane.Fleet.Package do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "packages" do
     field :name, :string
     field :cpu_cores, :integer

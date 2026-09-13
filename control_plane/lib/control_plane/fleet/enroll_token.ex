@@ -13,6 +13,8 @@ defmodule ControlPlane.Fleet.EnrollToken do
   alias ControlPlane.Accounts.User
   alias ControlPlane.Fleet.Region
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "enroll_tokens" do

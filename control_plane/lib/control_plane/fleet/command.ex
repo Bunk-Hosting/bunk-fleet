@@ -13,6 +13,8 @@ defmodule ControlPlane.Fleet.Command do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Vps
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "commands" do

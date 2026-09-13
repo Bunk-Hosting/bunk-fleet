@@ -10,6 +10,8 @@ defmodule ControlPlane.Fleet.Vps do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "vpses" do
