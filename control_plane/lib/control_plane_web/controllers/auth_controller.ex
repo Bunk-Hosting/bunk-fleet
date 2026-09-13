@@ -38,6 +38,11 @@ defmodule ControlPlaneWeb.AuthController do
     else
       {:error, reason}
       when reason in [:captcha_required, :captcha_failed, :captcha_unavailable] ->
+        # A refusal here is either a bot being stopped or a misconfiguration that
+        # blocks every real customer. Turnstile.note_rejection/1 is what makes the
+        # second one visible to a person instead of only to the log.
+        ControlPlane.Turnstile.note_rejection(reason)
+
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "captcha_failed", turnstile_required: true})

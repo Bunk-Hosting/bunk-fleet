@@ -9,6 +9,9 @@ defmodule ControlPlane.TurnstileTest do
   """
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+  import Swoosh.TestAssertions
+
   alias ControlPlane.Turnstile
 
   setup do
@@ -82,6 +85,46 @@ defmodule ControlPlane.TurnstileTest do
     assert form["remoteip"] == "203.0.113.9"
     assert form["response"] == "token"
     assert form["secret"] == "test-secret"
+  end
+
+  describe "telling a person a registration was refused" do
+    setup do
+      ControlPlane.RateLimiter.reset()
+      original = Application.get_env(:control_plane, :ops_email)
+      Application.put_env(:control_plane, :ops_email, "ops@bunkhosting.nl")
+      on_exit(fn -> Application.put_env(:control_plane, :ops_email, original) end)
+      :ok
+    end
+
+    test "the first refusal in an hour is mailed to ops" do
+      assert Turnstile.note_rejection(:captcha_required) == :ok
+
+      assert_email_sent(fn email ->
+        assert email.subject =~ "CAPTCHA"
+        # Both readings, because from the server they look identical.
+        assert email.text_body =~ "bot tegengehouden"
+        assert email.text_body =~ "NIEMAND"
+        # And the way out, because the person reading this is probably annoyed.
+        assert email.text_body =~ "TURNSTILE_SECRET_KEY"
+      end)
+    end
+
+    test "a second refusal in the same hour is not mailed again" do
+      Turnstile.note_rejection(:captcha_required)
+      assert_email_sent()
+
+      for _ <- 1..20, do: Turnstile.note_rejection(:captcha_failed)
+
+      # A bot farm must not turn this into a mail flood.
+      refute_email_sent()
+    end
+
+    test "a refusal is still logged even when no mail goes out" do
+      Turnstile.note_rejection(:captcha_required)
+
+      log = capture_log(fn -> Turnstile.note_rejection(:captcha_failed) end)
+      assert log =~ "refused by turnstile: captcha_failed"
+    end
   end
 
   test "no IP means no remoteip field rather than an empty one" do

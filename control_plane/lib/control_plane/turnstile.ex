@@ -14,6 +14,9 @@ defmodule ControlPlane.Turnstile do
   """
   require Logger
 
+  alias ControlPlane.Notifier
+  alias ControlPlane.RateLimiter
+
   @endpoint "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
   @doc "True when a secret key is configured (verification enforced)."
@@ -59,6 +62,53 @@ defmodule ControlPlane.Turnstile do
         Logger.warning("turnstile verify unavailable: #{inspect(reason)}")
         {:error, :captcha_unavailable}
     end
+  end
+
+  @doc """
+  Records that a registration was turned away by the CAPTCHA, and tells a person
+  the first time it happens in any hour.
+
+  Two very different things produce this, and from the server they look
+  identical: a bot being stopped, which is the feature working, and a site key
+  that does not belong to the configured secret, which silently blocks every
+  real customer instead. Nobody finds out about the second one from a log line —
+  they find out from a customer who gave up. So the first rejection each hour
+  goes to the ops address with both readings and how to tell them apart.
+
+  Rate-limited to one message an hour: a bot farm must not turn this into a mail
+  flood, and the second alert of an hour says nothing the first did not.
+  """
+  def note_rejection(reason) do
+    Logger.warning("registration refused by turnstile: #{reason}")
+
+    if RateLimiter.hit("turnstile_rejection_alert", 1, :timer.hours(1)) == :ok do
+      Notifier.deliver_operational_alert(
+        "Een registratie is door de CAPTCHA tegengehouden",
+        """
+        Reden: #{reason}
+
+        Dit betekent een van twee dingen.
+
+        1. Turnstile doet zijn werk en heeft een bot tegengehouden. Dan hoef je
+           niets te doen; dit bericht komt hoogstens eens per uur.
+
+        2. De site key in de frontend hoort niet bij TURNSTILE_SECRET_KEY in
+           .env.prod, of niet bij het domein app.bunkhosting.nl. Dan wordt NIEMAND
+           meer toegelaten tot registratie.
+
+        Zo zie je het verschil: open https://app.bunkhosting.nl/register in een
+        browser. Verschijnt het CAPTCHA-vakje en kun je een account aanmaken, dan
+        is het geval 1. Blijft het vakje leeg of hangt het, dan is het geval 2 en
+        staan de sleutels verkeerd.
+
+        Terugdraaien is één regel: haal TURNSTILE_SECRET_KEY uit
+        /opt/bunk-fleet/.env.prod en start de control plane opnieuw. Registratie
+        werkt dan meteen weer, zonder CAPTCHA.
+        """
+      )
+    end
+
+    :ok
   end
 
   defp put_ip(form, ip) when is_binary(ip) and ip != "", do: Map.put(form, :remoteip, ip)
