@@ -52,9 +52,14 @@ defmodule ControlPlaneWeb.VpsController do
          attrs = Map.put(attrs, :region_id, region_id),
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
          price = package_price_cents(pkg),
-         {:ok, _charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
+         {:ok, charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
          {:ok, %{vps: vps}} <-
-           charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price) do
+           charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price),
+         # The charge had to come first — the wallet is checked and debited before
+         # anything is provisioned — so only now can it be told which machine it
+         # paid for. Until this lands the entry is an orphan, which is exactly
+         # what Credits.refund_orphan_charges/1 looks for.
+         {:ok, _} <- Credits.attach_vps(charge, vps.id) do
       conn
       |> put_status(:created)
       # Re-read rather than render the struct the transaction returned: that one

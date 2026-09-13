@@ -13,12 +13,16 @@ defmodule ControlPlane.Credits.LedgerEntry do
     field :description, :string
     belongs_to :user, ControlPlane.Accounts.User
 
+    # The machine this movement was about, when there is one. A `vps_charge`
+    # without it is an orphan: money taken for a VPS that never got created.
+    belongs_to :vps, ControlPlane.Fleet.Vps
+
     timestamps(type: :utc_datetime_usec)
   end
 
   def changeset(entry, attrs) do
     entry
-    |> cast(attrs, [:user_id, :amount_cents, :kind, :description])
+    |> cast(attrs, [:user_id, :vps_id, :amount_cents, :kind, :description])
     |> validate_required([:user_id, :amount_cents, :kind])
   end
 end

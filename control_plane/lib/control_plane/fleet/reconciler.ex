@@ -31,6 +31,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   alias ControlPlane.Backups
   alias ControlPlane.Billing
+  alias ControlPlane.Credits
   alias ControlPlane.Fleet
   alias ControlPlane.Provisioning
   alias ControlPlane.Subscriptions
@@ -89,6 +90,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     reconcile_nodes()
     reclaim_reservations()
     fail_stuck_creates()
+    refund_orphan_charges()
     retry_stuck_deletes()
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
@@ -191,6 +193,37 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler stuck-create sweep failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  # A charge whose VPS never came into being. The create path refunds on every
+  # failure it can see, including an exception and an exit; this covers the one it
+  # cannot — the process being killed outright between debiting the wallet and
+  # creating the machine.
+  defp refund_orphan_charges do
+    count = Credits.refund_orphan_charges()
+
+    if count > 0 do
+      Logger.error("refunded #{count} charge(s) for VPSes that were never created")
+
+      ControlPlane.Notifier.deliver_operational_alert(
+        "#{count} betaling(en) teruggeboekt voor VPSen die nooit bestonden",
+        """
+        #{count} afschrijving(en) in het grootboek hoorden bij een VPS die nooit
+        is aangemaakt. Het geld is automatisch teruggeboekt.
+
+        Dit gebeurt als de control plane omvalt tussen het afschrijven en het
+        aanmaken. Eén keer is ruis; vaker betekent dat er iets de control plane
+        hardhandig neerhaalt - kijk naar herstarts, geheugengebruik en deploys
+        rond de tijdstippen in de log.
+        """
+      )
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler orphan-charge sweep failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end

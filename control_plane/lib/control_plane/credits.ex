@@ -9,6 +9,8 @@ defmodule ControlPlane.Credits do
   separate per-resource-hour metering in `ControlPlane.Billing`.
   """
   import Ecto.Query
+
+  require Logger
   alias ControlPlane.Clock
   alias ControlPlane.Credits.LedgerEntry
   alias ControlPlane.Credits.TopupRequest
@@ -40,15 +42,32 @@ defmodule ControlPlane.Credits do
     )
   end
 
-  def add_entry(user_id, amount_cents, kind, description) do
+  def add_entry(user_id, amount_cents, kind, description, vps_id \\ nil) do
     %LedgerEntry{}
     |> LedgerEntry.changeset(%{
       user_id: user_id,
+      vps_id: vps_id,
       amount_cents: amount_cents,
       kind: kind,
       description: description
     })
     |> Repo.insert()
+  end
+
+  @doc """
+  Ties a charge to the VPS it paid for, once that VPS exists.
+
+  A charge is taken before the machine is created — the wallet has to be checked
+  and debited before anything is provisioned — so for a moment the entry has no
+  VPS. Stamping it here closes that window: from now on a `vps_charge` still
+  carrying no `vps_id` after the grace period means the creation never happened,
+  and `Credits.refund_orphan_charges/1` can give the money back without anyone
+  reading timestamps.
+  """
+  def attach_vps(nil, _vps_id), do: {:ok, nil}
+
+  def attach_vps(%LedgerEntry{} = entry, vps_id) do
+    entry |> LedgerEntry.changeset(%{vps_id: vps_id}) |> Repo.update()
   end
 
   @doc """
@@ -94,6 +113,89 @@ defmodule ControlPlane.Credits do
         Repo.rollback(:insufficient_credits)
       end
     end)
+  end
+
+  @doc """
+  Refunds every `vps_charge` that never got a VPS, and reports how many.
+
+  This is the one failure the create path cannot handle itself. It debits the
+  wallet, then creates the machine, and it wraps that in a rescue and a catch so
+  an exception or an exit still refunds — but nothing rescues a `:kill` or a node
+  that loses power between the two. What is left behind is a charge with no VPS,
+  and before this existed the only way to find one was a person comparing
+  timestamps in the ledger.
+
+  `grace_seconds` is what separates "never happened" from "happening right now":
+  a create in flight also has no `vps_id` yet, and refunding that would hand back
+  money for a VPS the customer is about to receive.
+  """
+  def refund_orphan_charges(grace_seconds \\ 600) do
+    # Not Clock.shift/1: ledger_entries timestamps carry microseconds, because
+    # two movements in the same second still have an order and money cares about
+    # it. Clock is for the second-precision columns everywhere else.
+    cutoff = DateTime.add(DateTime.utc_now(), -grace_seconds, :second)
+
+    orphans =
+      Repo.all(
+        from e in LedgerEntry,
+          where:
+            e.kind == "vps_charge" and is_nil(e.vps_id) and e.inserted_at < ^cutoff and
+              e.amount_cents < 0
+      )
+
+    Enum.each(orphans, fn entry ->
+      # Stamped as refunded by tying it to nothing and changing its kind would
+      # rewrite history; a ledger only ever grows. The counter-entry carries the
+      # same absent vps_id, and `kind` says what it was for.
+      {:ok, _} =
+        add_entry(
+          entry.user_id,
+          -entry.amount_cents,
+          "vps_refund",
+          "Terugbetaling: de VPS is nooit aangemaakt"
+        )
+
+      # Mark the original so the next sweep does not refund it again. This is the
+      # only mutation of a ledger row in the system, and it changes no amount.
+      {:ok, _} = entry |> LedgerEntry.changeset(%{kind: "vps_charge_refunded"}) |> Repo.update()
+
+      Logger.error(
+        "refunded an orphaned vps_charge of #{abs(entry.amount_cents)} cents: " <>
+          "the VPS it paid for was never created"
+      )
+    end)
+
+    length(orphans)
+  end
+
+  @doc """
+  Gives back what was charged for `vps_id`, once. Returns whether it found one.
+
+  Idempotent by marking the original entry `vps_charge_refunded`: a sweep that
+  runs every few seconds must not pay the same customer back on every tick.
+  """
+  def refund_charge_for_vps(vps_id) do
+    case Repo.one(
+           from e in LedgerEntry,
+             where: e.vps_id == ^vps_id and e.kind == "vps_charge" and e.amount_cents < 0,
+             limit: 1
+         ) do
+      nil ->
+        false
+
+      entry ->
+        {:ok, _} =
+          add_entry(
+            entry.user_id,
+            -entry.amount_cents,
+            "vps_refund",
+            "Terugbetaling: VPS-aanmaak mislukt",
+            vps_id
+          )
+
+        {:ok, _} = entry |> LedgerEntry.changeset(%{kind: "vps_charge_refunded"}) |> Repo.update()
+        true
+    end
   end
 
   @doc "Credits an amount back (e.g. refund a failed provision)."

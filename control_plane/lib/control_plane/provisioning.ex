@@ -15,6 +15,7 @@ defmodule ControlPlane.Provisioning do
   require Logger
 
   alias ControlPlane.Clock
+  alias ControlPlane.Credits
 
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
@@ -119,9 +120,14 @@ defmodule ControlPlane.Provisioning do
       )
 
     Enum.each(stuck, fn vps_id ->
+      # The charge carries the VPS id since the ledger learned about machines, so
+      # the money can go back here instead of in a sentence telling a person to
+      # go and look for it.
+      refunded = Credits.refund_charge_for_vps(vps_id)
+
       Logger.error(
         "vps #{vps_id} was queued but never dispatched; failing it. " <>
-          "The customer may have been charged — check the ledger."
+          if(refunded, do: "The charge has been refunded.", else: "No charge was found for it.")
       )
     end)
 
