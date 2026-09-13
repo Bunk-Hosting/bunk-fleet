@@ -20,25 +20,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const vpsRes = await vpsApi.list();
-        setVpsList(vpsRes.data.results);
-      } catch {
+    // Both start now and are awaited separately. Sequentially they cost two
+    // round trips for two answers that have nothing to do with each other, and
+    // the spinner stayed up for the slower of them. Handled apart rather than
+    // with Promise.all so the wallet — which this page can live without — never
+    // holds up the list or blanks the page when it fails.
+    const vpsRequest = vpsApi.list();
+    const walletRequest = billingApi.wallet();
+
+    vpsRequest
+      .then((res) => setVpsList(res.data.results))
+      .catch(() => {
         // errors handled by layout redirect
-      } finally {
-        setLoading(false);
-      }
-      // Wallet is non-critical for the dashboard; load it separately so a
-      // hiccup here never blanks the whole page.
-      try {
-        const walletRes = await billingApi.wallet();
-        setBalanceCents(walletRes.data.balance_cents);
-      } catch {
+      })
+      .finally(() => setLoading(false));
+
+    walletRequest
+      .then((res) => setBalanceCents(res.data.balance_cents))
+      .catch(() => {
         // leave balance unknown
-      }
-    }
-    fetchData();
+      });
   }, []);
 
   if (loading) {

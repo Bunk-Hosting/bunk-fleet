@@ -399,17 +399,27 @@ export const regionsApi = {
 
 export const vpsApi = {
   list: async () => {
-    // Package catalog is cosmetic here (spec→name/price mapping with a "Custom"
-    // fallback) — a broken /packages endpoint must not take down the VPS list.
-    await ensurePackages().catch(() => []);
-    const res = await api.get<{ vpses: BunkVps[] }>("/vpses");
+    // Both at once, not one after the other: the catalog and the VPS list have
+    // nothing to say to each other, and awaiting the first before starting the
+    // second added a whole round trip to every page that shows a machine.
+    //
+    // The catalog is cosmetic here (spec→name/price with a "Custom" fallback),
+    // so a broken /packages must not take the VPS list down with it — hence the
+    // catch, which also has to stay inside the Promise.all or one rejection
+    // would discard the other answer.
+    const [, res] = await Promise.all([
+      ensurePackages().catch(() => []),
+      api.get<{ vpses: BunkVps[] }>("/vpses"),
+    ]);
     const results = res.data.vpses.map(transformVps);
     return { data: { count: results.length, results } };
   },
 
   get: async (id: string) => {
-    await ensurePackages().catch(() => []);
-    const res = await api.get<{ vps: BunkVps }>(`/vpses/${id}`);
+    const [, res] = await Promise.all([
+      ensurePackages().catch(() => []),
+      api.get<{ vps: BunkVps }>(`/vpses/${id}`),
+    ]);
     return { data: transformVps(res.data.vps) };
   },
 

@@ -36,32 +36,34 @@ export default function NewVpsPage() {
   const [regionCode, setRegionCode] = useState("");
 
   useEffect(() => {
-    async function fetchPackages() {
-      try {
-        const response = await packagesApi.list();
-        setPackages(response.data.results);
-      } catch {
+    // Three answers this page needs and none of them depends on another, so
+    // they go out together instead of in a queue. Each is handled on its own:
+    // only the catalog can stop this page from being usable, and it is the only
+    // one whose failure the customer is told about.
+    const packagesRequest = packagesApi.list();
+    const walletRequest = billingApi.wallet();
+    const regionsRequest = regionsApi.list();
+
+    packagesRequest
+      .then((res) => setPackages(res.data.results))
+      .catch(() =>
         toast({
           title: "Fout",
           description: "Kon pakketten niet laden.",
           variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-      try {
-        const walletRes = await billingApi.wallet();
-        setBalanceCents(walletRes.data.balance_cents);
-      } catch {
+        }),
+      )
+      .finally(() => setLoading(false));
+
+    walletRequest
+      .then((res) => setBalanceCents(res.data.balance_cents))
+      .catch(() => {
         // balance is a nice-to-have here; ignore failures
-      }
-      try {
-        setRegions(await regionsApi.list());
-      } catch {
-        // No list means no choice to offer; automatic placement still works.
-      }
-    }
-    fetchPackages();
+      });
+
+    regionsRequest.then(setRegions).catch(() => {
+      // No list means no choice to offer; automatic placement still works.
+    });
   }, [toast]);
 
   const handleSubmit = async () => {
