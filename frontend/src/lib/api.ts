@@ -515,10 +515,45 @@ export interface AdminNode {
   last_heartbeat_at: string | null;
 }
 
+/**
+ * What the platform is doing, in numbers. Aggregate by construction: the
+ * authentication figures are daily totals with nothing behind them, so there is
+ * no customer in this payload to show, filter or accidentally log.
+ */
+export interface AdminMetrics {
+  auth: Array<{
+    day: string;
+    successes: number;
+    failures: number;
+    registrations: number;
+    captcha_refusals: number;
+  }>;
+  accounts: { total: number; confirmed: number; with_2fa: number };
+  nodes: Array<{
+    name: string;
+    status: string;
+    vps_count: number;
+    seconds_since_heartbeat: number | null;
+    vcpu: { total: number; available: number };
+    ram_mb: { total: number; available: number };
+    disk_gb: { total: number; available: number };
+    headroom_pct: number | null;
+  }>;
+  commands: Array<{ kind: string; status: string; count: number }>;
+  backups: Array<{
+    name: string;
+    last_success_at: string | null;
+    hours_since_success: number | null;
+    failures: number;
+  }>;
+}
+
 // NOTE: paths are /beheer/* (not /admin/*) — Cloudflare's WAF blocks "/admin"
 // URLs with a challenge page before they reach the origin.
 export const adminApi = {
   stats: async (): Promise<AdminStats> => (await api.get<AdminStats>("/beheer/stats")).data,
+  metrics: async (): Promise<AdminMetrics> =>
+    (await api.get<AdminMetrics>("/beheer/metrics")).data,
   users: async (): Promise<AdminUser[]> =>
     (await api.get<{ users: AdminUser[] }>("/beheer/users")).data.users,
   setRole: (id: string, role: "user" | "admin") =>

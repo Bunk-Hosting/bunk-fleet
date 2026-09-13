@@ -18,6 +18,7 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Metrics
   alias ControlPlane.Provisioning
   alias ControlPlane.Repo
 
@@ -52,6 +53,71 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       },
       credit_outstanding_cents: outstanding
     })
+  end
+
+  @doc """
+  `GET /api/v1/beheer/metrics` — what the platform is doing, in numbers.
+
+  Deliberately aggregate-only. There is nothing here that identifies a customer:
+  the authentication figures are daily totals with no user, address or IP behind
+  them, and the fleet figures are about machines. An admin panel that could
+  answer "when did this person last log in" is one that needs a legal basis and a
+  deletion path; this one is built so that question has no answer to give.
+  """
+  def metrics(conn, _params) do
+    json(conn, %{
+      auth: Enum.map(Metrics.auth_history(14), &auth_day_json/1),
+      accounts: account_totals(),
+      nodes: Enum.map(Metrics.node_capacity(), &node_metrics_json/1),
+      commands: Enum.map(Metrics.command_outcomes(24), &command_outcome_json/1),
+      backups: Enum.map(Metrics.backup_health(7), &backup_health_json/1)
+    })
+  end
+
+  # Counts, not people: how many accounts exist, how many finished confirming,
+  # how many turned on a second factor. Useful for seeing whether onboarding
+  # works; useless for finding anyone.
+  defp account_totals do
+    %{
+      total: Repo.aggregate(User, :count, :id),
+      confirmed: Repo.aggregate(from(u in User, where: not is_nil(u.confirmed_at)), :count, :id),
+      with_2fa:
+        Repo.aggregate(from(u in User, where: not is_nil(u.totp_confirmed_at)), :count, :id)
+    }
+  end
+
+  defp auth_day_json(row) do
+    %{
+      day: Date.to_iso8601(row.day),
+      successes: row.successes,
+      failures: row.failures,
+      registrations: row.registrations,
+      captcha_refusals: row.captcha_refusals
+    }
+  end
+
+  defp node_metrics_json(n) do
+    %{
+      name: n.name,
+      status: n.status,
+      vps_count: n.vps_count,
+      seconds_since_heartbeat: n.seconds_since_heartbeat,
+      vcpu: %{total: n.total_vcpu, available: n.available_vcpu},
+      ram_mb: %{total: n.total_ram_mb, available: n.available_ram_mb},
+      disk_gb: %{total: n.total_disk_gb, available: n.available_disk_gb},
+      headroom_pct: n.headroom_pct
+    }
+  end
+
+  defp command_outcome_json(c), do: %{kind: c.kind, status: c.status, count: c.count}
+
+  defp backup_health_json(b) do
+    %{
+      name: b.name,
+      last_success_at: b.last_success_at && DateTime.to_iso8601(b.last_success_at),
+      hours_since_success: b.hours_since_success,
+      failures: b.failures
+    }
   end
 
   # --- Users ---------------------------------------------------------------

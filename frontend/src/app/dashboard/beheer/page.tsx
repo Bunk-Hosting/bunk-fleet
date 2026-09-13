@@ -41,9 +41,16 @@ function Overview() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Beheer</h1>
-        <p className="text-muted-foreground">Platform-overzicht en beheer.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Beheer</h1>
+          <p className="text-muted-foreground">Platform-overzicht en beheer.</p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/dashboard/beheer/metrics">
+            Cijfers <ArrowRight className="ml-1 h-4 w-4" />
+          </Link>
+        </Button>
       </div>
 
       {stats && (

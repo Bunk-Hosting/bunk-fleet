@@ -29,6 +29,7 @@ defmodule ControlPlaneWeb.AuthController do
     # directly and farms free wallets. No-op until TURNSTILE_SECRET_KEY is set.
     with :ok <- ControlPlane.Turnstile.verify(params["turnstile_token"], client_ip(conn)),
          {:ok, user} <- Accounts.register_user(params) do
+      ControlPlane.Metrics.count(:registrations)
       token = Accounts.generate_user_session_token(user)
 
       conn
@@ -42,6 +43,7 @@ defmodule ControlPlaneWeb.AuthController do
         # blocks every real customer. Turnstile.note_rejection/1 is what makes the
         # second one visible to a person instead of only to the log.
         ControlPlane.Turnstile.note_rejection(reason)
+        ControlPlane.Metrics.count(:captcha_refusals)
 
         conn
         |> put_status(:unprocessable_entity)

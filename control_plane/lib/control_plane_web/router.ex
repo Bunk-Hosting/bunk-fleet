@@ -263,6 +263,7 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :admin_session_api
 
     get "/stats", PanelController, :stats
+    get "/metrics", PanelController, :metrics
     get "/users", PanelController, :users
     patch "/users/:id", PanelController, :update_user
     post "/users/:id/credit", PanelController, :credit_user

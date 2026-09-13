@@ -16,6 +16,7 @@ defmodule ControlPlane.Accounts do
   alias ControlPlane.Accounts.UserToken
   alias ControlPlane.Clock
   alias ControlPlane.Credits
+  alias ControlPlane.Metrics
   alias ControlPlane.Notifier
   alias ControlPlane.Repo
 
@@ -350,9 +351,11 @@ defmodule ControlPlane.Accounts do
     # that exists and one that does not take the same time to reject.
     if User.valid_password?(user, password) do
       LoginThrottle.clear(email)
+      Metrics.count(:successes)
       user
     else
       note_failed_login(email)
+      Metrics.count(:failures)
       nil
     end
   end

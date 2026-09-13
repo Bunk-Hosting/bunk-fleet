@@ -49,6 +49,19 @@ test.describe("Beheerpaneel", () => {
     await expect(page.locator("body")).toContainText(/niet gevonden|404/i, { timeout: 10000 });
   });
 
+  test("een admin ziet de cijfers", async ({ page }) => {
+    await page.goto("/dashboard/beheer/metrics");
+
+    await expect(page.getByRole("heading", { name: "Cijfers", exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByText(/capaciteit per node/i)).toBeVisible();
+
+    // De belofte van de pagina, afgedwongen waar iemand hem zou breken: er mag
+    // geen e-mailadres op staan.
+    await expect(page.locator("body")).not.toContainText("@");
+  });
+
   test("een admin ziet het nodeoverzicht", async ({ page }) => {
     await page.goto("/dashboard/beheer/nodes");
 
