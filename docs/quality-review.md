@@ -160,7 +160,12 @@ komt er nooit. De specs wachten daarom op elementen, niet op stilte.
 ## Nog open
 
 ### Control plane
-- **[MED]** `@spec` op de publieke Fleet/Provisioning/Billing/Credits/Accounts-API.
+- **[DEELS]** `@spec` staat nu op Provisioning (13), Credits (9) en de
+  Fleet-functies die iets teruggeven waar een aanroeper op moet takken. Bewust
+  niet overal: een spec op een opzoeking die `Foo.t() | nil` teruggeeft zegt niets
+  wat de naam niet al zegt, en 123 regels ruis maakt de tien die wél iets zeggen
+  moeilijker te vinden. De schema's hebben allemaal een `t()`, zodat de rest
+  erbij kan wanneer er reden voor is.
 
 ### Agent
 - **[AFGEWEZEN]** `withClient(ctx, fn)` voor de connect-en-defer-logout-boilerplate
@@ -172,11 +177,19 @@ komt er nooit. De specs wachten daarom op elementen, niet op stilte.
   zou generics vragen om iets op te lossen dat geen probleem is.
 
 ### Frontend
-- **[MED]** 17 pagina's schrijven hun eigen loading/error/try-catch. Een
-  `useApiData(fetcher)`-hook haalt dat weg; dit is de grootste resterende
-  onderhoudswinst aan die kant. Wacht bewust op dekking: elke pagina die de hook
-  raakt heeft nu een E2E-test die aantoont dat hij rendert (zie hieronder), dus
-  de migratie is verifieerbaar geworden in plaats van blind.
+- **[AFGEWEZEN]** `useApiData(fetcher)` voor de pagina's die hun eigen
+  loading/error/try-catch schrijven. De bevinding telde `useState`-declaraties;
+  bij het nalopen van wat die pagina's daadwerkelijk doen blijven er van de
+  veertien maar drie over die passen (`beheer`, `beheer/metrics`,
+  `billing/invoices`). De rest doet meerdere fetches — die deze week juist
+  bewust parallel zijn gezet, met per antwoord eigen foutafhandeling omdat
+  alleen het hoofdantwoord de pagina onbruikbaar mag maken — of polling, of
+  optimistische updates na een actie zodat er geen retourtje nodig is.
+
+  Drie van de veertien omzetten laat twee patronen naast elkaar staan, en dat is
+  slechter dan één patroon dat overal hetzelfde is uitgeschreven. De hook is
+  geschreven, geprobeerd op `beheer/users`, en weer weggehaald toen bleek dat hij
+  daar een tweede bron van waarheid naast de bestaande state zette.
 - **[LOW]** Commentaar staat door elkaar in Nederlands en Engels (`safeNext` is in
   allebei becommentarieerd).
 

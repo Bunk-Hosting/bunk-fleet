@@ -24,6 +24,7 @@ defmodule ControlPlane.Credits do
   def price_for_size(size), do: Map.get(@size_prices_cents, size)
 
   @doc "Current balance in cents (0 when the user has no entries)."
+  @spec balance_cents(binary()) :: integer()
   def balance_cents(user_id) do
     Repo.one(
       from e in LedgerEntry,
@@ -42,6 +43,8 @@ defmodule ControlPlane.Credits do
     )
   end
 
+  @spec add_entry(binary(), integer(), String.t(), String.t() | nil, binary() | nil) ::
+          {:ok, LedgerEntry.t()} | {:error, Ecto.Changeset.t()}
   def add_entry(user_id, amount_cents, kind, description, vps_id \\ nil) do
     %LedgerEntry{}
     |> LedgerEntry.changeset(%{
@@ -64,6 +67,8 @@ defmodule ControlPlane.Credits do
   and `Credits.refund_orphan_charges/1` can give the money back without anyone
   reading timestamps.
   """
+  @spec attach_vps(LedgerEntry.t() | nil, binary()) ::
+          {:ok, LedgerEntry.t() | nil} | {:error, Ecto.Changeset.t()}
   def attach_vps(nil, _vps_id), do: {:ok, nil}
 
   def attach_vps(%LedgerEntry{} = entry, vps_id) do
@@ -80,6 +85,7 @@ defmodule ControlPlane.Credits do
   `Accounts.confirm_user/1` would hand them a second €10. Returns `{:ok, nil}`
   when a bonus is already on the ledger, which callers treat as success.
   """
+  @spec grant_signup_bonus(binary()) :: {:ok, LedgerEntry.t() | :already_granted}
   def grant_signup_bonus(user_id) do
     already_granted? =
       Repo.exists?(
@@ -98,6 +104,8 @@ defmodule ControlPlane.Credits do
   `{:ok, entry}` or `{:error, :insufficient_credits}`. A zero/under charge is a
   no-op `{:ok, nil}` (free sizes never block creation).
   """
+  @spec charge(binary(), integer(), String.t(), String.t()) ::
+          {:ok, LedgerEntry.t() | nil} | {:error, :insufficient_credits}
   def charge(_user_id, amount_cents, _kind, _desc) when amount_cents <= 0, do: {:ok, nil}
 
   def charge(user_id, amount_cents, kind, description) do
@@ -138,6 +146,7 @@ defmodule ControlPlane.Credits do
   a create in flight also has no `vps_id` yet, and refunding that would hand back
   money for a VPS the customer is about to receive.
   """
+  @spec refund_orphan_charges(non_neg_integer()) :: non_neg_integer()
   def refund_orphan_charges(grace_seconds \\ 600) do
     # Not Clock.shift/1: ledger_entries timestamps carry microseconds, because
     # two movements in the same second still have an order and money cares about
@@ -183,6 +192,7 @@ defmodule ControlPlane.Credits do
   Idempotent by marking the original entry `vps_charge_refunded`: a sweep that
   runs every few seconds must not pay the same customer back on every tick.
   """
+  @spec refund_charge_for_vps(binary()) :: boolean()
   def refund_charge_for_vps(vps_id) do
     case Repo.one(
            from e in LedgerEntry,
@@ -208,6 +218,8 @@ defmodule ControlPlane.Credits do
   end
 
   @doc "Credits an amount back (e.g. refund a failed provision)."
+  @spec refund(binary(), integer(), String.t(), String.t()) ::
+          {:ok, LedgerEntry.t() | nil} | {:error, Ecto.Changeset.t()}
   def refund(_user_id, amount_cents, _kind, _desc) when amount_cents <= 0, do: {:ok, nil}
 
   def refund(user_id, amount_cents, kind, description),
@@ -247,6 +259,7 @@ defmodule ControlPlane.Credits do
   end
 
   @doc "Number of still-pending top-up requests for a user (used to cap abuse)."
+  @spec count_pending_topups(binary()) :: non_neg_integer()
   def count_pending_topups(user_id) do
     Repo.aggregate(
       from(t in TopupRequest, where: t.user_id == ^user_id and t.status == :pending),

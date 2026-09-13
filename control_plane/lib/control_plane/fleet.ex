@@ -160,6 +160,7 @@ defmodule ControlPlane.Fleet do
   @doc """
   Returns all VPSes, with their region preloaded, newest first.
   """
+  @spec list_vpses(keyword()) :: [Vps.t()]
   def list_vpses(opts \\ []) do
     Repo.all(
       from v in Vps,
@@ -224,6 +225,7 @@ defmodule ControlPlane.Fleet do
   @doc """
   Returns the VPSes owned by `owner_id`, region preloaded, newest first.
   """
+  @spec list_vpses_for_owner(binary()) :: [Vps.t()]
   def list_vpses_for_owner(owner_id) do
     # Exclude :deleted — a torn-down VPS must vanish from the customer's list
     # (the frontend renders whatever this returns), not linger as a ghost row.
@@ -243,6 +245,7 @@ defmodule ControlPlane.Fleet do
   Returns `nil` when the VPS does not exist *or* belongs to another owner — the
   caller cannot distinguish the two, so this doubles as the authorization check.
   """
+  @spec get_vps_for_owner(binary(), binary()) :: Vps.t() | nil
   def get_vps_for_owner(owner_id, id) do
     Repo.one(
       from v in Vps,
@@ -427,6 +430,8 @@ defmodule ControlPlane.Fleet do
 
   See `mark_stale_nodes_offline/1` to pass an explicit cutoff (useful in tests).
   """
+  @spec mark_stale_nodes_offline() :: {non_neg_integer(), nil}
+  @spec mark_stale_nodes_offline(DateTime.t()) :: {non_neg_integer(), nil}
   def mark_stale_nodes_offline do
     mark_stale_nodes_offline(Clock.shift(-@heartbeat_ttl_seconds))
   end
@@ -470,6 +475,7 @@ defmodule ControlPlane.Fleet do
   (or `:stopped`/`:paused`/`:deleting`) are left untouched — those hold capacity
   for a real workload. Returns the number of reservations reclaimed.
   """
+  @spec release_orphaned_reservations() :: non_neg_integer()
   def release_orphaned_reservations do
     orphaned =
       Repo.all(
