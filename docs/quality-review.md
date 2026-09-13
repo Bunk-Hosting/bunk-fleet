@@ -255,3 +255,24 @@ een lange sessie.
 - Geen ongesuperviseerde `spawn`/`Task.start`.
 - De publieke, ongeauthenticeerde routes hebben allemaal een limiter; wat er geen
   had was juist het geauthenticeerde mailendpoint hierboven.
+
+
+## Incident 2026-09-13 — een sweep die de geschiedenis terugboekte
+
+`ledger_entries` kreeg een `vps_id` waarbij leeg stond voor "de VPS is nooit
+aangemaakt". Elke afschrijving van vóór die kolom heeft hem ook leeg, dus bij de
+eerste reconciler-tick na het uitrollen boekte de sweep zeven historische
+afschrijvingen terug — EUR 42,93, waaronder die van twee draaiende VPSen.
+
+Wat het beperkte: de idempotentie werkte. De tweede tick betaalde niemand nog
+eens terug, omdat de oorspronkelijke regels al omgezet waren.
+
+Wat het had voorkomen: bij een migratie die een nullable kolom toevoegt waarvan
+de afwezigheid iets betekent, krijgt elke bestaande rij die betekenis erbij. Doe
+dan één van twee dingen vóórdat de consument live gaat — backfill de bestaande
+rijen, of geef de consument een ondergrens op het moment dat de kolom ontstond.
+De sweep heeft nu dat laatste (`@vps_id_since`), met een test die precies dit
+geval vastlegt.
+
+En bij alles wat automatisch geld verplaatst: eerst in productie tellen hoeveel
+rijen het zou raken, dan pas laten handelen.
