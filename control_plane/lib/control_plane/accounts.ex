@@ -18,6 +18,7 @@ defmodule ControlPlane.Accounts do
   alias ControlPlane.Credits
   alias ControlPlane.Metrics
   alias ControlPlane.Notifier
+  alias ControlPlane.RateLimiter
   alias ControlPlane.Repo
 
   @doc """
@@ -158,12 +159,38 @@ defmodule ControlPlane.Accounts do
   # the token is already persisted by then, so the user can always ask for a
   # resend. Returns {:ok, encoded_token} — the raw token exists only here and in
   # the email, never in the database.
+  # How many of one kind of link a single account may be sent per hour. Generous
+  # for a person who did not get the first one and clicks again; useless to
+  # anyone hammering the endpoint.
+  @mail_per_hour 5
+
   defp issue_email_token(%User{} = user, context, deliver) when is_function(deliver, 2) do
-    Repo.delete_all(UserToken.by_user_and_contexts_query(user, [context]))
-    {encoded_token, user_token} = UserToken.build_email_token(user, context)
-    Repo.insert!(user_token)
-    deliver.(user, encoded_token)
-    {:ok, encoded_token}
+    # Checked BEFORE anything is written: a refused send must not invalidate the
+    # link the person is already holding.
+    #
+    # The cap lives here rather than on a route because every path that mails a
+    # customer comes through this function, and because the damage is not to the
+    # endpoint. Thousands of messages from one sender in a minute is how a mail
+    # provider decides this domain is a spammer — and then nobody gets a
+    # confirmation, a reset, or an ops alert until someone notices and argues us
+    # back off a blocklist.
+    if RateLimiter.hit("mail:#{context}:#{user.id}", @mail_per_hour, :timer.hours(1)) == :ok do
+      Repo.delete_all(UserToken.by_user_and_contexts_query(user, [context]))
+      {encoded_token, user_token} = UserToken.build_email_token(user, context)
+      Repo.insert!(user_token)
+      deliver.(user, encoded_token)
+      {:ok, encoded_token}
+    else
+      # Reported as success on purpose. The caller must learn nothing from this —
+      # the reset endpoint answers identically for every address precisely so it
+      # cannot be used to find out who has an account here — and the person has
+      # already been sent a link that still works.
+      Logger.info(
+        "mail throttled: #{context} for a user who already had #{@mail_per_hour} this hour"
+      )
+
+      {:ok, :throttled}
+    end
   end
 
   ## Email confirmation
