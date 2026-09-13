@@ -188,3 +188,70 @@ komt er nooit. De specs wachten daarom op elementen, niet op stilte.
 - **`usage_records` partitioneren.** Zelfde reden. Bij 100 actieve VPSen is dat
   ~876k rijen per jaar; de `metered_at`-index draagt dat ruim. Terugkomen als het
   tienvoudige in zicht is.
+
+
+---
+
+# Review 2026-09-13 — security, robuustheid, snelheid
+
+## Verholpen deze ronde
+
+**Eén account kon het platform ongelimiteerd laten mailen.**
+`POST /auth/confirm/resend` stond achter authenticatie maar zonder limiet, en
+registreren kan iedereen. De schade zit niet bij het endpoint maar bij de
+afzenderreputatie: duizenden berichten van één afzender in een minuut is hoe een
+mailprovider besluit dat dit domein een spammer is, en dan komt er niets meer aan
+— geen bevestiging, geen reset, geen ops-alarm. De limiet zit nu in
+`issue_email_token/3`, het enige punt waar elk pad langskomt dat een klant mailt,
+en vóór er iets geschreven wordt: een geweigerde verzending mag de link die
+iemand al heeft niet opruimen.
+
+**De console zweeg als hij niet openging.** Zie de commit; kort: de agent
+probeerde één keer, kreeg "connection refused" van een VPS die nog aan het
+opstarten was, en liet de browser zwart. Nu twaalf seconden proberen, en anders
+een zin in de terminal met een volgende stap erin.
+
+**Drie pagina's stonden in de rij op antwoorden die niets met elkaar te maken
+hebben.** `vpsApi.list()` wachtte op de pakketcatalogus voordat hij de VPSen
+opvroeg. Gemeten met een echte browser: alle aanroepen starten nu binnen 1 ms van
+elkaar in plaats van achter elkaar. Twee tot drie retourtjes minder per pagina.
+
+**Een secret in .env.prod bereikte de container niet.** `deploy-prod.sh` geeft
+een allow-list door, geen `--env-file`, en TURNSTILE_SECRET_KEY stond er niet in.
+
+## Gevonden, niet verholpen — een ontwerpgat in het geldpad
+
+**De kassabon weet niet welke VPS hij betaalde.** `ledger_entries` heeft een
+gebruiker, een bedrag, een soort en een omschrijving ("VPS Starter"), maar geen
+`vps_id`. Dat komt doordat er bij het afrekenen nog geen VPS is: de controller
+doet `Credits.charge/4` en pas daarna `create_vps_for_owner/2`.
+
+Wat daar misgaat is zeldzaam maar echt. Het pad is goed afgeschermd — bij een
+mislukking, een `raise` én een `:exit` wordt er teruggeboekt — maar tegen een
+`:kill` of een node die omvalt tussen de afschrijving en het aanmaken helpt geen
+rescue. Dan staat er een `vps_charge` in het grootboek zonder VPS, en niets kan
+dat automatisch terugvinden. De sweep die dit opmerkt zegt het ook met zoveel
+woorden: "zoek de vps_charge-regels rond deze tijdstippen en draai ze terug" —
+handwerk op basis van tijdstempels.
+
+De echte oplossing is de volgorde omdraaien: eerst de VPS-rij aanmaken (die is er
+al op gebouwd om een mislukte plaatsing als `:failed` te overleven), dan
+afschrijven mét `vps_id`, en bij een mislukte afschrijving de VPS falen. Dan is
+elke afschrijving exact aan een machine gekoppeld en wordt reconciliatie een
+query in plaats van forensiek.
+
+Niet in deze ronde gedaan omdat het de volgorde van het geldpad verandert en dat
+verdient een eigen wijziging met eigen tests, niet een haastige aan het eind van
+een lange sessie.
+
+## Nagekeken en in orde bevonden
+
+- Geen SQL-injectie: alle `fragment/1` gebruiken parameters, nergens interpolatie.
+- Geen eigenaar-id dat uit een request komt in plaats van uit de sessie.
+- Geen N+1: elke lijstquery is gebatcht of gepreload, en de enige die er een was
+  (`Backups.prune`) is deze week rechtgezet.
+- Geen `rescue` die een fout wegslikt zonder reden; de vier die niet loggen zijn
+  alle vier getypeerd en met opzet.
+- Geen ongesuperviseerde `spawn`/`Task.start`.
+- De publieke, ongeauthenticeerde routes hebben allemaal een limiter; wat er geen
+  had was juist het geauthenticeerde mailendpoint hierboven.
