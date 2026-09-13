@@ -449,9 +449,9 @@ export default function VpsDetailPage() {
                 <div className="sm:col-span-3 space-y-1">
                   <p className="text-sm text-muted-foreground">Bereikbaar van buiten</p>
                   <p className="font-medium">
-                    Nog niet. Deze VPS draait op een node zonder publiek adres, dus
-                    inloggen gaat via de webterminal hierboven. Zodra de node een
-                    publiek adres heeft, verschijnt hier het SSH-adres en de poort.
+                    Nee. Je bereikt deze VPS via de webterminal hierboven — die geeft je
+                    een volwaardige shell. SSH vanaf je eigen machine staat bewust uit,
+                    zodat de VPS niet aan het open internet hangt.
                   </p>
                 </div>
               )}
