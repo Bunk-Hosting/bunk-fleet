@@ -115,6 +115,15 @@ defmodule ControlPlane.Credits do
     end)
   end
 
+  # Charges written before ledger_entries had a vps_id all carry nil, and nil is
+  # what this sweep reads as "the VPS never existed". Without this floor it would
+  # look at every charge the platform ever took and refund the lot — which is
+  # exactly what happened the first time it ran, before this line existed.
+  #
+  # The date is when the column shipped. It is a constant rather than a lookup
+  # because it is a fact about history, and history does not change.
+  @vps_id_since ~U[2026-09-13 20:00:00.000000Z]
+
   @doc """
   Refunds every `vps_charge` that never got a VPS, and reports how many.
 
@@ -140,7 +149,7 @@ defmodule ControlPlane.Credits do
         from e in LedgerEntry,
           where:
             e.kind == "vps_charge" and is_nil(e.vps_id) and e.inserted_at < ^cutoff and
-              e.amount_cents < 0
+              e.inserted_at > ^@vps_id_since and e.amount_cents < 0
       )
 
     Enum.each(orphans, fn entry ->

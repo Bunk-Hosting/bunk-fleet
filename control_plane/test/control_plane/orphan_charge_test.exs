@@ -106,6 +106,23 @@ defmodule ControlPlane.OrphanChargeTest do
     assert Credits.balance_cents(user.id) == before
   end
 
+  test "charges from before the ledger knew about VPSes are never touched" do
+    # Every charge written before vps_id existed carries nil, and nil is what the
+    # sweep reads as "the VPS never existed". Without a floor it refunds the
+    # entire history of the platform — which is what it did the first time it ran
+    # in production, giving three customers back money for VPSes they were using.
+    user = user_fixture()
+    before = Credits.balance_cents(user.id)
+    {:ok, entry} = Credits.charge(user.id, 500, "vps_charge", "VPS Starter")
+
+    entry
+    |> Ecto.Changeset.change(%{inserted_at: ~U[2026-08-01 12:00:00.000000Z]})
+    |> Repo.update!()
+
+    assert Credits.refund_orphan_charges(600) == 0
+    assert Credits.balance_cents(user.id) == before - 500
+  end
+
   test "a top-up is not a charge and is never refunded" do
     user = user_fixture()
     {:ok, entry} = Credits.add_entry(user.id, 2500, "topup", "Bijgestort")
