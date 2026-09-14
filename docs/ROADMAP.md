@@ -68,30 +68,41 @@ Current catalogue against that floor (colo):
 
 Every package clears its floor. The prices are defensible on cost.
 
-## 3. Backups — half built, and the missing half is the one that matters
+## 3. Backups — draaien; off-node is uitgesteld
 
-**Done since this was written.** `vzdump` snapshot, daily automatic plus
-on-demand, retention by count, and restore — all driven by the `backup`,
-`delete_backup` and `restore_backup` command kinds. Proven end to end: a 1,4 GB
-archive in 97 s and a restore that made a marker file disappear. Restoring also
-forgets the pinned SSH host key, because the older disk carries an older key and
-TOFU would otherwise read that as an attack and lock the customer out of the
-console they just used to check the restore.
+**Wat werkt.** Twee onafhankelijke ketens, allebei geverifieerd.
 
-**Not done, and this is the part that blocks selling: off-node.** Archives go to
-`local:backup/` on the node itself — verified in production, every row in
-`vps_backups` points there. A node that dies takes its backups with it, which
-means the backups provide no durability against the failure they exist for.
+*Klant-VPSen:* `vzdump`-snapshot, dagelijks automatisch plus op verzoek, retentie
+op aantal, en terugzetten — via de `backup`, `delete_backup` en `restore_backup`
+commandosoorten. Bewezen met een archief van 1,4 GB in 97 s en een restore die een
+markeerbestand liet verdwijnen. Terugzetten vergeet ook de gepinde SSH-hostsleutel,
+want de oudere schijf draagt een oudere sleutel en TOFU zou dat anders als aanval
+lezen en de klant buitensluiten uit de console waarmee hij net kwam kijken.
 
-What is still needed:
+*Control plane:* dagelijks een versleuteld archief met de database, `.env.prod` en
+een manifest, geduwd naar de Proxmox-host. Versleuteling is asymmetrisch — alleen
+het certificaat staat op VM102, de private sleutel is nergens nodig om een back-up
+te máken. Op 2026-09-14 end-to-end nagekeken: het archief van die ochtend
+ontsleutelt, het manifest noemt het juiste commit en migratienummer, en
+`pg_restore --list` leest er 18 tabellen met data uit.
 
-- **Ship archives off the node** to central object storage (self-hosted MinIO, or
-  Backblaze B2 to start). Encrypt before upload.
-- **Restore to *any* node**, not only the one that made the archive. That
-  cross-node restore is also the failover primitive, so building it gets us most
-  of §5.
+**Off-node: uitgesteld, bewust.** Stijn heeft op 2026-09-14 besloten dat de
+back-ups voorlopig op de host blijven. Later mogelijk een server elders, met
+synchronisatie over een VPN.
 
-Budgeted at ~€15/node/month in §2.
+Wat dat betekent, zodat het een keuze blijft en geen vergissing: de archieven
+overleven een kapotte VM en een verwijderde VPS, maar niet het verlies van de
+machine zelf. Brand, diefstal of een dode schijfcontroller neemt de VPSen en hun
+back-ups tegelijk mee. Voor een platform zonder betalende klanten is dat een
+verdedigbare afweging; het wordt er een om te herzien zodra er iemand betaalt.
+
+**Het scherpste dat nu nog openstaat is niet de opslag maar de sleutel.** VM102
+draagt zowel het pushkredentiaal naar de host (`/etc/bunk-backup/id_ed25519`) als
+de private sleutel die de archieven ontsleutelt (`/etc/bunk-backup/backup.key`).
+Wie VM102 heeft, heeft daarmee elke back-up leesbaar — precies de scheiding die de
+asymmetrische opzet wilde aanbrengen. `backup.key` van VM102 af halen kost
+operationeel niets: back-ups maken gebruikt hem niet, alleen `restore.sh`, en dat
+is een bewuste handeling.
 
 ## 4. Positioning — the actual open question
 
