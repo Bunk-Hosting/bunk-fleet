@@ -1,0 +1,46 @@
+#!/bin/sh
+# Wat een klant ziet bij zijn eerste login op een Bunk-VPS.
+#
+# Eén keer, niet elke keer: een banner die je elke sessie opnieuw begroet is na
+# dag twee ruis waar mensen doorheen scrollen. De eerste keer is hij wel nuttig,
+# want dan is dit een verse machine en wil je weten waar je bent beland.
+#
+# Kleur alleen als er een terminal aan hangt die het aankan. In een pipe, een
+# cronjob of een dom tty leveren escape-codes alleen rommel op.
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ]; then
+  C='\033[38;5;45m'   # accentcyaan, hetzelfde als in het dashboard
+  D='\033[38;5;33m'   # het blauw ernaast
+  W='\033[1;37m'
+  G='\033[38;5;245m'
+  R='\033[0m'
+else
+  C=''; D=''; W=''; G=''; R=''
+fi
+
+printf '\n'
+printf "%b  ██████╗ ██╗   ██╗███╗   ██╗██╗  ██╗%b\n" "$D" "$R"
+printf "%b  ██╔══██╗██║   ██║████╗  ██║██║ ██╔╝%b\n" "$D" "$R"
+printf "%b  ██████╔╝██║   ██║██╔██╗ ██║█████╔╝ %b\n" "$C" "$R"
+printf "%b  ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗ %b\n" "$C" "$R"
+printf "%b  ██████╔╝╚██████╔╝██║ ╚████║██║  ██╗%b\n" "$C" "$R"
+printf "%b  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝%b\n" "$C" "$R"
+printf '\n'
+printf "  %bWelkom op je eigen server.%b\n\n" "$W" "$R"
+
+CPU=$(nproc 2>/dev/null || echo '?')
+MEM=$(awk '/MemTotal/ {printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null || echo '?')
+DISK=$(df -h --output=size / 2>/dev/null | tail -1 | tr -d ' ' || echo '?')
+
+printf "  %bmachine%b   %s\n" "$G" "$R" "$(hostname)"
+printf "  %bhardware%b  %s vCPU · %s geheugen · %s schijf\n" "$G" "$R" "$CPU" "$MEM" "$DISK"
+printf "  %bbeheer%b    https://app.bunkhosting.nl\n" "$G" "$R"
+printf '\n'
+if [ "$(id -u)" = "0" ]; then
+  printf "  %bJe bent root op deze machine.%b\n" "$G" "$R"
+else
+  printf "  %bGebruik sudo voor beheerstaken; je hebt de rechten.%b\n" "$G" "$R"
+fi
+printf "  %bEr wordt elke nacht automatisch een back-up gemaakt. Terugzetten doe je%b\n" "$G" "$R"
+printf "  %bvanuit het dashboard.%b\n" "$G" "$R"
+printf '\n'
+printf "  %bDit bericht zie je alleen deze eerste keer.%b\n\n" "$G" "$R"
