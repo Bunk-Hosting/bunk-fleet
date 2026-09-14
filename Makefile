@@ -6,7 +6,7 @@
 CONTROL_PLANE_DIR := control_plane
 AGENT_DIR         := agent
 
-.PHONY: all check test build fmt test-control-plane test-agent build-control-plane build-agent fmt-control-plane fmt-agent sync-worker check-worker
+.PHONY: all check test build fmt test-control-plane test-agent build-control-plane build-agent fmt-control-plane fmt-agent
 
 all: build
 
@@ -15,14 +15,6 @@ all: build
 ##        Needs BUNK_DB_PASSWORD for the Elixir suite. Run this before pushing.
 check:
 	bash tools/check.sh
-
-## sync-worker: push agent/ Go source into the sibling bunk-worker repo (module path rewritten)
-sync-worker:
-	bash tools/sync-worker.sh
-
-## check-worker: fail if bunk-worker has drifted from agent/ (run before releasing bunk-worker)
-check-worker:
-	bash tools/sync-worker.sh --check
 
 ## test: run Elixir and Go test suites
 test: test-control-plane test-agent
