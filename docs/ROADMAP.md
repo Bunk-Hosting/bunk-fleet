@@ -68,18 +68,28 @@ Current catalogue against that floor (colo):
 
 Every package clears its floor. The prices are defensible on cost.
 
-## 3. Backups — still the one non-negotiable gap
+## 3. Backups — half built, and the missing half is the one that matters
 
-A VPS product without backups is not sellable. Decision, unchanged by the pivot
-except that we now control both ends:
+**Done since this was written.** `vzdump` snapshot, daily automatic plus
+on-demand, retention by count, and restore — all driven by the `backup`,
+`delete_backup` and `restore_backup` command kinds. Proven end to end: a 1,4 GB
+archive in 97 s and a restore that made a marker file disappear. Restoring also
+forgets the pinned SSH host key, because the older disk carries an older key and
+TOFU would otherwise read that as an attack and lock the customer out of the
+console they just used to check the restore.
 
-- **Off-node.** A backup on the same machine as the VM provides no durability.
-  Ship to central object storage (self-hosted MinIO, or Backblaze B2 to start).
-- **How.** `vzdump` snapshot → encrypt → upload, driven by a new `backup`
-  command kind the agent already has the shape for.
-- **Schedule.** Daily automatic + on-demand manual. Retention 7 daily + 4 weekly.
-- **Restore.** Pull → decrypt → restore to *any* node. That cross-node restore is
-  also the failover primitive, so building backups well gets us most of §5.
+**Not done, and this is the part that blocks selling: off-node.** Archives go to
+`local:backup/` on the node itself — verified in production, every row in
+`vps_backups` points there. A node that dies takes its backups with it, which
+means the backups provide no durability against the failure they exist for.
+
+What is still needed:
+
+- **Ship archives off the node** to central object storage (self-hosted MinIO, or
+  Backblaze B2 to start). Encrypt before upload.
+- **Restore to *any* node**, not only the one that made the archive. That
+  cross-node restore is also the failover primitive, so building it gets us most
+  of §5.
 
 Budgeted at ~€15/node/month in §2.
 
@@ -109,9 +119,11 @@ to spend on service) and it is the only one of the three that scales.
 
 ## 5. Fleet operations — what running >1 node needs
 
-- **Node drain / maintenance mode.** Stop scheduling to a node, migrate or
-  gracefully stop its VPSes, patch, return it. Today deleting a node refuses
-  while it hosts live VPSes, which is correct but leaves no path *to* empty.
+- ~~**Node drain / maintenance mode.**~~ **Done.** `POST /beheer/nodes/:id/drain`
+  closes a node to new VPSes while everything on it keeps running and keeps being
+  served; `/resume` reopens it. Proven by draining the live node and watching the
+  scheduler stop placing on it. What is still missing is the step after: moving
+  the VPSes off, which needs the cross-node restore from §3.
 - **Restart-elsewhere on node failure.** From the last backup (RPO = last
   snapshot), clearly disclosed. Not live migration — that is a multi-quarter
   effort and not warranted yet.
