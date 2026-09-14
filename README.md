@@ -1,118 +1,127 @@
 # Bunk Fleet
 
-## Repository layout (monorepo)
+De orkestratie-monorepo van **Bunk Hosting**: een VPS-platform op eigen
+hardware. Een centrale **control plane** plant en beheert een verzameling
+**worker nodes**; klanten kiezen een regio en een pakket, en de control plane
+zet de VPS op een node met ruimte. Klanten zien of kiezen geen node.
 
-This repository is the single home for the whole Bunk Fleet platform:
+De opzet leunt op Fly.io: een fouttolerante Elixir/Phoenix control plane
+verdraagt veel gelijktijdige, wankele agentverbindingen en multiplext realtime
+consoles, terwijl een kleine Go-agent op elke node naar *buiten* belt — een node
+heeft daardoor geen inkomende poort nodig.
 
-| Path | Component | Stack |
-|------|-----------|-------|
-| `control_plane/` | Control plane (API + scheduler + billing) | Elixir / Phoenix |
-| `agent/` | Worker-node agent (provisions VMs, heartbeats, runs commands) | Go (Proxmox + ESXi) |
-| `frontend/` | Customer dashboard | Next.js / TypeScript |
+## Wat staat waar
 
-The frontend talks to the control plane via `/api/v1` (bearer auth); the agent
-dials out to the control plane (enroll → heartbeat → command long-poll → result).
-See each subdirectory's README for build/deploy details.
+| Pad              | Wat het is                                                                   |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `control_plane/` | Phoenix 1.7-app (OTP-app `:control_plane`), Elixir ~> 1.14, Postgres via Ecto. |
+| `agent/`         | Go 1.25-module `github.com/Bunk-Hosting/bunk-fleet/agent`, statisch gebouwd.   |
+| `frontend/`      | Klantendashboard, Next.js 14 / TypeScript.                                    |
+| `provisioning/`  | Wat er op een nieuwe VPS terechtkomt (o.a. het welkomstscherm).               |
+| `tools/`         | De kwaliteitspoort en de back-up-/herstelscripts.                            |
+| `docs/`          | Protocol, architectuur, runbooks, security- en privacyreviews.                |
 
+De frontend praat met de control plane via `/api/v1` (bearer-auth); de agent
+belt uit naar de control plane (enroll → heartbeat → command long-poll →
+result).
 
-Bunk Fleet is the orchestration monorepo for **Bunk Hosting**, a multi-node VPS
-platform. A central **control plane** schedules and manages a fleet of
-**worker nodes** — all Bunk's own hardware — and exposes customer VPS instances
-over a WireGuard overlay. Customers pick a region and a package; the control
-plane places the VPS on a node with room. Customers never see, choose or run a
-node.
-
-The design is inspired by Fly.io: a fault-tolerant Elixir/Phoenix control plane
-copes with many concurrent, flaky agent connections and multiplexes realtime VM
-consoles, while a small, dependency-free Go agent runs on every worker node and
-dials *out* to the control plane, so a node needs no inbound port-forward.
-
-## What's in here
-
-| Path             | What it is                                                                 |
-| ---------------- | -------------------------------------------------------------------------- |
-| `control_plane/` | Elixir **Phoenix 1.7** app (OTP app `:control_plane`), Postgres + Ecto.     |
-| `agent/`         | Go **1.23** module `github.com/Bunk-Hosting/bunk-fleet/agent` (static build).|
-| `docs/`          | Protocol contract (wire messages), architecture & roadmap.                 |
-
-## Architecture
+## Architectuur
 
 ```
                           ┌───────────────────────────────────────────┐
                           │             CONTROL PLANE                  │
                           │        (Elixir / Phoenix 1.7, OTP)         │
                           │                                            │
-  customers / API ─────▶  │  scheduler   enrollment   console mux      │
+  klanten / API ───────▶  │  scheduler   enrollment   console mux      │
                           │  Ecto ─▶ Postgres                          │
                           └───────────────┬────────────────────────────┘
                                           │  HTTPS: enroll, heartbeat,
                                           │  command long-poll, result.
-                                          │  Bearer agent token per node.
-                                          │  AGENTS DIAL OUT (no inbound port)
+                                          │  Bearer agent-token per node.
+                                          │  DE AGENT BELT UIT (geen inkomende poort)
               ┌───────────────────────────┼───────────────────────────┐
               │                           │                           │
         ┌─────┴──────┐              ┌──────┴─────┐              ┌──────┴─────┐
-        │  bunk-agent│              │ bunk-agent │              │ bunk-agent │
+        │ bunk-agent │              │ bunk-agent │              │ bunk-agent │
         │   (Go)     │              │   (Go)     │              │   (Go)     │
         │  node 1    │              │  node 2    │              │  node 3    │
         └─────┬──────┘              └──────┬─────┘              └──────┬─────┘
-              │ local API                  │ local API                 │ local API
+              │ lokale API                 │ lokale API                │ lokale API
         ┌─────┴──────┐              ┌──────┴─────┐              ┌──────┴─────┐
         │  Proxmox   │              │  Proxmox   │              │   ESXi     │
         │   (VMs)    │              │   (VMs)    │              │   (VMs)    │
         └────────────┘              └────────────┘              └────────────┘
-
-        VPS instances are joined to a WireGuard overlay so that public
-        endpoints and inter-VPS traffic are reachable regardless of each
-        node's local network.
 ```
 
-### Components
+### Onderdelen
 
-- **Control plane** — authoritative source of truth. Handles enrollment, holds
-  node inventory + capacity, runs the scheduler, terminates customer/API
-  requests, and multiplexes VM consoles back to users. Built on Elixir/OTP for
-  fault tolerance and massive connection concurrency.
-- **Agent (`bunk-agent`)** — one per worker node. Enrolls with a one-time
-  token, heartbeats capacity on a timer, long-polls for work, executes
-  provision/delete/console commands against the local hypervisor, and proxies
-  consoles. Stdlib-only Go, ships as a single static binary.
-- **Providers** — hypervisor backends behind the agent: **Proxmox** and
-  **ESXi/vCenter**. The agent abstracts these so the control plane speaks one
-  command vocabulary.
-- **Overlay** — **WireGuard** connects VPS instances into one routable network
-  for public endpoints and east-west traffic.
-- **Scheduler** — the customer picks a **region**; the control plane places the
-  VPS on the node *in that region* that keeps the most headroom afterwards,
-  locking candidate rows so concurrent placements can't oversell a node.
+- **Control plane** — de bron van waarheid. Doet enrollment, houdt inventaris en
+  capaciteit bij, draait de scheduler, handelt klant- en API-verzoeken af en
+  multiplext consoles terug naar de gebruiker. Elixir/OTP vanwege fouttolerantie
+  en het aantal gelijktijdige verbindingen.
+- **Agent (`bunk-agent`)** — één per node. Meldt zich aan met een eenmalig
+  token, stuurt periodiek capaciteit door, haalt werk op met long-polling, voert
+  provision-, delete-, power- en consolecommando's uit tegen de lokale
+  hypervisor. Go zonder externe afhankelijkheden, één statische binary.
+- **Providers** — de hypervisorkant van de agent: **Proxmox** en
+  **ESXi/vCenter**. De control plane kent maar één commandovocabulaire.
+- **Scheduler** (`control_plane/lib/control_plane/fleet/scheduler.ex`) — de klant
+  kiest een **regio**; de plaatsing gaat naar de node *in die regio* die daarna
+  de meeste ruimte overhoudt. Kandidaatrijen worden gelockt, zodat gelijktijdige
+  plaatsingen een node niet kunnen overboeken.
 
-## Quickstart
+### Hoe een klant bij zijn VPS komt
 
-### Control plane (Elixir)
+Via de **webterminal in het dashboard**, en voorlopig alleen daar. De keten is:
+
+```
+browser (WebSocket) ─▶ relay (loopback TCP) ─▶ SSH-client ín de control plane
+                                             ─▶ agent (WebSocket) ─▶ VPS:22
+```
+
+De relay vervoert SSH-bytes, geen tekst: de control plane is zelf de
+SSH-client. Er staan bewust geen poort-forwards naar VPS'en open en `public_host`
+is leeg — zie [`docs/runbooks/`](docs/runbooks/).
+
+### Wat er verder in de control plane zit
+
+Betalingen via **Mollie** (webhooks worden fetch-to-verify afgehandeld; welke
+betaalmethodes aanstaan is een instelling in het Mollie-account, niet in deze
+repo),
+botverificatie op registratie via **Cloudflare Turnstile**, een grootboek met
+tegoeden en dagelijkse afschrijving, en elke nacht een versleutelde back-up van
+de database (`tools/backup.sh`, herstel met `tools/restore.sh`).
+
+## Aan de slag
 
 ```bash
-cd control_plane
-mix deps.get && mix test
+make check   # de poort: format, compile --warnings-as-errors, credo --strict,
+             # deps.audit, test en dialyzer, plus gofmt/vet/test voor de agent
+make test    # alleen de tests van beide componenten
+make build   # bouwt beide
+make fmt     # formatteert beide
 ```
 
-### Agent (Go)
+Per component:
 
 ```bash
-cd agent
-go build ./... && go test ./...
+cd control_plane && mix deps.get && mix test
+cd agent         && go build ./... && go test ./...
 ```
 
-### Both at once
+`make check` is wat een wijziging moet halen voor hij uitgerold wordt; draai hem
+voordat je commit.
 
-```bash
-make test    # runs mix test (control_plane) + go test ./... (agent)
-make build   # builds both
-make fmt     # formats both
-```
+## Documentatie
 
-## Documentation
-
-- [`docs/architecture.md`](docs/architecture.md) — problem layers, stack,
-  scheduling, overlay, failure modes, and phased roadmap.
-- [`docs/protocol.md`](docs/protocol.md) — the agent ⇄ control-plane protocol
-  contract (Enroll, Heartbeat, Command, CommandResult), transport, and security.
+- [`docs/architecture.md`](docs/architecture.md) — lagen, stack, scheduling,
+  faalmodi en de gefaseerde roadmap.
+- [`docs/protocol.md`](docs/protocol.md) — het contract tussen agent en control
+  plane (Enroll, Heartbeat, Command, CommandResult), transport en beveiliging.
+- [`docs/runbooks/`](docs/runbooks/) — een node toevoegen, back-up en herstel.
+- [`docs/security/`](docs/security/) — securitybeoordeling en het
+  misuse-caseregister.
+- [`docs/privacy/`](docs/privacy/) — de AVG-beoordeling.
+- [`docs/design/multi-node.md`](docs/design/multi-node.md) — het ontwerp voor
+  meerdere nodes.
+- [`CODE_GUIDELINES.md`](CODE_GUIDELINES.md) — hoe hier geschreven wordt.
