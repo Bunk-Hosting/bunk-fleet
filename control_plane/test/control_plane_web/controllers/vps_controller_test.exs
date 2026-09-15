@@ -110,7 +110,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"vps" => vps} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       assert vps["public_host"] == "nl2.bunkhosting.nl"
       assert vps["ssh_port"] == 20_000
@@ -128,8 +131,11 @@ defmodule ControlPlaneWeb.VpsControllerTest do
         "disk_gb" => 50
       }
 
-      one = conn |> auth(user) |> post(~p"/api/v1/vpses", Map.put(params, "name", "one"))
-      two = conn |> auth(user) |> post(~p"/api/v1/vpses", Map.put(params, "name", "two"))
+      one =
+        conn |> auth(user) |> post(~p"/api/v1/vpses", consented(Map.put(params, "name", "one")))
+
+      two =
+        conn |> auth(user) |> post(~p"/api/v1/vpses", consented(Map.put(params, "name", "two")))
 
       assert json_response(one, 201)["vps"]["ssh_port"] !=
                json_response(two, 201)["vps"]["ssh_port"]
@@ -151,7 +157,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"vps" => vps} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       assert is_nil(vps["public_host"])
       assert is_nil(vps["ssh_port"])
@@ -281,6 +290,76 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     end
   end
 
+  # --- herroepingsrecht -------------------------------------------------------
+
+  describe "bevestiging van onmiddellijke levering" do
+    test "zonder bevestiging geen VPS, en geen afschrijving", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      saldo_voor = ControlPlane.Credits.balance_cents(user.id)
+
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
+      assert %{"error" => "no_delivery_consent"} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+
+      # De weigering hoort vóór Credits.charge te vallen: een afgewezen
+      # bestelling die de klant wel geld kost is erger dan geen bestelling.
+      assert ControlPlane.Credits.balance_cents(user.id) == saldo_voor
+      assert Repo.aggregate(from(v in Vps, where: v.owner_id == ^user.id), :count) == 0
+    end
+
+    test "een expliciete false telt niet als bevestiging", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50,
+        "immediate_delivery_consent" => false
+      }
+
+      assert %{"error" => "no_delivery_consent"} =
+               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+    end
+
+    test "met bevestiging wordt het moment vastgelegd", %{
+      conn: conn,
+      region: region,
+      user: user
+    } do
+      params = %{
+        "region_id" => region.id,
+        "name" => "web",
+        "vcpu" => 2,
+        "ram_mb" => 4096,
+        "disk_gb" => 50
+      }
+
+      assert %{"vps" => %{"id" => id}} =
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
+
+      # De bewijslast dat de klant om directe levering vroeg ligt bij ons, dus
+      # een boolean in het verzoek is niet genoeg: het moment moet blijven staan.
+      assert %Vps{withdrawal_waiver_at: %DateTime{}} = Repo.get!(Vps, id)
+    end
+  end
+
   # --- what a customer may put in cloud-init ---------------------------------
 
   describe "cloud-init input" do
@@ -302,7 +381,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"vps" => %{"id" => id}} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       command =
         Repo.one!(from(c in Command, where: c.vps_id == ^id and c.kind == :provision))
@@ -329,7 +411,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
           "cloud_init" => junk
         }
 
-        assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+        assert conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
       end
     end
 
@@ -344,7 +429,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"vps" => %{"id" => id}} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       command =
         Repo.one!(from(c in Command, where: c.vps_id == ^id and c.kind == :provision))
@@ -392,7 +480,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"vps" => vps} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       assert vps["name"] == "web"
       # Owner fields are never echoed, and ownership came from the session.
@@ -416,7 +507,11 @@ defmodule ControlPlaneWeb.VpsControllerTest do
         "owner_id" => other.id
       }
 
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+      assert conn
+             |> auth(user)
+             |> post(~p"/api/v1/vpses", consented(params))
+             |> json_response(201)
+
       assert Fleet.list_vpses_for_owner(other.id) == []
       assert [_one] = Fleet.list_vpses_for_owner(user.id)
     end
@@ -430,14 +525,20 @@ defmodule ControlPlaneWeb.VpsControllerTest do
         "disk_gb" => 50
       }
 
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+      assert conn
+             |> auth(user)
+             |> post(~p"/api/v1/vpses", consented(params))
+             |> json_response(201)
     end
 
     test "no region at all means Bunk picks one", %{conn: conn, user: user} do
       params = %{"name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
 
       assert %{"vps" => vps} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(201)
 
       assert [persisted] = Fleet.list_vpses_for_owner(user.id)
       assert persisted.id == vps["id"]
@@ -472,7 +573,11 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       |> Repo.insert!()
 
       params = %{"name" => "web", "vcpu" => 2, "ram_mb" => 4096, "disk_gb" => 50}
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(201)
+
+      assert conn
+             |> auth(user)
+             |> post(~p"/api/v1/vpses", consented(params))
+             |> json_response(201)
 
       assert [persisted] = Fleet.list_vpses_for_owner(user.id)
       assert persisted.region_id == region.id
@@ -490,7 +595,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"error" => "region_not_found"} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(422)
     end
 
     test "422 for a zero/negative spec", %{conn: conn, region: region, user: user} do
@@ -503,10 +611,13 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       }
 
       assert %{"error" => "invalid_vps"} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(params))
+               |> json_response(422)
 
       neg = %{params | "vcpu" => 2, "disk_gb" => -10}
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", neg) |> json_response(422)
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", consented(neg)) |> json_response(422)
       # Nothing was persisted for the rejected requests.
       assert Fleet.list_vpses_for_owner(user.id) == []
     end
@@ -520,7 +631,10 @@ defmodule ControlPlaneWeb.VpsControllerTest do
         "disk_gb" => 50
       }
 
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", params) |> json_response(422)
+      assert conn
+             |> auth(user)
+             |> post(~p"/api/v1/vpses", consented(params))
+             |> json_response(422)
     end
 
     test "429 once the per-owner quota is reached", %{conn: conn, region: region, user: user} do
@@ -536,12 +650,15 @@ defmodule ControlPlaneWeb.VpsControllerTest do
         "disk_gb" => 50
       }
 
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", ok) |> json_response(201)
+      assert conn |> auth(user) |> post(~p"/api/v1/vpses", consented(ok)) |> json_response(201)
 
       over = %{ok | "name" => "two"}
 
       assert %{"error" => "quota_exceeded"} =
-               conn |> auth(user) |> post(~p"/api/v1/vpses", over) |> json_response(429)
+               conn
+               |> auth(user)
+               |> post(~p"/api/v1/vpses", consented(over))
+               |> json_response(429)
     end
   end
 
@@ -595,6 +712,12 @@ defmodule ControlPlaneWeb.VpsControllerTest do
       assert Repo.get!(Vps, failed.id).status == :deleted
     end
   end
+
+  # Elke bestelling vereist de bevestiging van onmiddellijke levering. Dat staat
+  # los van waar deze tests over gaan, dus hij wordt hier toegevoegd in plaats
+  # van achttien keer uitgeschreven. De twee tests die de bevestiging zelf
+  # onderzoeken zetten hem bewust niet via deze helper.
+  defp consented(params), do: Map.put(params, "immediate_delivery_consent", true)
 
   defp restore_env(key, nil), do: Application.delete_env(:control_plane, key)
   defp restore_env(key, value), do: Application.put_env(:control_plane, key, value)

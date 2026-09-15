@@ -61,6 +61,10 @@ defmodule ControlPlane.Fleet.Vps do
     # already been metered into `usage_records` (see `ControlPlane.Billing`).
     field :last_metered_at, :utc_datetime
 
+    # Het moment waarop de besteller om onmiddellijke levering vroeg en zijn
+    # herroepingsrecht liet vervallen. nil = de vraag is nooit gesteld.
+    field :withdrawal_waiver_at, :utc_datetime
+
     belongs_to :region, Region
     belongs_to :node, Node
     has_many :port_forwards, ControlPlane.Fleet.PortForward
@@ -84,7 +88,8 @@ defmodule ControlPlane.Fleet.Vps do
       :provider_vm_id,
       :ip_address,
       :package_id,
-      :last_metered_at
+      :last_metered_at,
+      :withdrawal_waiver_at
     ])
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> validate_length(:name, max: 100)

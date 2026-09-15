@@ -70,6 +70,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_matching_package: "Deze combinatie van cpu, geheugen en schijf is niet te bestellen.",
   invalid_vps: "Deze specificatie kan niet.",
   region_not_found: "Deze regio bestaat niet.",
+  no_delivery_consent:
+    "Bevestig dat je VPS meteen aangemaakt mag worden voordat je bestelt.",
 
   // Een bestaande VPS bedienen. invalid_status_* zegt precies welke staat in de
   // weg zit, wat bruikbaarder is dan "dat kan nu niet".
@@ -428,6 +430,13 @@ export const vpsApi = {
     package_id: number;
     os: OsChoice;
     region_code?: string;
+    /**
+     * De klant heeft aangevinkt dat de VPS meteen mag worden aangemaakt en dat
+     * hij daarmee zijn herroepingsrecht verliest. Verplicht: de control plane
+     * weigert de bestelling zonder, want zonder die bevestiging loopt er
+     * veertien dagen bedenktijd over een dienst die al draait.
+     */
+    immediate_delivery_consent: boolean;
   }) => {
     const packages = await ensurePackages();
     const pkg = packages.find((p) => p.id === data.package_id);
@@ -441,6 +450,7 @@ export const vpsApi = {
       // then places the VPS on the emptiest machine in the fleet. Sending a
       // region we guessed would override that with a worse answer.
       ...(data.region_code ? { region_code: data.region_code } : {}),
+      immediate_delivery_consent: data.immediate_delivery_consent,
     });
     return { data: transformVps(res.data.vps) };
   },

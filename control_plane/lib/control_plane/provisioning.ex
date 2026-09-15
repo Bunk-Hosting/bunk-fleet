@@ -719,6 +719,10 @@ defmodule ControlPlane.Provisioning do
       owner_email: field(attrs, :owner_email),
       owner_id: field(attrs, :owner_id),
       ip_address: field(attrs, :ip_address),
+      # Het moment waarop de besteller om onmiddellijke levering vroeg. Hoort bij
+      # de VPS en niet bij het verzoek: de bewijslast dat die bevestiging er was
+      # ligt bij ons en moet de request overleven.
+      withdrawal_waiver_at: field(attrs, :withdrawal_waiver_at),
       status: :queued
     })
   end

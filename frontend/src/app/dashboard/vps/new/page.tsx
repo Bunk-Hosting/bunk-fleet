@@ -32,6 +32,7 @@ export default function NewVpsPage() {
   const [label, setLabel] = useState("");
   const [balanceCents, setBalanceCents] = useState<number | null>(null);
   const [regions, setRegions] = useState<BunkRegion[]>([]);
+  const [deliveryConsent, setDeliveryConsent] = useState(false);
   // "" is automatic: no region is sent and Bunk places on the emptiest machine.
   const [regionCode, setRegionCode] = useState("");
 
@@ -76,6 +77,16 @@ export default function NewVpsPage() {
       return;
     }
 
+    if (!deliveryConsent) {
+      toast({
+        title: "Bevestig de directe levering",
+        description:
+          "Zet het vinkje zodat we je VPS meteen mogen aanmaken. Zonder dat kunnen we niet bestellen.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       await vpsApi.create({
@@ -83,6 +94,7 @@ export default function NewVpsPage() {
         os: "ubuntu-22.04",
         label: label || undefined,
         region_code: regionCode || undefined,
+        immediate_delivery_consent: true,
       });
       toast({
         title: "Gelukt!",
@@ -256,9 +268,36 @@ export default function NewVpsPage() {
         );
       })()}
 
+      {/* Herroepingsrecht: een VPS staat binnen twee minuten te draaien, dus zonder
+          deze bevestiging loopt er veertien dagen bedenktijd over een dienst die
+          al geleverd is. De control plane weigert de bestelling zonder. */}
+      <label className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm">
+        <input
+          type="checkbox"
+          checked={deliveryConsent}
+          onChange={(e) => setDeliveryConsent(e.target.checked)}
+          disabled={submitting}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+        />
+        <span className="leading-relaxed text-muted-foreground">
+          Ik wil dat mijn VPS <strong className="text-foreground">direct</strong> wordt aangemaakt en
+          begrijp dat ik daarmee mijn herroepingsrecht verlies zodra hij draait. Niet-verbruikt
+          tegoed kan ik wel terugvragen &mdash; zie de{" "}
+          <a
+            href="https://bunkhosting.nl/voorwaarden.html#voorwaarden"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline underline-offset-2"
+          >
+            voorwaarden
+          </a>
+          .
+        </span>
+      </label>
+
       {/* Submit */}
       <div className="flex gap-4">
-        <Button onClick={handleSubmit} disabled={submitting}>
+        <Button onClick={handleSubmit} disabled={submitting || !deliveryConsent}>
           {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           VPS Aanvragen
         </Button>

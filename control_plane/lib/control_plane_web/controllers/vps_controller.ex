@@ -16,6 +16,7 @@ defmodule ControlPlaneWeb.VpsController do
 
   alias ControlPlane.Backups
   alias ControlPlane.Backups.VpsBackup
+  alias ControlPlane.Clock
   alias ControlPlane.Credits
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
@@ -48,13 +49,18 @@ defmodule ControlPlaneWeb.VpsController do
     attrs = build_attrs(params)
 
     with :ok <- validate_provision_input(attrs),
+         :ok <- immediate_delivery_consent(params),
          {:ok, region_id} <- resolve_region_id(params, attrs),
          attrs = Map.put(attrs, :region_id, region_id),
          %Package{} = pkg <- Fleet.package_for_specs(attrs.vcpu, attrs.ram_mb, attrs.disk_gb),
          price = package_price_cents(pkg),
          {:ok, charge} <- Credits.charge(user.id, price, "vps_charge", "VPS #{pkg.name}"),
          {:ok, %{vps: vps}} <-
-           charge_safe_create(user, Map.put(attrs, :package_id, pkg.id), price),
+           charge_safe_create(
+             user,
+             attrs |> Map.put(:package_id, pkg.id) |> Map.put(:withdrawal_waiver_at, Clock.now()),
+             price
+           ),
          # The charge had to come first — the wallet is checked and debited before
          # anything is provisioned — so only now can it be told which machine it
          # paid for. Until this lands the entry is an orphan, which is exactly
@@ -70,6 +76,7 @@ defmodule ControlPlaneWeb.VpsController do
     else
       nil -> error(conn, :unprocessable_entity, "no_matching_package")
       {:error, :input_too_large} -> error(conn, :unprocessable_entity, "input_too_large")
+      {:error, :no_delivery_consent} -> error(conn, :unprocessable_entity, "no_delivery_consent")
       {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
       {:error, :insufficient_credits} -> error(conn, :payment_required, "insufficient_credits")
       {:error, :quota_exceeded} -> error(conn, :too_many_requests, "quota_exceeded")
@@ -202,6 +209,22 @@ defmodule ControlPlaneWeb.VpsController do
   # Bound caller-supplied provision input so a request can't carry an absurd
   # number/size of SSH keys or a giant cloud-init blob (targets the user's own VM,
   # but unbounded input is unbounded work). Limits are generous for real use.
+  # Een consument heeft veertien dagen bedenktijd. Die vervalt alleen als hij
+  # uitdrukkelijk om onmiddellijke levering vraagt en erkent daarmee zijn
+  # herroepingsrecht te verliezen (art. 6:230p sub f BW). Een VPS staat binnen
+  # twee minuten te draaien, dus zonder die bevestiging zouden we veertien dagen
+  # lang een dienst leveren die de klant nog kosteloos kan terugdraaien.
+  #
+  # Weigeren gebeurt hier, vóór Credits.charge: anders is de klant al gedebiteerd
+  # voor een bestelling die we alsnog afwijzen.
+  defp immediate_delivery_consent(params) do
+    case params["immediate_delivery_consent"] do
+      true -> :ok
+      "true" -> :ok
+      _ -> {:error, :no_delivery_consent}
+    end
+  end
+
   defp validate_provision_input(%{
          vcpu: vcpu,
          ram_mb: ram_mb,
