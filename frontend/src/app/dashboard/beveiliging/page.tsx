@@ -52,7 +52,7 @@ function BeveiligingContent() {
     try {
       const ch = await authApi.passkey.challenge();
       const cred = (await navigator.credentials.create({
-        publicKey: toPublicKeyOptions(ch.public_key) as PublicKeyCredentialCreationOptions,
+        publicKey: toPublicKeyOptions(ch.public_key) as unknown as PublicKeyCredentialCreationOptions,
       })) as PublicKeyCredential | null;
       if (!cred) throw new Error("Geen passkey aangemaakt.");
       await authApi.passkey.register(ch.challenge_id, label, cred);

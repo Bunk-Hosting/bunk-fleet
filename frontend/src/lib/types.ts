@@ -7,6 +7,7 @@ export interface User {
   is_active: boolean;
   vps_count?: number;
   totp_enabled: boolean;
+  passkeys_enabled: boolean;
   /** null until the user clicks the link in their confirmation email. */
   confirmed_at: string | null;
 }

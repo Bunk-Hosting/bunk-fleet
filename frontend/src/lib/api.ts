@@ -272,7 +272,13 @@ function transformUser(u: BunkUser): User {
 // ── Auth ──────────────────────────────────────────────────────────────
 /** What a login attempt can tell the caller beyond "it worked". */
 export type LoginResult = {
+  /** Wachtwoord klopt, tweede factor nodig. */
+  mfa_required?: boolean;
+  /** Blijft bestaan voor de oude client; gelijk aan methods.includes("totp"). */
   totp_required?: boolean;
+  methods?: ("totp" | "passkey")[];
+  /** Meteen meegegeven zodat de browser er niet nog een rondje voor hoeft. */
+  passkey_challenge?: PasskeyChallenge | null;
   verification_required?: boolean;
 };
 
@@ -311,14 +317,19 @@ export type Passkey = {
 
 // WebAuthn werkt met ArrayBuffers; de API met base64url zonder padding.
 export const b64url = {
-  encode: (buf: ArrayBuffer): string =>
-    btoa(String.fromCharCode(...new Uint8Array(buf)))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, ""),
+  // Geen spread over de Uint8Array: het compile-target van dit project laat
+  // dat niet toe, en een lus is hier even duidelijk.
+  encode: (buf: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  },
   decode: (s: string): ArrayBuffer => {
     const b = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "="));
-    return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer;
+    const out = new Uint8Array(b.length);
+    for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+    return out.buffer;
   },
 };
 
@@ -374,10 +385,19 @@ export const authApi = {
       },
     );
 
-    // 2FA gate: the control plane returns { totp_required: true } and does NOT
-    // set the session cookie until a valid TOTP code is supplied.
-    if (res.data.totp_required) {
-      return { data: { totp_required: true } as LoginResult };
+    // 2FA gate: the control plane returns { mfa_required: true } and does NOT
+    // set the session cookie until a valid second factor is supplied. Everything
+    // the login page needs to offer that factor travels along: which methods the
+    // account has, and the passkey challenge if there is one.
+    if (res.data.mfa_required || res.data.totp_required) {
+      return {
+        data: {
+          mfa_required: true,
+          totp_required: Boolean(res.data.totp_required),
+          methods: res.data.methods ?? (res.data.totp_required ? ["totp"] : []),
+          passkey_challenge: res.data.passkey_challenge ?? null,
+        } as LoginResult,
+      };
     }
 
     // On success the control plane sets the HttpOnly session cookie on this response.

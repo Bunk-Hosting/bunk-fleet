@@ -96,7 +96,7 @@ function LoginForm() {
     setPasskeyBusy(true);
     try {
       const cred = (await navigator.credentials.get({
-        publicKey: toPublicKeyOptions(mfa.passkey.public_key) as PublicKeyCredentialRequestOptions,
+        publicKey: toPublicKeyOptions(mfa.passkey.public_key) as unknown as PublicKeyCredentialRequestOptions,
       })) as PublicKeyCredential | null;
       if (!cred) throw new Error("Geen passkey gekozen.");
       const assertion = authApi.passkey.assertion(mfa.passkey.challenge_id, cred);
