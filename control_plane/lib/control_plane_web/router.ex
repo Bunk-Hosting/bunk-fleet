@@ -264,6 +264,7 @@ defmodule ControlPlaneWeb.Router do
 
     get "/stats", PanelController, :stats
     get "/metrics", PanelController, :metrics
+    get "/omzet", PanelController, :revenue
     get "/users", PanelController, :users
     patch "/users/:id", PanelController, :update_user
     post "/users/:id/credit", PanelController, :credit_user
@@ -272,6 +273,10 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/stop", PanelController, :vps_stop
     delete "/vpses/:id", PanelController, :vps_delete
     get "/nodes", PanelController, :nodes
+    # Een node toevoegen hoort hier en niet alleen onder /admin/v1: dat pad wordt
+    # door Cloudflare's WAF geblokkeerd voor het de origin bereikt, waardoor het
+    # vanuit de browser onbereikbaar is. Zie de opmerking boven deze scope.
+    post "/enroll-tokens", PanelController, :create_enroll_token
     post "/nodes/:id/drain", PanelController, :drain_node
     post "/nodes/:id/resume", PanelController, :resume_node
     delete "/nodes/:id", PanelController, :delete_node

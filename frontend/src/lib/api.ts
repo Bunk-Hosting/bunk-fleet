@@ -568,6 +568,30 @@ export interface AdminMetrics {
   }>;
 }
 
+export type RevenueTotals = {
+  payments: number;
+  gross_cents: number;
+  net_cents: number;
+  vat_cents: number;
+};
+
+export type AdminRevenue = {
+  from: string;
+  to: string;
+  vat_percentage: number;
+  total: RevenueTotals;
+  quarters: (RevenueTotals & { year: number; quarter: number; label: string })[];
+  invoices: {
+    reference: string;
+    paid_at: string | null;
+    customer: string;
+    gross_cents: number;
+    net_cents: number;
+    vat_cents: number;
+    mollie_payment_id: string | null;
+  }[];
+};
+
 // NOTE: paths are /beheer/* (not /admin/*) — Cloudflare's WAF blocks "/admin"
 // URLs with a challenge page before they reach the origin.
 export const adminApi = {
@@ -590,12 +614,31 @@ export const adminApi = {
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
   nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
+  revenue: async (from?: string, to?: string): Promise<AdminRevenue> =>
+    (
+      await api.get<AdminRevenue>("/beheer/omzet", {
+        params: { ...(from ? { from } : {}), ...(to ? { to } : {}) },
+      })
+    ).data,
   /**
    * Close a node to new VPSes. Everything already on it keeps running and keeps
    * being served — this is what you reach for before maintenance, not a way to
    * take a machine down.
    */
   nodeDrain: (id: string) => api.post(`/beheer/nodes/${id}/drain`),
+  /**
+   * Mint een eenmalig enroll-token voor een nieuwe node. Het pad is /beheer en
+   * niet /admin: Cloudflare's WAF blokkeert /admin voor het de origin bereikt.
+   */
+  createEnrollToken: async (regionCode?: string) =>
+    (
+      await api.post<{
+        enroll_token: string;
+        expires_at: string;
+        region: string;
+        install: string;
+      }>("/beheer/enroll-tokens", regionCode ? { region_code: regionCode } : {})
+    ).data,
   nodeResume: (id: string) => api.post(`/beheer/nodes/${id}/resume`),
 };
 

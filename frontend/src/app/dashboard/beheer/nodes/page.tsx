@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, HardDrive, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, HardDrive, Trash2, Plus, Copy, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,40 @@ function NodesInner() {
 
   const [removing, setRemoving] = useState<string | null>(null);
   const [draining, setDraining] = useState<string | null>(null);
+
+  // Het enroll-token komt maar één keer terug van de server; er staat alleen een
+  // hash van in de database. Daarom blijft het hier in beeld tot de operator het
+  // wegklikt, in plaats van na een toast te verdwijnen.
+  const [enroll, setEnroll] = useState<{ install: string; expires_at: string } | null>(null);
+  const [minting, setMinting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const addNode = async () => {
+    setMinting(true);
+    try {
+      const res = await adminApi.createEnrollToken();
+      setEnroll({ install: res.install, expires_at: res.expires_at });
+    } catch {
+      toast({
+        title: "Kon geen token aanmaken",
+        description: "Controleer of er een regio bestaat om de node in te plaatsen.",
+        variant: "destructive",
+      });
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  const copyInstall = async () => {
+    if (!enroll) return;
+    try {
+      await navigator.clipboard.writeText(enroll.install);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast({ title: "Kopiëren lukte niet", description: "Selecteer de regel handmatig." });
+    }
+  };
 
   const load = () =>
     adminApi
@@ -115,10 +149,45 @@ function NodesInner() {
           <h1 className="text-2xl font-bold tracking-tight">Nodes</h1>
           <p className="text-muted-foreground">{nodes.length} nodes — datacenter (gedeeld) en community.</p>
         </div>
-        <Button variant="ghost" size="sm" className="gap-2" onClick={load}>
-          <RefreshCw className="h-4 w-4" /> Ververs
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" className="gap-2" onClick={load}>
+            <RefreshCw className="h-4 w-4" /> Ververs
+          </Button>
+          <Button size="sm" className="gap-2" onClick={addNode} disabled={minting}>
+            {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Node toevoegen
+          </Button>
+        </div>
       </div>
+
+      {enroll && (
+        <Card className="border-primary/40">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold">Voer dit uit op de nieuwe machine</h2>
+                <p className="text-sm text-muted-foreground">
+                  Op de hypervisor zelf, als root. Het token werkt één keer en verloopt{" "}
+                  {new Date(enroll.expires_at).toLocaleString("nl-NL")}.
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setEnroll(null)}>
+                Sluiten
+              </Button>
+            </div>
+            <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+              <code className="flex-1 overflow-x-auto whitespace-pre text-xs">{enroll.install}</code>
+              <Button variant="ghost" size="sm" onClick={copyInstall} className="shrink-0">
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Deze regel is nu het enige exemplaar: de server bewaart alleen een hash. Sluit je dit
+              venster, dan maak je een nieuw token aan.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4">
         {nodes.map((n) => {

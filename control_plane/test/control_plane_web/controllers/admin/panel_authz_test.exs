@@ -38,6 +38,8 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
     [
       {:get, "/api/v1/beheer/stats"},
       {:get, "/api/v1/beheer/metrics"},
+      {:get, "/api/v1/beheer/omzet"},
+      {:post, "/api/v1/beheer/enroll-tokens"},
       {:get, "/api/v1/beheer/users"},
       {:patch, "/api/v1/beheer/users/#{@uuid}"},
       {:post, "/api/v1/beheer/users/#{@uuid}/credit"},

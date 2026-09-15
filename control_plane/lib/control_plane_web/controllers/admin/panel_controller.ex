@@ -13,10 +13,13 @@ defmodule ControlPlaneWeb.Admin.PanelController do
 
   alias ControlPlane.Accounts
   alias ControlPlane.Accounts.User
+  alias ControlPlane.Billing.Revenue
   alias ControlPlane.Credits
   alias ControlPlane.Credits.LedgerEntry
+  alias ControlPlane.Enrollment
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Metrics
   alias ControlPlane.Provisioning
@@ -72,6 +75,125 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       commands: Enum.map(Metrics.command_outcomes(24), &command_outcome_json/1),
       backups: Enum.map(Metrics.backup_health(7), &backup_health_json/1)
     })
+  end
+
+  @doc """
+  `POST /api/v1/beheer/enroll-tokens` — mint een eenmalig token waarmee een
+  nieuwe node zich kan aanmelden, plus het installatiecommando dat de operator
+  op die machine plakt.
+
+  Dit endpoint bestaat naast dat onder `/admin/v1`. Dat laatste wordt door
+  Cloudflare's WAF geblokkeerd voordat het de origin bereikt, waardoor het
+  vanuit de browser niet aan te roepen is — precies de reden dat deze hele
+  scope op /beheer staat. Zonder deze route was een node toevoegen vanuit het
+  dashboard onmogelijk.
+
+  Het token komt maar één keer terug: er staat alleen een hash van in de
+  database.
+  """
+  def create_enroll_token(conn, params) do
+    with {:ok, region} <- resolve_region(params),
+         {:ok, {plaintext, token}} <-
+           Enrollment.create_enroll_token(%{region_id: region.id, ttl_seconds: enroll_ttl(params)}) do
+      conn
+      |> put_status(:created)
+      |> json(%{
+        enroll_token: plaintext,
+        expires_at: token.expires_at,
+        region: region.code,
+        install: "curl -fsSL #{public_url(conn)}/install.sh | bash -s -- --token #{plaintext}"
+      })
+    else
+      {:error, :region_not_found} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "region_not_found"})
+
+      {:error, _} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_enroll_token"})
+    end
+  end
+
+  defp resolve_region(%{"region_code" => code}) when is_binary(code) and code != "" do
+    case Fleet.region_by_code(code) do
+      %Region{} = region -> {:ok, region}
+      nil -> {:error, :region_not_found}
+    end
+  end
+
+  defp resolve_region(%{"region_id" => id}) when is_binary(id) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         %Region{} = region <- Repo.get(Region, uuid) do
+      {:ok, region}
+    else
+      _ -> {:error, :region_not_found}
+    end
+  end
+
+  # Geen regio meegegeven en er is er maar één: dan is die bedoeld. Zijn het er
+  # meer, dan moet de operator kiezen — een node in de verkeerde regio plaatsen
+  # stuurt klanten naar hardware die ergens anders staat dan ze kozen.
+  defp resolve_region(_params) do
+    case Repo.all(Region) do
+      [%Region{} = only] -> {:ok, only}
+      _ -> {:error, :region_not_found}
+    end
+  end
+
+  @enroll_ttl_seconds 3600
+
+  defp enroll_ttl(%{"ttl_seconds" => n}) when is_integer(n) and n > 0 and n <= 86_400, do: n
+  defp enroll_ttl(_), do: @enroll_ttl_seconds
+
+  defp public_url(conn) do
+    case Application.get_env(:control_plane, :public_url) do
+      url when is_binary(url) and url != "" -> url
+      _ -> "#{conn.scheme}://#{conn.host}"
+    end
+  end
+
+  @doc """
+  Omzet, btw en factuurregels over een periode — wat er nodig is om aangifte te
+  doen zonder in de database te hoeven kijken.
+
+  `from` en `to` zijn data (`YYYY-MM-DD`) en tellen allebei volledig mee.
+  Zonder parameters: het lopende kalenderjaar.
+  """
+  def revenue(conn, params) do
+    with {:ok, from} <- parse_date(params["from"], Date.new!(Date.utc_today().year, 1, 1)),
+         {:ok, to} <- parse_date(params["to"], Date.utc_today()) do
+      json(conn, %{
+        from: Date.to_iso8601(from),
+        to: Date.to_iso8601(to),
+        vat_percentage: Revenue.vat_percentage(),
+        total: Revenue.summary(from, to),
+        quarters: Revenue.by_quarter(from, to),
+        invoices: Enum.map(Revenue.invoices(from, to), &invoice_json/1)
+      })
+    else
+      :error -> conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_date"})
+    end
+  end
+
+  defp parse_date(nil, default), do: {:ok, default}
+
+  defp parse_date(value, _default) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> {:ok, date}
+      _ -> :error
+    end
+  end
+
+  defp parse_date(_, _), do: :error
+
+  defp invoice_json(row) do
+    %{
+      reference: row.reference,
+      paid_at: row.paid_at && DateTime.to_iso8601(row.paid_at),
+      customer: row.customer,
+      gross_cents: row.gross_cents,
+      net_cents: row.net_cents,
+      vat_cents: row.vat_cents,
+      mollie_payment_id: row.mollie_payment_id
+    }
   end
 
   # Counts, not people: how many accounts exist, how many finished confirming,
