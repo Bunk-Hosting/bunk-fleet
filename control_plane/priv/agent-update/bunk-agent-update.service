@@ -1,0 +1,11 @@
+[Unit]
+Description=Bunk agent bijwerken naar de build die de control plane uitdeelt
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bunk-agent-update
+# Een mislukte update is geen reden om de node als kapot te markeren: de agent
+# die er draait doet het nog, en de volgende run probeert het opnieuw.
+SuccessExitStatus=0 1

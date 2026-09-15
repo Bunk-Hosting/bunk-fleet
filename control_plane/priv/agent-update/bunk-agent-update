@@ -1,0 +1,81 @@
+#!/bin/sh
+# Werkt de bunk-agent op deze node bij naar de build die de control plane uitdeelt.
+#
+# Draait uit een systemd-timer, maar is met de hand net zo goed te draaien. Doet
+# niets als de node al op de juiste build zit, zodat een dagelijkse run in het
+# normale geval een enkele HTTP-request is.
+#
+# De volgorde is waar het om gaat: eerst downloaden, dan de hash controleren, dan
+# pas de draaiende binary vervangen. Een halve download of een gewijzigd bestand
+# mag nooit op de plek van de agent belanden, want dan staat de node stil tot
+# iemand het merkt.
+set -eu
+
+CP="${BUNK_CP_URL:-https://app.bunkhosting.nl}"
+
+log() { echo "bunk-agent-update: $*"; }
+
+# De installer van nu zet de agent neer als bunk-worker; oudere nodes draaien
+# bunk-agent. Beide bestaan in het veld, dus we zoeken op wat er staat in plaats
+# van één naam aan te nemen.
+BIN=""
+SVC=""
+for kandidaat in bunk-worker bunk-agent; do
+  if [ -x "/usr/local/bin/$kandidaat" ] && systemctl list-unit-files "$kandidaat.service" >/dev/null 2>&1; then
+    BIN="/usr/local/bin/$kandidaat"
+    SVC="$kandidaat"
+    break
+  fi
+done
+
+if [ -z "$BIN" ]; then
+  log "geen geinstalleerde agent gevonden; niets te doen"
+  exit 0
+fi
+
+huidig="$(sha256sum "$BIN" | awk '{print $1}')"
+gewenst="$(curl -fsSL --max-time 30 "$CP/dist/bunk-worker.sha256" | awk '{print $1}')"
+
+if [ -z "$gewenst" ]; then
+  log "kon de gewenste versie niet ophalen bij $CP; node blijft op $huidig"
+  exit 1
+fi
+
+if [ "$huidig" = "$gewenst" ]; then
+  log "al bij ($huidig)"
+  exit 0
+fi
+
+log "nieuwe build beschikbaar: $gewenst (nu $huidig)"
+
+tmp="$(mktemp /tmp/bunk-agent.XXXXXX)"
+# Opruimen bij elke uitgang: een half gedownloade binary in /tmp is rommel, en
+# als hij blijft liggen bij een fout lijkt een volgende run op iets ouds.
+trap 'rm -f "$tmp"' EXIT INT TERM
+
+if ! curl -fsSL --max-time 300 -o "$tmp" "$CP/dist/bunk-worker"; then
+  log "download mislukt; node blijft op de huidige build"
+  exit 1
+fi
+
+gedownload="$(sha256sum "$tmp" | awk '{print $1}')"
+if [ "$gedownload" != "$gewenst" ]; then
+  log "hash klopt niet (verwacht $gewenst, kreeg $gedownload); vervangen afgebroken"
+  exit 1
+fi
+
+# De oude binary blijft staan tot de nieuwe bewezen draait. Dat is het verschil
+# tussen "de update mislukte" en "de node ligt eruit".
+cp -p "$BIN" "$BIN.vorige"
+install -m 0755 "$tmp" "$BIN"
+
+if systemctl restart "$SVC" && sleep 3 && systemctl is-active --quiet "$SVC"; then
+  log "bijgewerkt naar $gewenst en $SVC draait"
+  rm -f "$BIN.vorige"
+  exit 0
+fi
+
+log "$SVC kwam niet op na de update; terugzetten naar de vorige build"
+mv "$BIN.vorige" "$BIN"
+systemctl restart "$SVC" || true
+exit 1

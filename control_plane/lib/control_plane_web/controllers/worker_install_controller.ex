@@ -12,6 +12,65 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   """
   use ControlPlaneWeb, :controller
 
+  # De updater staat als losse bestanden in priv/agent-update/ zodat hij te
+  # lezen en te testen is zonder een shellscript uit een Elixir-string te moeten
+  # pellen. Ze worden hier bij het compileren ingelezen; @external_resource zorgt
+  # dat een wijziging eraan deze module opnieuw laat compileren.
+  #
+  # In priv/ en niet ergens boven de app: de gate en het productie-image bouwen
+  # alleen control_plane/, dus een pad daarbuiten bestaat in de container niet.
+  @update_dir Path.join([__DIR__, "..", "..", "..", "priv", "agent-update"])
+  @update_script_path Path.expand(Path.join(@update_dir, "bunk-agent-update"))
+  @update_service_path Path.expand(Path.join(@update_dir, "bunk-agent-update.service"))
+  @update_timer_path Path.expand(Path.join(@update_dir, "bunk-agent-update.timer"))
+
+  @external_resource @update_script_path
+  @external_resource @update_service_path
+  @external_resource @update_timer_path
+
+  @update_script File.read!(@update_script_path)
+  @update_service File.read!(@update_service_path)
+  @update_timer File.read!(@update_timer_path)
+
+  @doc """
+  De updater als los script, voor een node die al draait.
+
+  `curl -fsSL <cp>/agent-update.sh | sh` zet het script, de service en de timer
+  neer en draait de controle meteen één keer. Nodes die met de huidige
+  `install.sh` zijn opgezet hebben dit al.
+  """
+  def update_bootstrap(conn, _params) do
+    conn
+    |> put_resp_content_type("text/x-shellscript")
+    |> send_resp(200, bootstrap())
+  end
+
+  defp bootstrap do
+    """
+    #!/bin/sh
+    set -eu
+    [ "$(id -u)" = "0" ] || { echo "Dit moet als root."; exit 1; }
+
+    cat > /usr/local/bin/bunk-agent-update <<'UPD'
+    #{@update_script}
+    UPD
+    chmod +x /usr/local/bin/bunk-agent-update
+
+    cat > /etc/systemd/system/bunk-agent-update.service <<'UPDSVC'
+    #{@update_service}
+    UPDSVC
+
+    cat > /etc/systemd/system/bunk-agent-update.timer <<'UPDTMR'
+    #{@update_timer}
+    UPDTMR
+
+    systemctl daemon-reload
+    systemctl enable --now bunk-agent-update.timer
+    echo "Automatische updates staan aan. Nu eenmalig controleren..."
+    /usr/local/bin/bunk-agent-update || true
+    """
+  end
+
   def script(conn, _params) do
     cp = Application.get_env(:control_plane, :public_url) || request_base(conn)
 
@@ -264,7 +323,22 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     WantedBy=multi-user.target
     UNIT
 
+    echo "-> automatische updates instellen..."
+    cat > /usr/local/bin/bunk-agent-update <<'UPD'
+    #{@update_script}
+    UPD
+    chmod +x /usr/local/bin/bunk-agent-update
+
+    cat > /etc/systemd/system/bunk-agent-update.service <<'UPDSVC'
+    #{@update_service}
+    UPDSVC
+
+    cat > /etc/systemd/system/bunk-agent-update.timer <<'UPDTMR'
+    #{@update_timer}
+    UPDTMR
+
     systemctl daemon-reload
+    systemctl enable --now bunk-agent-update.timer
     systemctl enable --now bunk-worker
     sleep 2
     echo

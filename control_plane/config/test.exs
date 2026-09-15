@@ -63,3 +63,7 @@ config :control_plane, :mollie,
 # The boot-time security-posture report is about production gaps; in :test every
 # protection is deliberately unset, so it would print three warnings per run.
 config :control_plane, report_security_posture: false
+
+# Geen update-commando's bij het opstarten: die zouden buiten de
+# databasesandbox om schrijven en tests van elkaar laten afhangen.
+config :control_plane, dispatch_agent_updates: false

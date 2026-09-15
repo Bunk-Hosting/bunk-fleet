@@ -54,6 +54,8 @@ defmodule ControlPlane.MixProject do
       {:ecto_sql, "~> 3.10"},
       {:pbkdf2_elixir, "~> 2.0"},
       {:nimble_totp, "~> 1.0"},
+      # WebAuthn/FIDO2 voor passkeys: attestatie- en assertieverificatie.
+      {:wax_, "~> 0.7"},
       {:eqrcode, "~> 0.2"},
       {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},

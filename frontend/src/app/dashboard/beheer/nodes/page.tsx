@@ -202,6 +202,11 @@ function NodesInner() {
                     <span className="text-xs text-muted-foreground">
                       {n.region ?? "—"} · {n.owner_email ?? "geen kostenplaats"}
                     </span>
+                    {/* Draait deze node de huidige agent? Zonder dit is dat alleen
+                        te achterhalen door in de binary te zoeken. */}
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {n.agent_version ?? "versie onbekend"}
+                    </Badge>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={STATUS_VARIANT[n.status] ?? "outline"}>{n.status}</Badge>

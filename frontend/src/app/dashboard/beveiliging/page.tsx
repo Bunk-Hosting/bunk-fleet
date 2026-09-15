@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, Copy, Check } from "lucide-react";
+import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, Copy, Check, KeyRound, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authApi, parseApiError } from "@/lib/api";
+import { authApi, parseApiError, toPublicKeyOptions, type Passkey } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -26,6 +26,67 @@ function BeveiligingContent() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+
+  // Passkeys staan los van TOTP: je kunt er meerdere hebben en ze los kwijtraken,
+  // dus ze worden als lijst beheerd in plaats van als één aan/uit-schakelaar.
+  const [passkeys, setPasskeys] = React.useState<Passkey[] | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = React.useState(false);
+  const webauthnAvailable =
+    typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
+
+  const loadPasskeys = React.useCallback(() => {
+    authApi.passkey
+      .list()
+      .then(setPasskeys)
+      .catch(() => setPasskeys([]));
+  }, []);
+
+  React.useEffect(() => {
+    loadPasskeys();
+  }, [loadPasskeys]);
+
+  async function addPasskey() {
+    const label = window.prompt("Naam voor deze passkey (bijv. Telefoon of Laptop):", "")?.trim();
+    if (!label) return;
+    setPasskeyBusy(true);
+    try {
+      const ch = await authApi.passkey.challenge();
+      const cred = (await navigator.credentials.create({
+        publicKey: toPublicKeyOptions(ch.public_key) as PublicKeyCredentialCreationOptions,
+      })) as PublicKeyCredential | null;
+      if (!cred) throw new Error("Geen passkey aangemaakt.");
+      await authApi.passkey.register(ch.challenge_id, label, cred);
+      toast({ title: "Passkey toegevoegd", description: `"${label}" kan nu gebruikt worden om in te loggen.` });
+      loadPasskeys();
+      await refresh();
+    } catch (err: unknown) {
+      // De browser gooit een DOMException als de gebruiker annuleert of als de
+      // authenticator al geregistreerd is; dat is geen serverfout.
+      const msg =
+        err instanceof DOMException
+          ? err.name === "NotAllowedError"
+            ? "Geannuleerd of geen toestemming gegeven."
+            : err.name === "InvalidStateError"
+              ? "Deze authenticator is al geregistreerd."
+              : err.message
+          : parseApiError(err, "Passkey toevoegen mislukt.");
+      toast({ variant: "destructive", title: "Passkey niet toegevoegd", description: msg });
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
+  async function removePasskey(pk: Passkey) {
+    if (!window.confirm(`Passkey "${pk.label}" verwijderen?`)) return;
+    try {
+      await authApi.passkey.remove(pk.id);
+      toast({ title: "Passkey verwijderd" });
+      loadPasskeys();
+      await refresh();
+    } catch (err: unknown) {
+      toast({ variant: "destructive", title: "Verwijderen mislukt", description: parseApiError(err, "Probeer het opnieuw.") });
+    }
+  }
 
   const startSetup = React.useCallback(async () => {
     setLoading(true);
@@ -293,6 +354,60 @@ function BeveiligingContent() {
           Naast je wachtwoord heb je deze code nodig om in te loggen. Zelfs als je wachtwoord uitgelekt is,
           kan niemand zonder je telefoon inloggen.
         </p>
+      </div>
+
+      {/* Passkeys */}
+      <div className="card-gradient-border rounded-xl p-6 bg-card space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <KeyRound className={`h-8 w-8 shrink-0 ${passkeys?.length ? "text-green-500" : "text-muted-foreground"}`} />
+            <div>
+              <p className="font-semibold">Passkeys</p>
+              <p className="text-sm text-muted-foreground">
+                Inloggen met je vingerafdruk, gezicht of een hardwaresleutel. Werkt naast of in
+                plaats van de authenticator-app.
+              </p>
+            </div>
+          </div>
+          <span
+            className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${
+              passkeys?.length ? "bg-green-500/10 text-green-500" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {passkeys === null ? "…" : passkeys.length ? `${passkeys.length} actief` : "Geen"}
+          </span>
+        </div>
+
+        {!webauthnAvailable ? (
+          <p className="text-sm text-muted-foreground">Deze browser ondersteunt geen passkeys.</p>
+        ) : (
+          <>
+            {passkeys && passkeys.length > 0 && (
+              <ul className="divide-y rounded-lg border">
+                {passkeys.map((pk) => (
+                  <li key={pk.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-medium">{pk.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Toegevoegd {new Date(pk.created_at).toLocaleDateString("nl-NL")}
+                        {pk.last_used_at
+                          ? ` · laatst gebruikt ${new Date(pk.last_used_at).toLocaleDateString("nl-NL")}`
+                          : " · nog niet gebruikt"}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => removePasskey(pk)} title="Verwijderen">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button onClick={addPasskey} disabled={passkeyBusy} className="w-full sm:w-auto">
+              {passkeyBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Passkey toevoegen
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

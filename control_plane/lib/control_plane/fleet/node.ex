@@ -44,6 +44,10 @@ defmodule ControlPlane.Fleet.Node do
     field :available_disk_gb, :integer
 
     field :last_heartbeat_at, :utc_datetime
+
+    # De build die deze node draait, zoals de agent hem zelf meldt. nil = een
+    # agent die nog van voor het versiestempel is.
+    field :agent_version, :string
     field :enroll_token_hash, :string
     field :agent_token_hash, :string
     field :public_key, :string
@@ -85,6 +89,7 @@ defmodule ControlPlane.Fleet.Node do
       :available_ram_mb,
       :available_disk_gb,
       :last_heartbeat_at,
+      :agent_version,
       :enroll_token_hash,
       :agent_token_hash,
       :public_key,
@@ -229,9 +234,11 @@ defmodule ControlPlane.Fleet.Node do
       :total_vcpu,
       :total_ram_mb,
       :total_disk_gb,
-      :last_heartbeat_at
+      :last_heartbeat_at,
+      :agent_version
     ])
     |> clamp_capacity()
+    |> trim_agent_version()
     |> validate_required([:last_heartbeat_at])
   end
 
@@ -256,10 +263,39 @@ defmodule ControlPlane.Fleet.Node do
       :available_ram_mb,
       :available_disk_gb,
       :last_heartbeat_at,
+      :agent_version,
       :status
     ])
     |> clamp_capacity()
+    |> trim_agent_version()
     |> validate_required([:last_heartbeat_at, :status])
+  end
+
+  # De versie komt van de agent, dus uit de minst vertrouwde bron die dit schema
+  # kent. Er valt weinig kwaad mee te doen — hij stuurt niets aan — maar hij
+  # belandt wel in het dashboard, dus hij wordt begrensd en ontdaan van
+  # controltekens in plaats van ongezien doorgegeven.
+  @max_agent_version 64
+
+  defp trim_agent_version(changeset) do
+    case get_change(changeset, :agent_version) do
+      nil ->
+        changeset
+
+      value when is_binary(value) ->
+        schoon =
+          value
+          |> String.replace(~r/[[:cntrl:]]/u, "")
+          |> String.slice(0, @max_agent_version)
+          |> String.trim()
+
+        if schoon == "",
+          do: delete_change(changeset, :agent_version),
+          else: put_change(changeset, :agent_version, schoon)
+
+      _ ->
+        delete_change(changeset, :agent_version)
+    end
   end
 
   # Bound every capacity field an untrusted agent can influence to [0, max], so a

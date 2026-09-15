@@ -3,16 +3,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, ArrowLeft, MailCheck, Server } from "lucide-react";
+import { Loader2, ArrowLeft, MailCheck, Server, KeyRound } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import axios from "axios";
-import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
+import { authApi, ensureCsrfCookie, parseApiError, toPublicKeyOptions, type PasskeyChallenge } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
 type Step = "credentials" | "totp" | "verify_required";
+
+// Wat de server teruggeeft als het wachtwoord klopt maar een tweede factor nodig is.
+type MfaState = { totp: boolean; passkey: PasskeyChallenge | null };
 
 function safeNext(raw: string | null): string {
   if (!raw) return "/dashboard";
@@ -35,6 +38,8 @@ function LoginForm() {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null);
+  const [mfa, setMfa] = React.useState<MfaState>({ totp: false, passkey: null });
+  const [passkeyBusy, setPasskeyBusy] = React.useState(false);
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -47,7 +52,8 @@ function LoginForm() {
     setLoading(true);
     try {
       const res = await authApi.login(email, password, turnstileToken || undefined);
-      if (res.data.totp_required) {
+      if (res.data.mfa_required || res.data.totp_required) {
+        setMfa({ totp: Boolean(res.data.totp_required), passkey: res.data.passkey_challenge ?? null });
         setStep("totp");
       } else if (res.data.verification_required) {
         setStep("verify_required");
@@ -82,6 +88,39 @@ function LoginForm() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handlePasskey() {
+    if (!mfa.passkey) return;
+    setPasskeyBusy(true);
+    try {
+      const cred = (await navigator.credentials.get({
+        publicKey: toPublicKeyOptions(mfa.passkey.public_key) as PublicKeyCredentialRequestOptions,
+      })) as PublicKeyCredential | null;
+      if (!cred) throw new Error("Geen passkey gekozen.");
+      const assertion = authApi.passkey.assertion(mfa.passkey.challenge_id, cred);
+      const res = await authApi.login(email, password, undefined, undefined, assertion);
+      if (res.data.mfa_required) {
+        // Zou niet moeten: een geslaagde assertie geeft een sessie. Toch de
+        // nieuwe challenge overnemen, anders is de volgende poging kansloos.
+        setMfa({ totp: Boolean(res.data.totp_required), passkey: res.data.passkey_challenge ?? null });
+        throw new Error("Passkey niet geaccepteerd.");
+      }
+      router.push(safeNext(searchParams.get("next")));
+    } catch (err: unknown) {
+      // Bij een 401 stuurt de server een verse challenge mee; die vervangt de
+      // verbruikte, zodat de knop meteen weer werkt.
+      if (axios.isAxiosError(err) && err.response?.data?.passkey_challenge) {
+        setMfa((m) => ({ ...m, passkey: err.response!.data.passkey_challenge }));
+      }
+      const msg =
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Geannuleerd of geen toestemming gegeven."
+          : "Passkey niet geaccepteerd. Probeer het opnieuw of gebruik je authenticator-code.";
+      toast({ variant: "destructive", title: "Inloggen mislukt", description: msg });
+    } finally {
+      setPasskeyBusy(false);
     }
   }
 
@@ -142,12 +181,17 @@ function LoginForm() {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-display font-bold mb-2">
               {step === "credentials" && "Welkom terug"}
-              {step === "totp" && "Authenticator-code"}
+              {step === "totp" && (mfa.totp ? "Tweede stap" : "Passkey")}
               {step === "verify_required" && "Bevestig je e-mailadres"}
             </h1>
             <p className="text-muted-foreground">
               {step === "credentials" && "Log in op je Bunk Hosting account"}
-              {step === "totp" && "Voer de 6-cijferige code in uit je authenticator-app"}
+              {step === "totp" &&
+                (mfa.passkey && mfa.totp
+                  ? "Gebruik je passkey, of voer de code uit je authenticator-app in"
+                  : mfa.passkey
+                    ? "Bevestig met je passkey"
+                    : "Voer de 6-cijferige code in uit je authenticator-app")}
               {step === "verify_required" && `Er is een bevestigingslink verstuurd naar ${email}`}
             </p>
           </div>
@@ -226,6 +270,20 @@ function LoginForm() {
             )}
 
             {step === "totp" && (
+              <div className="space-y-5">
+                {mfa.passkey && (
+                  <Button type="button" className="w-full" onClick={handlePasskey} disabled={passkeyBusy || loading}>
+                    {passkeyBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                    Inloggen met passkey
+                  </Button>
+                )}
+                {mfa.passkey && mfa.totp && (
+                  <div className="relative text-center text-xs text-muted-foreground">
+                    <span className="bg-card px-2 relative z-10">of met je authenticator-app</span>
+                    <div className="absolute inset-x-0 top-1/2 h-px bg-border" />
+                  </div>
+                )}
+                {mfa.totp && (
               <form onSubmit={handleTotp} className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="totp-code">Authenticator-code</Label>
@@ -268,6 +326,8 @@ function LoginForm() {
                   Terug
                 </Button>
               </form>
+                )}
+              </div>
             )}
 
             {step === "verify_required" && (

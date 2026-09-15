@@ -26,6 +26,8 @@ defmodule ControlPlane.Accounts.User do
     field :totp_confirmed_at, :utc_datetime
     field :totp_last_used_at, :utc_datetime
 
+    has_many :passkeys, ControlPlane.Accounts.Passkey
+
     timestamps(type: :utc_datetime)
   end
 

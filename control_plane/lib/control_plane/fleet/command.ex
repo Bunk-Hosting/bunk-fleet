@@ -34,7 +34,14 @@ defmodule ControlPlane.Fleet.Command do
         # Rolling a guest back to an archive. Unlike the other two this DOES
         # change the VPS — it overwrites its disk — so it finalises into the
         # VPS's status as well as the backup row.
-        :restore_backup
+        :restore_backup,
+        # Het enige commando dat niet over een VPS gaat maar over de node zelf:
+        # ga kijken of er een nieuwe agent klaarstaat. Er zit bewust geen versie
+        # in de payload — de node vergelijkt de hash van zijn eigen binary met
+        # die van de gepubliceerde, en doet niets als ze gelijk zijn. Daardoor is
+        # het commando idempotent en kan het na elke uitrol blind rondgestuurd
+        # worden.
+        :update
       ]
 
     field :payload, :map, default: %{}

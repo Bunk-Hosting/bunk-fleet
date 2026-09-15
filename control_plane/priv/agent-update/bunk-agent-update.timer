@@ -1,0 +1,14 @@
+[Unit]
+Description=Dagelijks controleren of er een nieuwe bunk-agent is
+
+[Timer]
+# 's Nachts, met een uur speling. Die speling is er zodat niet elke node van de
+# fleet op dezelfde seconde dezelfde binary komt ophalen.
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=1h
+# Stond de machine uit op het moment dat de timer had moeten lopen, dan haalt
+# hij dat na het opstarten alsnog in.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -72,20 +72,17 @@ defmodule ControlPlaneWeb.AuthController do
         # alone — require a valid TOTP code (matches the browser MFA flow). The
         # client first calls without a code, gets {totp_required: true}, then
         # retries with the code.
-        cond do
-          not Accounts.totp_active?(user) ->
+        totp = Accounts.totp_active?(user)
+
+        case second_factor(user, totp, params) do
+          :ok ->
             issue_session(conn, user)
 
-          is_binary(params["code"]) and Accounts.valid_totp?(user, params["code"]) ->
-            issue_session(conn, user)
+          :prompt ->
+            conn |> put_status(:ok) |> json(mfa_prompt(user, totp, nil))
 
-          is_binary(params["code"]) ->
-            conn
-            |> put_status(:unauthorized)
-            |> json(%{totp_required: true, error: "invalid_code"})
-
-          true ->
-            conn |> put_status(:ok) |> json(%{totp_required: true})
+          {:error, code} ->
+            conn |> put_status(:unauthorized) |> json(mfa_prompt(user, totp, code))
         end
 
       nil ->
@@ -279,7 +276,138 @@ defmodule ControlPlaneWeb.AuthController do
       role: user.role,
       confirmed_at: user.confirmed_at,
       totp_enabled: not is_nil(user.totp_confirmed_at),
+      passkeys_enabled: Accounts.passkeys_active?(user),
       inserted_at: user.inserted_at
+    }
+  end
+
+  # Beslist wat het wachtwoord alleen waard is. :ok = sessie uitgeven; :prompt =
+  # tweede factor vragen; {:error, code} = een poging tot tweede factor faalde.
+  # Bij een mislukte passkey gaat er een nieuwe challenge mee terug (zie
+  # mfa_prompt/3): de oude is verbruikt en zonder nieuwe is een volgende poging
+  # kansloos.
+  defp second_factor(user, totp, params) do
+    cond do
+      not totp and not Accounts.passkeys_active?(user) -> :ok
+      totp_ok?(user, totp, params["code"]) -> :ok
+      # Geen aparte passkeys_active?-check: een assertie voor een account
+      # zonder passkeys strandt in finish_passkey_login op de opzoeking, met
+      # hetzelfde antwoord als een verkeerde handtekening.
+      is_map(params["passkey"]) -> passkey_result(user, params["passkey"])
+      is_binary(params["code"]) -> {:error, "invalid_code"}
+      true -> :prompt
+    end
+  end
+
+  defp totp_ok?(user, true, code) when is_binary(code), do: Accounts.valid_totp?(user, code)
+  defp totp_ok?(_user, _totp, _code), do: false
+
+  defp passkey_result(user, assertion) do
+    case passkey_login(user, assertion) do
+      {:ok, _} -> :ok
+      {:error, _} -> {:error, "invalid_passkey"}
+    end
+  end
+
+  # Wat de client te zien krijgt als het wachtwoord klopt maar een tweede factor
+  # nodig is. `totp_required` blijft staan voor de bestaande client; daarnaast
+  # zegt `methods` welke factoren dit account heeft, en als er passkeys zijn gaat
+  # de challenge meteen mee zodat de browser er niet nog een rondje voor hoeft.
+  defp mfa_prompt(user, totp, error) do
+    passkey = Accounts.start_passkey_login(user)
+
+    %{
+      mfa_required: true,
+      totp_required: totp,
+      methods: Enum.reject([if(totp, do: "totp"), if(passkey, do: "passkey")], &is_nil/1),
+      passkey_challenge: passkey
+    }
+    |> then(fn m -> if error, do: Map.put(m, :error, error), else: m end)
+  end
+
+  defp passkey_login(user, %{"challenge_id" => cid} = p) when is_binary(cid) do
+    with {:ok, credential_id} <- b64(p["id"]),
+         {:ok, authenticator_data} <- b64(get_in(p, ["response", "authenticatorData"])),
+         {:ok, signature} <- b64(get_in(p, ["response", "signature"])),
+         {:ok, client_data_json} <- b64(get_in(p, ["response", "clientDataJSON"])) do
+      Accounts.finish_passkey_login(user, cid, %{
+        credential_id: credential_id,
+        authenticator_data: authenticator_data,
+        signature: signature,
+        client_data_json: client_data_json
+      })
+    else
+      _ -> {:error, :invalid_passkey}
+    end
+  end
+
+  defp passkey_login(_user, _), do: {:error, :invalid_passkey}
+
+  # De browser levert alles base64url zonder padding; alles wat niet decodeert
+  # is geen geldig antwoord en hoeft niet verder gelezen te worden.
+  defp b64(value) when is_binary(value), do: Base.url_decode64(value, padding: false)
+  defp b64(_), do: :error
+
+  # --- Passkeys (WebAuthn) ----------------------------------------------------
+
+  def passkeys_list(conn, _params) do
+    keys = Accounts.list_passkeys(conn.assigns.current_user)
+    json(conn, %{passkeys: Enum.map(keys, &passkey_json/1)})
+  end
+
+  def passkey_register_challenge(conn, _params) do
+    json(conn, Accounts.start_passkey_registration(conn.assigns.current_user))
+  end
+
+  def passkey_register(conn, %{"challenge_id" => cid, "credential" => cred} = params)
+      when is_binary(cid) and is_map(cred) do
+    label = String.trim(to_string(params["label"] || "Passkey"))
+
+    with {:ok, attestation_object} <- b64(get_in(cred, ["response", "attestationObject"])),
+         {:ok, client_data_json} <- b64(get_in(cred, ["response", "clientDataJSON"])),
+         {:ok, pk} <-
+           Accounts.finish_passkey_registration(conn.assigns.current_user, cid, %{
+             attestation_object: attestation_object,
+             client_data_json: client_data_json,
+             label: label
+           }) do
+      conn |> put_status(:created) |> json(%{passkey: passkey_json(pk)})
+    else
+      {:error, :challenge_expired} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "challenge_expired"})
+
+      {:error, %Ecto.Changeset{} = cs} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_passkey", details: changeset_errors(cs)})
+
+      _ ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_passkey"})
+    end
+  end
+
+  def passkey_register(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_passkey"})
+
+  def passkey_delete(conn, %{"id" => id}) do
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} ->
+        case Accounts.delete_passkey(conn.assigns.current_user, uuid) do
+          {:ok, _} -> send_resp(conn, :no_content, "")
+          {:error, :not_found} -> conn |> put_status(:not_found) |> json(%{error: "not_found"})
+        end
+
+      :error ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
+  defp passkey_json(pk) do
+    %{
+      id: pk.id,
+      label: pk.label,
+      created_at: pk.inserted_at,
+      last_used_at: pk.last_used_at
     }
   end
 

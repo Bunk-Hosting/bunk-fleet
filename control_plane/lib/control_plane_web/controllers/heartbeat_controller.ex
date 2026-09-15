@@ -13,7 +13,7 @@ defmodule ControlPlaneWeb.HeartbeatController do
 
     if node.id == node_id do
       total_attrs =
-        Map.take(params, ["total_vcpu", "total_ram_mb", "total_disk_gb"])
+        Map.take(params, ["total_vcpu", "total_ram_mb", "total_disk_gb", "agent_version"])
 
       case Fleet.mark_online_heartbeat(node, total_attrs) do
         {:ok, _node} ->

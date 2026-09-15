@@ -55,6 +55,11 @@ const (
 	// it is a request to open a connection, delivered on the command poll because
 	// that is the channel the agent is already holding open.
 	CmdConsoleConnect CommandKind = "console_connect"
+	// CmdUpdate asks this node to check whether a newer agent is published and,
+	// if so, install it. The command carries no version: the node compares the
+	// published checksum with its own binary and does nothing when they match,
+	// so the control plane can send this blind after every deploy.
+	CmdUpdate CommandKind = "update"
 )
 
 // EnrollRequest is sent once to exchange a one-time token for node credentials.
@@ -118,6 +123,11 @@ type Heartbeat struct {
 	AvailRAMMB  int `json:"avail_ram_mb"`
 	TotalDiskGB int `json:"total_disk_gb"`
 	AvailDiskGB int `json:"avail_disk_gb"`
+	// Version is the build this agent is running, stamped in at link time. The
+	// control plane records it so "which nodes still run the old binary" is a
+	// question the dashboard can answer, instead of one you answer by searching
+	// a stripped binary for a log string.
+	Version string `json:"agent_version,omitempty"`
 }
 
 // Command is a single instruction dispatched by the control plane.

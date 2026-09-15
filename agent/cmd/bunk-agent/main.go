@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -22,6 +23,11 @@ import (
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider/proxmox"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/transport"
 )
+
+// version is stamped in at build time with -ldflags "-X main.version=...".
+// The fallback matters: a binary built by hand reports something honest rather
+// than claiming to be a release it is not.
+var version = "onbekend"
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -212,6 +218,7 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		AvailRAMMB:  capacity.AvailRAMMB,
 		TotalDiskGB: capacity.TotalDiskGB,
 		AvailDiskGB: capacity.AvailDiskGB,
+		Version:     version,
 	}
 
 	if err := cp.SendHeartbeat(hbCtx, hb); err != nil {
@@ -312,6 +319,9 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 
 	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
 		handlePower(c)
+
+	case transport.CmdUpdate:
+		handleUpdate(c)
 
 	default:
 		logger.Warn("unknown command kind; ignoring", "id", cmd.ID, "kind", string(cmd.Kind))
@@ -420,6 +430,47 @@ func handleDelete(c command) {
 	c.logger.Info("delete done", "id", c.cmd.ID, "vm_id", vmID)
 	c.report(transport.CommandResult{Status: "done", VMID: vmID})
 }
+
+// handleUpdate kicks off the self-update and reports success immediately.
+//
+// The order is the whole point. The updater restarts this very process, so
+// anything reported after starting it would never be sent — the command would
+// sit in-flight until it timed out and was redelivered, and the node would
+// update itself again on every poll. Reporting first, then handing the work to
+// systemd, means the restart happens to a process that has already said what it
+// needed to say.
+//
+// --no-block matters for the same reason: without it systemctl waits for the
+// unit to finish, and that unit stops this service.
+func handleUpdate(c command) {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		c.report(transport.CommandResult{Status: "failed", Error: "systemctl not available on this node"})
+		return
+	}
+
+	if _, err := os.Stat(updateUnitPath); err != nil {
+		c.report(transport.CommandResult{
+			Status: "failed",
+			Error:  "updater not installed on this node; run the agent-update bootstrap first",
+		})
+		return
+	}
+
+	c.report(transport.CommandResult{Status: "done"})
+
+	c.logger.Info("update requested; handing over to systemd")
+	if err := exec.Command("systemctl", "start", "--no-block", updateUnitName).Run(); err != nil {
+		// Reporting again is not possible — the result is already in. A log line
+		// is what is left, and it is enough: the node keeps running the binary it
+		// has, and the nightly timer tries again.
+		c.logger.Error("could not start the updater", "err", err)
+	}
+}
+
+const (
+	updateUnitName = "bunk-agent-update.service"
+	updateUnitPath = "/etc/systemd/system/bunk-agent-update.service"
+)
 
 func handlePower(c command) {
 	vmID, ok := payloadVMID(c, "power")

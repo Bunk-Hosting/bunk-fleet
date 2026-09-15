@@ -251,6 +251,7 @@ interface BunkUser {
   role: "user" | "admin";
   inserted_at?: string;
   totp_enabled?: boolean;
+  passkeys_enabled?: boolean;
   confirmed_at?: string | null;
 }
 
@@ -263,6 +264,7 @@ function transformUser(u: BunkUser): User {
     date_joined: u.inserted_at || "",
     is_active: true,
     totp_enabled: Boolean(u.totp_enabled),
+    passkeys_enabled: Boolean(u.passkeys_enabled),
     confirmed_at: u.confirmed_at ?? null,
   };
 }
@@ -273,6 +275,63 @@ export type LoginResult = {
   totp_required?: boolean;
   verification_required?: boolean;
 };
+
+/** Wat de browser terugkrijgt na navigator.credentials.get(), al base64url-gecodeerd. */
+export type PasskeyAssertion = {
+  challenge_id: string;
+  id: string;
+  response: { authenticatorData: string; signature: string; clientDataJSON: string };
+};
+
+export type PasskeyChallenge = {
+  challenge_id: string;
+  /** Rechtstreeks door te geven als `publicKey` aan navigator.credentials.*(). */
+  public_key: Record<string, unknown>;
+};
+
+export type LoginResponse = {
+  user?: BunkUser;
+  token?: string;
+  /** Wachtwoord klopt, tweede factor nodig. */
+  mfa_required?: boolean;
+  /** Blijft bestaan voor de oude client; gelijk aan methods.includes("totp"). */
+  totp_required?: boolean;
+  methods?: ("totp" | "passkey")[];
+  passkey_challenge?: PasskeyChallenge | null;
+  verification_required?: boolean;
+  error?: string;
+};
+
+export type Passkey = {
+  id: string;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+// WebAuthn werkt met ArrayBuffers; de API met base64url zonder padding.
+export const b64url = {
+  encode: (buf: ArrayBuffer): string =>
+    btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, ""),
+  decode: (s: string): ArrayBuffer => {
+    const b = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "="));
+    return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer;
+  },
+};
+
+/** Zet de challenge van de server om naar wat de browser-API wil: bytes i.p.v. strings. */
+export function toPublicKeyOptions(pk: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...pk, challenge: b64url.decode(pk.challenge as string) };
+  if (pk.user) out.user = { ...(pk.user as object), id: b64url.decode((pk.user as { id: string }).id) };
+  for (const k of ["excludeCredentials", "allowCredentials"]) {
+    const list = pk[k] as { id: string; type: string }[] | undefined;
+    if (list) out[k] = list.map((c) => ({ ...c, id: b64url.decode(c.id) }));
+  }
+  return out;
+}
 
 export const authApi = {
   register: async (name: string, email: string, password: string, _passwordConfirm: string, captcha?: string) => {
@@ -295,8 +354,14 @@ export const authApi = {
   // account is rejected with an error, and the caller reads that flag off the
   // error body, not off a success. It is named here because the login page's
   // one branch switches on it.
-  login: async (email: string, password: string, captcha?: string, code?: string) => {
-    const res = await api.post<{ user?: BunkUser; token?: string; totp_required?: boolean }>(
+  login: async (
+    email: string,
+    password: string,
+    captcha?: string,
+    code?: string,
+    passkey?: PasskeyAssertion,
+  ) => {
+    const res = await api.post<LoginResponse>(
       "/auth/login",
       {
         email,
@@ -305,6 +370,7 @@ export const authApi = {
         // has TURNSTILE_SECRET_KEY configured) — same contract as register.
         ...(captcha ? { turnstile_token: captcha } : {}),
         ...(code ? { code } : {}),
+        ...(passkey ? { passkey } : {}),
       },
     );
 
@@ -356,6 +422,38 @@ export const authApi = {
       password_confirmation: passwordConfirm,
     }),
 
+  passkey: {
+    list: async () => (await api.get<{ passkeys: Passkey[] }>("/auth/passkeys")).data.passkeys,
+    challenge: async () => (await api.post<PasskeyChallenge>("/auth/passkeys/challenge")).data,
+    register: (challenge_id: string, label: string, credential: PublicKeyCredential) => {
+      const r = credential.response as AuthenticatorAttestationResponse;
+      return api.post<{ passkey: Passkey }>("/auth/passkeys", {
+        challenge_id,
+        label,
+        credential: {
+          id: credential.id,
+          response: {
+            attestationObject: b64url.encode(r.attestationObject),
+            clientDataJSON: b64url.encode(r.clientDataJSON),
+          },
+        },
+      });
+    },
+    remove: (id: string) => api.delete(`/auth/passkeys/${id}`),
+    /** Vertaalt het resultaat van navigator.credentials.get() naar wat /auth/login verwacht. */
+    assertion: (challenge_id: string, credential: PublicKeyCredential): PasskeyAssertion => {
+      const r = credential.response as AuthenticatorAssertionResponse;
+      return {
+        challenge_id,
+        id: credential.id,
+        response: {
+          authenticatorData: b64url.encode(r.authenticatorData),
+          signature: b64url.encode(r.signature),
+          clientDataJSON: b64url.encode(r.clientDataJSON),
+        },
+      };
+    },
+  },
   totp: {
     setup: () => api.get<{ secret: string; qr_data_url: string }>("/auth/totp/setup"),
     confirm: (code: string) => api.post<{ detail: string }>("/auth/totp/setup", { code }),
@@ -533,6 +631,8 @@ export interface AdminNode {
   available_ram_mb: number;
   available_disk_gb: number;
   last_heartbeat_at: string | null;
+  /** De build die deze node draait; null bij een agent van voor het versiestempel. */
+  agent_version: string | null;
 }
 
 /**

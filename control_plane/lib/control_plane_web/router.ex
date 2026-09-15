@@ -127,6 +127,7 @@ defmodule ControlPlaneWeb.Router do
   scope "/", ControlPlaneWeb do
     pipe_through :api
     get "/install.sh", WorkerInstallController, :script
+    get "/agent-update.sh", WorkerInstallController, :update_bootstrap
   end
 
   # Open, unauthenticated auth endpoints are rate-limited per client IP to blunt
@@ -220,6 +221,14 @@ defmodule ControlPlaneWeb.Router do
     get "/auth/totp/setup", AuthController, :totp_setup
     post "/auth/totp/setup", AuthController, :totp_confirm
     delete "/auth/totp/disable", AuthController, :totp_disable
+
+    # Passkeys (WebAuthn). Registreren is twee stappen: een challenge ophalen en
+    # het antwoord van de authenticator terugsturen. Inloggen met een passkey
+    # loopt via POST /auth/login zelf, net als TOTP.
+    get "/auth/passkeys", AuthController, :passkeys_list
+    post "/auth/passkeys/challenge", AuthController, :passkey_register_challenge
+    post "/auth/passkeys", AuthController, :passkey_register
+    delete "/auth/passkeys/:id", AuthController, :passkey_delete
 
     # Re-send the confirmation email (authenticated, so it can't spam an arbitrary
     # address — see AuthController.resend_confirmation/2).
