@@ -197,7 +197,12 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       # De VPS'en krijgen hun eigen net0 van de agent; de bridge hier is alleen
       # wat de template zelf draagt voor het geval de agent er geen meestuurt.
       tbridge="${VPS_BRIDGE:-vmbr0}"
-      if qm create "$PX_TMPL_ID" --name bunk-ubuntu-2204 --ostype l26 --memory 1024 --cores 1 --scsihw virtio-scsi-single --net0 "virtio,bridge=$tbridge" >/dev/null &&
+      # --agent enabled=1 is niet optioneel: de agent leest het IP van een VPS via
+      # de qemu-guest-agent, en Ubuntu's cloud-image heeft die aan boord. Staat de
+      # schakelaar uit, dan draait de VPS wel maar blijft het IP-veld leeg.
+      # scsihw en de rest zijn gelijkgetrokken met de template die in deze vloot
+      # al draait, zodat node twee niet subtiel anders is dan node een.
+      if qm create "$PX_TMPL_ID" --name bunk-ubuntu-2204 --ostype l26 --memory 2048 --cores 2 --agent enabled=1 --scsihw virtio-scsi-pci --net0 "virtio,bridge=$tbridge" >/dev/null &&
          qm importdisk "$PX_TMPL_ID" "$itmp" "$PX_TMPL_STORE" >/dev/null; then
         rm -f "$itmp"
       else
