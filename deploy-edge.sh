@@ -8,7 +8,19 @@ set -euo pipefail
 # concurrently is easy to do by accident — and the result is not a slow deploy but
 # a down site: the two runs interleave `docker rm -f` and `docker run`, and the
 # loser deletes the container the winner just started.
-exec 9>/tmp/bunk-deploy-edge.lock
+# Het slot moet gedeeld zijn om iets te betekenen: een handmatige uitrol (root)
+# en de Actions-runner (gebruiker gha) moeten hetzelfde bestand grijpen. Een pad
+# per gebruiker zou twee sloten opleveren die elkaar niet zien. Daarom één vast
+# pad, en bij het aanmaken permissief genoeg dat de volgende uitroller er ook in
+# kan — anders faalt die op een bestand dat een ander ooit heeft achtergelaten.
+LOCK="${BUNK_LOCK_FILE:-/tmp/bunk-deploy-edge.lock}"
+if [ ! -w "$LOCK" ]; then
+  ( umask 000; : > "$LOCK" ) 2>/dev/null || {
+    echo "kan het slot $LOCK niet openen; laat de eigenaar het verwijderen" >&2
+    exit 1
+  }
+fi
+exec 9>"$LOCK"
 flock 9
 
 # De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
