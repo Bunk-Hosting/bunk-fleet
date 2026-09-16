@@ -16,14 +16,17 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   alias ControlPlane.Billing.Revenue
   alias ControlPlane.Credits
   alias ControlPlane.Credits.LedgerEntry
+  alias ControlPlane.Credits.TopupRequest
   alias ControlPlane.Enrollment
   alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Metrics
   alias ControlPlane.Provisioning
   alias ControlPlane.Repo
+  alias ControlPlane.Subscriptions.Subscription
 
   # --- Stats ---------------------------------------------------------------
 
@@ -76,6 +79,191 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       backups: Enum.map(Metrics.backup_health(7), &backup_health_json/1)
     })
   end
+
+  @doc """
+  `GET /api/v1/beheer/users/:id` — alles wat er over één klant te weten is, op
+  één plek.
+
+  De lijst laat per klant een saldo en een aantal VPS'en zien; wat ontbrak was
+  de vraag daarachter. Waarom staat deze klant op nul? Wanneer heeft hij voor
+  het laatst betaald? Loopt er een abonnement dat niet meer geïnd kan worden?
+  Dat waren tot nu toe vragen die alleen in de database te beantwoorden waren.
+  """
+  def user_detail(conn, %{"id" => id}) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         %User{} = user <- Accounts.get_user(uuid) || :not_found do
+      json(conn, %{
+        user: %{
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          confirmed: not is_nil(user.confirmed_at),
+          totp_enabled: not is_nil(user.totp_confirmed_at),
+          passkeys: length(Accounts.list_passkeys(user)),
+          created_at: user.inserted_at
+        },
+        balance_cents: Credits.balance_cents(user.id),
+        vpses: Enum.map(vpses_of(user.id), &vps_json/1),
+        subscriptions: Enum.map(subscriptions_of(user.id), &subscription_json/1),
+        ledger: Enum.map(Credits.list_entries(user.id, 50), &ledger_json/1),
+        topups: Enum.map(topups_of(user.id), &topup_json/1)
+      })
+    else
+      _ -> error(conn, :not_found, "not_found")
+    end
+  end
+
+  defp vpses_of(user_id) do
+    Repo.all(
+      from v in Vps,
+        where: v.owner_id == ^user_id and v.status != :deleted,
+        order_by: [desc: v.inserted_at],
+        preload: [:region, :node]
+    )
+  end
+
+  defp subscriptions_of(user_id) do
+    Repo.all(
+      from s in Subscription,
+        where: s.owner_id == ^user_id,
+        order_by: [desc: s.inserted_at],
+        preload: [:vps]
+    )
+  end
+
+  defp topups_of(user_id) do
+    Repo.all(
+      from t in TopupRequest,
+        where: t.user_id == ^user_id,
+        order_by: [desc: t.inserted_at],
+        limit: 25
+    )
+  end
+
+  defp ledger_json(e) do
+    %{
+      id: e.id,
+      amount_cents: e.amount_cents,
+      kind: e.kind,
+      description: e.description,
+      at: e.inserted_at
+    }
+  end
+
+  defp topup_json(t) do
+    %{
+      id: t.id,
+      reference: t.reference,
+      amount_cents: t.amount_cents,
+      status: t.status,
+      paid_at: t.paid_at,
+      # Zonder betaalprovider-id is het geen betaling maar een handmatige
+      # bijschrijving; dat verschil bepaalt of het in de omzet meetelt.
+      via_provider: not is_nil(t.mollie_payment_id),
+      requested_at: t.inserted_at
+    }
+  end
+
+  defp subscription_json(s) do
+    %{
+      id: s.id,
+      vps_id: s.vps_id,
+      vps_name: s.vps && s.vps.name,
+      status: s.status,
+      price_monthly: s.price_monthly && Decimal.to_string(s.price_monthly),
+      next_billing_date: s.next_billing_date,
+      retry_at: s.retry_at,
+      started_at: s.started_at,
+      cancelled_at: s.cancelled_at
+    }
+  end
+
+  @doc """
+  `GET /api/v1/beheer/subscriptions` — wat er loopt en wat er niet meer geïnd
+  wordt.
+
+  `past_due` eerst: dat is een klant wiens VPS is opgeschort omdat zijn tegoed
+  op was. Elke dag dat zo'n rij onopgemerkt blijft staan is een klant die denkt
+  dat zijn server stuk is.
+  """
+  def subscriptions(conn, _params) do
+    rijen =
+      Repo.all(
+        from s in Subscription,
+          where: s.status != :cancelled,
+          order_by: [asc: s.status, asc: s.next_billing_date],
+          limit: 500,
+          preload: [:vps]
+      )
+
+    maandbedrag =
+      rijen
+      |> Enum.filter(&(&1.status == :active))
+      |> Enum.reduce(Decimal.new(0), fn s, acc -> Decimal.add(acc, s.price_monthly || 0) end)
+
+    json(conn, %{
+      subscriptions: Enum.map(rijen, &subscription_json/1),
+      active: Enum.count(rijen, &(&1.status == :active)),
+      past_due: Enum.count(rijen, &(&1.status == :past_due)),
+      monthly_total: Decimal.to_string(maandbedrag)
+    })
+  end
+
+  @doc """
+  `GET /api/v1/beheer/commands` — wat de fleet de afgelopen tijd heeft gedaan.
+
+  De metriekenpagina telt uitkomsten bij elkaar op; dit laat de regels zelf
+  zien. Bij een mislukte provisioning is het aantal niet wat je nodig hebt maar
+  de foutmelding.
+  """
+  def commands(conn, params) do
+    limiet = params["limit"] |> to_int(100) |> min(500)
+
+    vraag =
+      from c in Command,
+        order_by: [desc: c.inserted_at],
+        limit: ^limiet,
+        preload: [:node, :vps]
+
+    vraag =
+      case params["status"] do
+        s when s in ["pending", "delivered", "done", "failed"] ->
+          status = String.to_existing_atom(s)
+          from c in vraag, where: c.status == ^status
+
+        _ ->
+          vraag
+      end
+
+    json(conn, %{commands: Enum.map(Repo.all(vraag), &command_json/1)})
+  end
+
+  defp command_json(c) do
+    %{
+      id: c.id,
+      kind: c.kind,
+      status: c.status,
+      node: c.node && c.node.name,
+      vps_id: c.vps_id,
+      vps_name: c.vps && c.vps.name,
+      # Alleen de foutmelding, niet de hele payload: daar staat cloud-init in,
+      # en dat is invoer van de klant die hier niets toevoegt.
+      error: c.result && c.result["error"],
+      at: c.inserted_at,
+      delivered_at: c.delivered_at
+    }
+  end
+
+  defp to_int(v, standaard) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, _} when n > 0 -> n
+      _ -> standaard
+    end
+  end
+
+  defp to_int(v, _standaard) when is_integer(v) and v > 0, do: v
+  defp to_int(_, standaard), do: standaard
 
   @doc """
   `POST /api/v1/beheer/enroll-tokens` — mint een eenmalig token waarmee een

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Loader2, Search, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -115,8 +116,15 @@ function UsersInner() {
                 {filtered.map((u) => (
                   <tr key={u.id} className="border-b last:border-0">
                     <td className="px-4 py-3">
-                      <div className="font-medium">{u.name || "—"}</div>
-                      <div className="text-xs text-muted-foreground">{u.email}</div>
+                      {/* Doorklikken naar alles wat er over deze klant bekend is:
+                          VPS'en, abonnementen, opwaarderingen en grootboek. */}
+                      <Link
+                        href={`/dashboard/beheer/users/${u.id}`}
+                        className="block hover:underline"
+                      >
+                        <div className="font-medium">{u.name || "—"}</div>
+                        <div className="text-xs text-muted-foreground">{u.email}</div>
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <Select value={u.role} onValueChange={(v) => changeRole(u, v as "user" | "admin")}>

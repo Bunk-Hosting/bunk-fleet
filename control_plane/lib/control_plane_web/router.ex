@@ -275,6 +275,9 @@ defmodule ControlPlaneWeb.Router do
     get "/metrics", PanelController, :metrics
     get "/omzet", PanelController, :revenue
     get "/users", PanelController, :users
+    get "/users/:id", PanelController, :user_detail
+    get "/subscriptions", PanelController, :subscriptions
+    get "/commands", PanelController, :commands
     patch "/users/:id", PanelController, :update_user
     post "/users/:id/credit", PanelController, :credit_user
     get "/vpses", PanelController, :vpses

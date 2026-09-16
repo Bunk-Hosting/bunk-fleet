@@ -708,6 +708,67 @@ export type AdminRevenue = {
   }[];
 };
 
+export type AdminLedgerEntry = {
+  id: string;
+  amount_cents: number;
+  kind: string;
+  description: string | null;
+  at: string;
+};
+
+export type AdminTopup = {
+  id: string;
+  reference: string;
+  amount_cents: number;
+  status: string;
+  paid_at: string | null;
+  /** false = handmatig bijgeschreven, telt niet als omzet. */
+  via_provider: boolean;
+  requested_at: string;
+};
+
+export type AdminSubscription = {
+  id: string;
+  vps_id: string | null;
+  vps_name: string | null;
+  status: string;
+  price_monthly: string | null;
+  next_billing_date: string | null;
+  retry_at: string | null;
+  started_at: string | null;
+  cancelled_at: string | null;
+};
+
+export type AdminUserDetail = {
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    confirmed: boolean;
+    totp_enabled: boolean;
+    passkeys: number;
+    created_at: string;
+  };
+  balance_cents: number;
+  vpses: AdminVps[];
+  subscriptions: AdminSubscription[];
+  ledger: AdminLedgerEntry[];
+  topups: AdminTopup[];
+};
+
+export type AdminCommand = {
+  id: string;
+  kind: string;
+  status: string;
+  node: string | null;
+  vps_id: string | null;
+  vps_name: string | null;
+  error: string | null;
+  at: string;
+  delivered_at: string | null;
+};
+
 // NOTE: paths are /beheer/* (not /admin/*) — Cloudflare's WAF blocks "/admin"
 // URLs with a challenge page before they reach the origin.
 export const adminApi = {
@@ -730,6 +791,23 @@ export const adminApi = {
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
   nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
+  userDetail: async (id: string): Promise<AdminUserDetail> =>
+    (await api.get<AdminUserDetail>(`/beheer/users/${id}`)).data,
+  subscriptions: async () =>
+    (
+      await api.get<{
+        subscriptions: AdminSubscription[];
+        active: number;
+        past_due: number;
+        monthly_total: string;
+      }>("/beheer/subscriptions")
+    ).data,
+  commands: async (status?: string) =>
+    (
+      await api.get<{ commands: AdminCommand[] }>("/beheer/commands", {
+        params: status ? { status } : {},
+      })
+    ).data.commands,
   revenue: async (from?: string, to?: string): Promise<AdminRevenue> =>
     (
       await api.get<AdminRevenue>("/beheer/omzet", {

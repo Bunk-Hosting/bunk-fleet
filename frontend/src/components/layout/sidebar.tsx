@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   Wallet,
   Receipt,
+  CreditCard,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -56,6 +58,8 @@ const adminNavItems: NavItem[] = [
   { label: "VPS-beheer", href: "/dashboard/beheer/vps", icon: ServerCog },
   { label: "Nodes", href: "/dashboard/beheer/nodes", icon: Network },
   { label: "Omzet & btw", href: "/dashboard/beheer/omzet", icon: Receipt },
+  { label: "Abonnementen", href: "/dashboard/beheer/abonnementen", icon: CreditCard },
+  { label: "Activiteit", href: "/dashboard/beheer/activiteit", icon: Activity },
 ];
 
 const allNavItems = [...mainNavItems, ...billingNavItems, ...adminNavItems];
