@@ -71,7 +71,7 @@ defmodule ControlPlaneWeb.Admin.PanelInsightTest do
       {:ok, betaling} =
         Credits.create_mollie_topup(klant.id, 2500, "tr_pi_#{System.unique_integer([:positive])}")
 
-      {:ok, _} = Credits.mark_topup_paid(betaling.id)
+      {:ok, _} = Credits.mark_topup_paid(betaling.id, "mollie")
 
       Repo.insert!(%Subscription{
         owner_id: klant.id,

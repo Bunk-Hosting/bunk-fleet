@@ -158,9 +158,10 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       amount_cents: t.amount_cents,
       status: t.status,
       paid_at: t.paid_at,
-      # Zonder betaalprovider-id is het geen betaling maar een handmatige
-      # bijschrijving; dat verschil bepaalt of het in de omzet meetelt.
-      via_provider: not is_nil(t.mollie_payment_id),
+      # Telt dit bedrag als omzet? Alleen als er een betaling bij de provider
+      # bestond én die niet met de hand op betaald is gezet.
+      via_provider: not is_nil(t.mollie_payment_id) and t.paid_via != "manual",
+      paid_via: t.paid_via,
       requested_at: t.inserted_at
     }
   end
@@ -354,7 +355,11 @@ defmodule ControlPlaneWeb.Admin.PanelController do
         vat_percentage: Revenue.vat_percentage(),
         total: Revenue.summary(from, to),
         quarters: Revenue.by_quarter(from, to),
-        invoices: Enum.map(Revenue.invoices(from, to), &invoice_json/1)
+        invoices: Enum.map(Revenue.invoices(from, to), &invoice_json/1),
+        # Wat er bewust buiten de telling valt. Uitsluiten zonder tonen is
+        # verbergen: dan is het verschil tussen de bank en de aangifte niet meer
+        # te verklaren.
+        excluded: Enum.map(Revenue.excluded(from, to), &excluded_json/1)
       })
     else
       :error -> conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_date"})
@@ -380,7 +385,18 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       gross_cents: row.gross_cents,
       net_cents: row.net_cents,
       vat_cents: row.vat_cents,
-      mollie_payment_id: row.mollie_payment_id
+      mollie_payment_id: row.mollie_payment_id,
+      paid_via: row.paid_via
+    }
+  end
+
+  defp excluded_json(row) do
+    %{
+      reference: row.reference,
+      paid_at: row.paid_at && DateTime.to_iso8601(row.paid_at),
+      customer: row.customer,
+      gross_cents: row.amount_cents,
+      reason: row.reason
     }
   end
 

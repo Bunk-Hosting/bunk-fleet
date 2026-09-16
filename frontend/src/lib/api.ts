@@ -705,6 +705,16 @@ export type AdminRevenue = {
     net_cents: number;
     vat_cents: number;
     mollie_payment_id: string | null;
+    /** "mollie" = door de betaalprovider bevestigd, "manual" = door een mens. */
+    paid_via: string | null;
+  }[];
+  /** Betaalde opwaarderingen die bewust niet als omzet meetellen, met reden. */
+  excluded: {
+    reference: string;
+    paid_at: string | null;
+    customer: string;
+    gross_cents: number;
+    reason: string;
   }[];
 };
 
@@ -722,8 +732,10 @@ export type AdminTopup = {
   amount_cents: number;
   status: string;
   paid_at: string | null;
-  /** false = handmatig bijgeschreven, telt niet als omzet. */
+  /** false = telt niet als omzet (geen betaling, of met de hand bevestigd). */
   via_provider: boolean;
+  /** "mollie" = door de betaalprovider bevestigd, "manual" = door een mens. */
+  paid_via: string | null;
   requested_at: string;
 };
 

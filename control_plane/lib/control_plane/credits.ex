@@ -267,11 +267,17 @@ defmodule ControlPlane.Credits do
   end
 
   @doc """
-  Confirms a pending top-up (admin, after payment received): credits the wallet
-  and marks the request paid, atomically. A non-pending request yields
-  `{:error, :not_pending}` so a double-confirm can never double-credit.
+  Confirms a pending top-up: credits the wallet and marks the request paid,
+  atomically. A non-pending request yields `{:error, :not_pending}` so a
+  double-confirm can never double-credit.
+
+  `paid_via` legt vast wie de betaling bevestigde: `"mollie"` voor de webhook van
+  de betaalprovider, `"manual"` voor een mens. Dat onderscheid bepaalt of het
+  bedrag omzet is — zie `ControlPlane.Billing.Revenue` — en het is daarom een
+  verplicht argument in plaats van iets met een voorkeurswaarde. Een nieuwe
+  aanroeper moet die vraag beantwoorden, niet per ongeluk overslaan.
   """
-  def mark_topup_paid(id) do
+  def mark_topup_paid(id, paid_via) when paid_via in ["mollie", "manual"] do
     Repo.transaction(fn ->
       # Lock the row so two concurrent confirms can't both observe :pending and
       # credit the wallet twice (READ COMMITTED would otherwise allow it).
@@ -292,7 +298,8 @@ defmodule ControlPlane.Credits do
             tr
             |> Ecto.Changeset.change(
               status: :paid,
-              paid_at: Clock.now()
+              paid_at: Clock.now(),
+              paid_via: paid_via
             )
             |> Repo.update()
 
@@ -343,7 +350,7 @@ defmodule ControlPlane.Credits do
 
       %TopupRequest{} = tr ->
         if amount_matches?(tr, paid_amount),
-          do: mark_topup_paid(tr.id),
+          do: mark_topup_paid(tr.id, "mollie"),
           else: {:error, :amount_mismatch}
     end
   end

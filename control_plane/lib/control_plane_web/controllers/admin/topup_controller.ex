@@ -8,8 +8,10 @@ defmodule ControlPlaneWeb.Admin.TopupController do
     json(conn, %{requests: Enum.map(Credits.list_pending_topups(), &request_json/1)})
   end
 
+  # "manual": een mens zet deze op betaald, niet de webhook van de provider.
+  # Dat wordt vastgelegd omdat het bepaalt of het bedrag als omzet meetelt.
   def confirm(conn, %{"id" => id}) do
-    case Credits.mark_topup_paid(id) do
+    case Credits.mark_topup_paid(id, "manual") do
       {:ok, tr} ->
         json(conn, %{
           id: tr.id,

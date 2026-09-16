@@ -18,7 +18,7 @@ defmodule ControlPlane.BillingRevenueTest do
     {:ok, r} =
       Credits.create_mollie_topup(user.id, cents, "tr_#{System.unique_integer([:positive])}")
 
-    {:ok, r} = Credits.mark_topup_paid(r.id)
+    {:ok, r} = Credits.mark_topup_paid(r.id, "mollie")
 
     # De datum zetten we expliciet: een aangifte gaat over een periode, en een
     # test die alles op vandaag zet bewijst niets over de afbakening ervan.
@@ -152,6 +152,61 @@ defmodule ControlPlane.BillingRevenueTest do
     assert [] = Revenue.invoices(~D[2020-01-01], ~D[2020-12-31])
   end
 
+  describe "met de hand op betaald gezet" do
+    test "telt niet als omzet, ook al bestond de betaling bij de provider" do
+      # Dit is het geval dat eerder wél meetelde: een verzoek dat bij Mollie is
+      # aangemaakt en daarna door een mens op betaald gezet. Er hoeft dan geen
+      # euro binnengekomen te zijn, en btw afdragen over geld dat er niet is
+      # kost echt geld.
+      u = user("hand4@bunk.test")
+
+      {:ok, r} =
+        Credits.create_mollie_topup(u.id, 5000, "tr_hand_#{System.unique_integer([:positive])}")
+
+      {:ok, _} = Credits.mark_topup_paid(r.id, "manual")
+
+      assert %{payments: 0, gross_cents: 0} = Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
+      assert Revenue.invoices(~D[2026-01-01], ~D[2026-12-31]) == []
+    end
+
+    test "valt niet weg maar staat apart, met de reden erbij" do
+      # Uitsluiten zonder tonen is verbergen: een bedrag dat nergens meer opduikt
+      # is niet te controleren tegen de bankafschriften.
+      u = user("hand5@bunk.test")
+
+      {:ok, r} =
+        Credits.create_mollie_topup(u.id, 5000, "tr_hand_#{System.unique_integer([:positive])}")
+
+      {:ok, r} = Credits.mark_topup_paid(r.id, "manual")
+
+      Repo.update!(
+        Ecto.Changeset.change(r, paid_at: DateTime.new!(~D[2026-03-03], ~T[12:00:00], "Etc/UTC"))
+      )
+
+      assert [regel] = Revenue.excluded(~D[2026-03-01], ~D[2026-03-31])
+      assert regel.amount_cents == 5000
+      assert regel.customer == "hand5@bunk.test"
+      assert regel.reason =~ "hand"
+    end
+
+    test "een betaling die de webhook bevestigde telt gewoon mee" do
+      u = user("hand6@bunk.test")
+      paid_topup(u, 2500, ~D[2026-04-04])
+
+      assert %{payments: 1, gross_cents: 2500} =
+               Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
+
+      assert Revenue.excluded(~D[2026-01-01], ~D[2026-12-31]) == []
+    end
+
+    test "de bron staat op de factuurregel" do
+      u = user("hand7@bunk.test")
+      paid_topup(u, 1000, ~D[2026-05-05])
+
+      assert [%{paid_via: "mollie"}] = Revenue.invoices(~D[2026-05-01], ~D[2026-05-31])
+    end
+  end
+
   describe "handmatig toegekend tegoed" do
     test "een adminopwaardering in het grootboek telt niet mee" do
       # Het beheerpaneel hoogt een saldo op met een grootboekregel, zonder
@@ -174,7 +229,7 @@ defmodule ControlPlane.BillingRevenueTest do
       # Zonder deze eis zou het er stilzwijgend in belanden.
       u = user("hand2@bunk.test")
       {:ok, r} = Credits.create_topup_request(u.id, 2500)
-      {:ok, _} = Credits.mark_topup_paid(r.id)
+      {:ok, _} = Credits.mark_topup_paid(r.id, "mollie")
 
       assert %{payments: 0, gross_cents: 0} = Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
     end

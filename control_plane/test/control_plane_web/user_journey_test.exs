@@ -270,7 +270,7 @@ defmodule ControlPlaneWeb.UserJourneyTest do
       {:ok, req} =
         Credits.create_mollie_topup(admin.id, 2500, "tr_#{System.unique_integer([:positive])}")
 
-      {:ok, _} = Credits.mark_topup_paid(req.id)
+      {:ok, _} = Credits.mark_topup_paid(req.id, "mollie")
 
       omzet = conn |> bearer(token) |> get(~p"/api/v1/beheer/omzet") |> json_response(200)
 

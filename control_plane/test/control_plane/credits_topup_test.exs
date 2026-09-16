@@ -29,17 +29,17 @@ defmodule ControlPlane.CreditsTopupTest do
     start = Credits.balance_cents(u.id)
     {:ok, r} = Credits.create_topup_request(u.id, 2500)
 
-    {:ok, paid} = Credits.mark_topup_paid(r.id)
+    {:ok, paid} = Credits.mark_topup_paid(r.id, "mollie")
     assert paid.status == :paid
     assert Credits.balance_cents(u.id) == start + 2500
 
     # idempotent: a second confirm must not double-credit
-    assert {:error, :not_pending} = Credits.mark_topup_paid(r.id)
+    assert {:error, :not_pending} = Credits.mark_topup_paid(r.id, "mollie")
     assert Credits.balance_cents(u.id) == start + 2500
   end
 
   test "confirm unknown id -> not_found" do
-    assert {:error, :not_found} = Credits.mark_topup_paid(Ecto.UUID.generate())
+    assert {:error, :not_found} = Credits.mark_topup_paid(Ecto.UUID.generate(), "mollie")
   end
 
   test "user can cancel their own pending request, not others'" do
@@ -50,7 +50,7 @@ defmodule ControlPlane.CreditsTopupTest do
     assert {:ok, c} = Credits.cancel_topup_request(u.id, r.id)
     assert c.status == :cancelled
     # cancelled can't be paid
-    assert {:error, :not_pending} = Credits.mark_topup_paid(r.id)
+    assert {:error, :not_pending} = Credits.mark_topup_paid(r.id, "mollie")
   end
 
   test "concurrent confirms credit the wallet only once" do
@@ -60,7 +60,7 @@ defmodule ControlPlane.CreditsTopupTest do
 
     results =
       1..8
-      |> Enum.map(fn _ -> Task.async(fn -> Credits.mark_topup_paid(r.id) end) end)
+      |> Enum.map(fn _ -> Task.async(fn -> Credits.mark_topup_paid(r.id, "mollie") end) end)
       |> Enum.map(&Task.await/1)
 
     assert Enum.count(results, &match?({:ok, _}, &1)) == 1

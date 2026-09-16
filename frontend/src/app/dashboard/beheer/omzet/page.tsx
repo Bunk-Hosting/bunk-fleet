@@ -174,7 +174,8 @@ function OmzetInner() {
                         <th className="py-2 pr-4 font-medium">Klant</th>
                         <th className="py-2 pr-4 text-right font-medium">Excl. btw</th>
                         <th className="py-2 pr-4 text-right font-medium">Btw</th>
-                        <th className="py-2 text-right font-medium">Incl. btw</th>
+                        <th className="py-2 pr-4 text-right font-medium">Incl. btw</th>
+                        <th className="py-2 font-medium">Bron</th>
                       </tr>
                     </thead>
                     <tbody className="tabular-nums">
@@ -185,7 +186,10 @@ function OmzetInner() {
                           <td className="py-2 pr-4">{r.customer}</td>
                           <td className="py-2 pr-4 text-right">{euro(r.net_cents)}</td>
                           <td className="py-2 pr-4 text-right">{euro(r.vat_cents)}</td>
-                          <td className="py-2 text-right">{euro(r.gross_cents)}</td>
+                          <td className="py-2 pr-4 text-right">{euro(r.gross_cents)}</td>
+                          <td className="py-2 text-xs text-muted-foreground">
+                            {r.paid_via === "mollie" ? "Mollie" : "Mollie (voor registratie)"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -195,12 +199,55 @@ function OmzetInner() {
             </CardContent>
           </Card>
 
+          {data.excluded.length > 0 && (
+            <Card className="border-amber-500/40">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Niet meegeteld ({data.excluded.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Deze bedragen zijn wel bijgeschreven op een tegoed, maar tellen niet als omzet.
+                  Ze staan hier omdat uitsluiten zonder tonen hetzelfde is als verbergen: zo is het
+                  verschil tussen je bankafschriften en je aangifte te verklaren.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="py-2 pr-4 font-medium">Referentie</th>
+                        <th className="py-2 pr-4 font-medium">Datum</th>
+                        <th className="py-2 pr-4 font-medium">Klant</th>
+                        <th className="py-2 pr-4 text-right font-medium">Bedrag</th>
+                        <th className="py-2 font-medium">Waarom niet</th>
+                      </tr>
+                    </thead>
+                    <tbody className="tabular-nums">
+                      {data.excluded.map((r) => (
+                        <tr key={r.reference} className="border-b last:border-0">
+                          <td className="py-2 pr-4 font-mono text-xs">{r.reference}</td>
+                          <td className="py-2 pr-4">{datum(r.paid_at)}</td>
+                          <td className="py-2 pr-4">{r.customer}</td>
+                          <td className="py-2 pr-4 text-right">{euro(r.gross_cents)}</td>
+                          <td className="py-2 text-xs text-muted-foreground">{r.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <p className="text-xs text-muted-foreground">
             De omzet hangt aan de betaalde opwaardering, niet aan het verbruik: tegoed bij Bunk is
             maar voor één dienst met één btw-tarief in te wisselen en is daarmee belast op het moment
             dat het wordt gekocht. Weggegeven tegoed telt niet mee — daar is niets voor betaald. De
             btw wordt per betaling afgerond en daarna opgeteld, zodat dit overzicht optelt tot wat er
-            op de facturen staat.
+            op de facturen staat. Alleen betalingen die de betaalprovider zelf heeft bevestigd
+            tellen mee: een opwaardering die met de hand op betaald is gezet staat hierboven onder
+            &ldquo;niet meegeteld&rdquo;.
           </p>
         </>
       )}

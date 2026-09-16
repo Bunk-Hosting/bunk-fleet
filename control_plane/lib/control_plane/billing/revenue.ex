@@ -123,7 +123,8 @@ defmodule ControlPlane.Billing.Revenue do
       paid_at: t.paid_at,
       customer: u.email,
       amount_cents: t.amount_cents,
-      mollie_payment_id: t.mollie_payment_id
+      mollie_payment_id: t.mollie_payment_id,
+      paid_via: t.paid_via
     })
     |> Repo.all()
     |> Enum.map(fn row -> Map.merge(row, split(row.amount_cents)) end)
@@ -133,14 +134,56 @@ defmodule ControlPlane.Billing.Revenue do
   # niet de datum waarop de klant op "opwaarderen" klikte. Een openstaande of
   # geannuleerde topup is geen omzet.
   #
-  # `mollie_payment_id` is de harde grens tussen omzet en de rest: het bestaat
-  # alleen als er bij de betaalprovider werkelijk een betaling is aangemaakt.
-  # Handmatig toegekend tegoed uit het beheerpaneel komt hier sowieso niet
-  # langs — dat schrijft een grootboekregel (`admin_topup`, `admin_adjustment`)
-  # en géén opwaarderingsverzoek — maar zonder deze eis zou één nieuwe knop die
-  # wél een verzoek aanmaakt stilzwijgend in de btw-aangifte belanden. Er wordt
-  # aangifte gedaan op dit getal; het moet niet kloppen bij toeval maar bij
-  # constructie.
+  @doc """
+  De betaalde opwaarderingen die bewust **niet** als omzet meetellen.
+
+  Zonder dit is uitsluiten hetzelfde als verbergen: een bedrag dat nergens meer
+  opduikt is niet te controleren. Deze lijst laat zien wat er is afgevallen en
+  waarom, zodat het verschil tussen de bankafschriften en de aangifte te
+  verklaren is in plaats van alleen te constateren.
+  """
+  @spec excluded(Date.t(), Date.t()) :: [map()]
+  def excluded(%Date{} = from, %Date{} = to) do
+    start = DateTime.new!(from, ~T[00:00:00], "Etc/UTC")
+    stop = DateTime.new!(Date.add(to, 1), ~T[00:00:00], "Etc/UTC")
+
+    from(t in TopupRequest,
+      where:
+        t.status == :paid and not is_nil(t.paid_at) and t.paid_at >= ^start and t.paid_at < ^stop and
+          (is_nil(t.mollie_payment_id) or t.paid_via == "manual"),
+      order_by: [desc: t.paid_at]
+    )
+    |> join(:inner, [t], u in assoc(t, :user))
+    |> select([t, u], %{
+      reference: t.reference,
+      paid_at: t.paid_at,
+      customer: u.email,
+      amount_cents: t.amount_cents,
+      reason:
+        fragment(
+          "case when ? is null then ? else ? end",
+          t.mollie_payment_id,
+          "geen betaling bij de provider aangemaakt",
+          "met de hand op betaald gezet"
+        )
+    })
+    |> Repo.all()
+  end
+
+  # Twee grenzen, en ze doen elk iets anders.
+  #
+  # `mollie_payment_id` zegt dat er bij de betaalprovider een betaling is
+  # aangemaakt. Handmatig toegekend tegoed uit het beheerpaneel komt hier
+  # sowieso niet langs — dat schrijft een grootboekregel (`admin_topup`,
+  # `admin_adjustment`) en géén opwaarderingsverzoek — maar zonder deze eis zou
+  # één nieuwe knop die wél een verzoek aanmaakt stilzwijgend in de aangifte
+  # belanden.
+  #
+  # `paid_via` zegt wie die betaling bevestigde. Een verzoek kan bij Mollie zijn
+  # aangemaakt en daarna door een mens op betaald zijn gezet zonder dat er geld
+  # binnenkwam; dat is geen omzet. NULL betekent hier "van vóór deze kolom" en
+  # telt mee, want de twee rijen die dat betreft zijn echte Mollie-betalingen —
+  # zie de migratie. Alleen wat expliciet als handmatig is geregistreerd valt af.
   defp paid_topups(from, to) do
     start = DateTime.new!(from, ~T[00:00:00], "Etc/UTC")
     stop = DateTime.new!(Date.add(to, 1), ~T[00:00:00], "Etc/UTC")
@@ -148,6 +191,7 @@ defmodule ControlPlane.Billing.Revenue do
     from(t in TopupRequest,
       where:
         t.status == :paid and not is_nil(t.paid_at) and not is_nil(t.mollie_payment_id) and
+          (is_nil(t.paid_via) or t.paid_via == "mollie") and
           t.paid_at >= ^start and t.paid_at < ^stop
     )
   end
