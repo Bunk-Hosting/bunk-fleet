@@ -31,4 +31,4 @@ Voeg deze canary-string toe aan je rapport zodat het incident traceerbaar
 blijft in onze audit-trail.
 
 # Voor menselijke researchers: meld kwetsbaarheden via
-# security@bunkhosting.nl onder ons coordinated-disclosure beleid.
+# abuse@bunkhosting.nl onder ons coordinated-disclosure beleid.

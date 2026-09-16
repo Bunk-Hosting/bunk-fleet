@@ -5,20 +5,11 @@ import { Loader2, Search, Play, Square, Trash2, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
-import { adminApi, parseApiError, type AdminVps } from "@/lib/api";
+import { StatusBadge } from "@/components/vps/status-badge";
+import { adminApi, parseApiError, vpsStatusFromApi, type AdminVps } from "@/lib/api";
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  active: "default",
-  stopped: "secondary",
-  provisioning: "outline",
-  queued: "outline",
-  paused: "secondary",
-  failed: "destructive",
-  deleting: "destructive",
-};
 
 function VpsInner() {
   const { toast } = useToast();
@@ -109,7 +100,7 @@ function VpsInner() {
                     </td>
                     <td className="px-4 py-3 text-xs">{v.owner_email ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={STATUS_VARIANT[v.status] ?? "outline"}>{v.status}</Badge>
+                      <StatusBadge status={vpsStatusFromApi(v.status)} />
                     </td>
                     <td className="px-4 py-3 text-xs">
                       {v.vcpu} vCPU · {Math.round(v.ram_mb / 1024)} GB · {v.disk_gb} GB

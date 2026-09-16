@@ -165,6 +165,12 @@ const STATUS_MAP: Record<string, VpsStatus> = {
   deleted: "DELETED",
 };
 
+// De beheerschermen krijgen de VPS-rijen ongefilterd binnen en tonen dus de
+// status van het control plane zelf. Die vertaling hoort op één plek te staan,
+// anders staat er in het ene scherm "provisioning" en in het andere "Aanmaken".
+export const vpsStatusFromApi = (raw: string): VpsStatus =>
+  STATUS_MAP[raw] ?? "PENDING";
+
 let packageCache: VpsPackage[] = [];
 let packagesPromise: Promise<VpsPackage[]> | null = null;
 
@@ -228,7 +234,7 @@ function transformVps(v: BunkVps): Vps {
     label: v.name,
     package: packageForSpecs(v.vcpu, v.ram_mb, v.disk_gb),
     os: "ubuntu-22.04",
-    status: STATUS_MAP[v.status] ?? "PENDING",
+    status: vpsStatusFromApi(v.status),
     ip_address: v.ip_address,
     hostname: null,
     public_host: v.public_host ?? null,

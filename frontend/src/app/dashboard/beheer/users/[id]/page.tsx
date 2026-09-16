@@ -6,9 +6,10 @@ import { Loader2, ArrowLeft, ShieldCheck, KeyRound, Mail } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
-import { adminApi, type AdminUserDetail } from "@/lib/api";
+import { adminApi, type AdminUserDetail, vpsStatusFromApi } from "@/lib/api";
 
 const euro = (cents: number) =>
   (cents / 100).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
@@ -115,7 +116,7 @@ function KlantDetail() {
                       {v.vcpu} vCPU · {v.ram_mb} MB · {v.disk_gb} GB
                     </p>
                   </div>
-                  <Badge variant={v.status === "active" ? "default" : "outline"}>{v.status}</Badge>
+                  <StatusBadge status={vpsStatusFromApi(v.status)} />
                 </li>
               ))}
             </ul>
