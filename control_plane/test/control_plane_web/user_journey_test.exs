@@ -263,8 +263,13 @@ defmodule ControlPlaneWeb.UserJourneyTest do
       admin: admin,
       admin_token: token
     } do
-      # Welkomsttegoed is weggegeven, geen omzet. Alleen de betaalde topup telt.
-      {:ok, req} = Credits.create_topup_request(admin.id, 2500)
+      # Welkomsttegoed is weggegeven en handmatig tegoed is geen betaling; alleen
+      # een opwaardering die bij de betaalprovider bestond telt als omzet.
+      {:ok, _} = Credits.add_entry(admin.id, 5000, "admin_topup", "Handmatig door beheerder")
+
+      {:ok, req} =
+        Credits.create_mollie_topup(admin.id, 2500, "tr_#{System.unique_integer([:positive])}")
+
       {:ok, _} = Credits.mark_topup_paid(req.id)
 
       omzet = conn |> bearer(token) |> get(~p"/api/v1/beheer/omzet") |> json_response(200)

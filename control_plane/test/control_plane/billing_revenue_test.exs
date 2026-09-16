@@ -13,7 +13,11 @@ defmodule ControlPlane.BillingRevenueTest do
   end
 
   defp paid_topup(user, cents, %Date{} = op) do
-    {:ok, r} = Credits.create_topup_request(user.id, cents)
+    # Met een Mollie-id, want alleen een betaling die bij de provider bestond is
+    # omzet. Zie de test "handmatig toegekend tegoed telt niet mee".
+    {:ok, r} =
+      Credits.create_mollie_topup(user.id, cents, "tr_#{System.unique_integer([:positive])}")
+
     {:ok, r} = Credits.mark_topup_paid(r.id)
 
     # De datum zetten we expliciet: een aangifte gaat over een periode, en een
@@ -146,6 +150,44 @@ defmodule ControlPlane.BillingRevenueTest do
 
     assert [] = Revenue.by_quarter(~D[2020-01-01], ~D[2020-12-31])
     assert [] = Revenue.invoices(~D[2020-01-01], ~D[2020-12-31])
+  end
+
+  describe "handmatig toegekend tegoed" do
+    test "een adminopwaardering in het grootboek telt niet mee" do
+      # Het beheerpaneel hoogt een saldo op met een grootboekregel, zonder
+      # opwaarderingsverzoek en zonder betaling. De klant kan er meer mee
+      # uitgeven, maar er is geen euro binnengekomen — dus geen omzet en geen
+      # btw. Dit is precies het geval waarvoor Stijn deze grens vroeg.
+      u = user("hand1@bunk.test")
+      {:ok, _} = Credits.add_entry(u.id, 5000, "admin_topup", "Handmatig door beheerder")
+      {:ok, _} = Credits.add_entry(u.id, -1000, "admin_adjustment", "Correctie")
+
+      assert %{payments: 0, gross_cents: 0, vat_cents: 0} =
+               Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
+
+      assert Revenue.invoices(~D[2026-01-01], ~D[2026-12-31]) == []
+    end
+
+    test "een betaald verzoek zonder betaling bij de provider telt niet mee" do
+      # Zou er ooit een knop komen die wél een opwaarderingsverzoek aanmaakt en
+      # dat met de hand op betaald zet, dan hoort dat bedrag niet in de aangifte.
+      # Zonder deze eis zou het er stilzwijgend in belanden.
+      u = user("hand2@bunk.test")
+      {:ok, r} = Credits.create_topup_request(u.id, 2500)
+      {:ok, _} = Credits.mark_topup_paid(r.id)
+
+      assert %{payments: 0, gross_cents: 0} = Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
+    end
+
+    test "naast handmatig tegoed telt een echte betaling gewoon door" do
+      u = user("hand3@bunk.test")
+      {:ok, _} = Credits.add_entry(u.id, 9999, "admin_topup", "Handmatig")
+      paid_topup(u, 2500, ~D[2026-05-05])
+
+      totaal = Revenue.summary(~D[2026-01-01], ~D[2026-12-31])
+      assert totaal.payments == 1
+      assert totaal.gross_cents == 2500
+    end
   end
 
   test "de referentie is uniek, zodat hij als factuurnummer kan dienen" do

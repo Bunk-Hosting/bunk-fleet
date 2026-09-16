@@ -16,6 +16,14 @@ defmodule ControlPlane.Billing.Revenue do
   het is geen omzet. Zou de aangifte aan het verbruik hangen, dan zou die
   weggegeven euro als omzet meetellen zodra de klant hem opmaakt.
 
+  ## Wat niet meetelt
+
+  Handmatig toegekend tegoed. Het beheerpaneel kan een saldo ophogen
+  (`admin_topup`) of corrigeren (`admin_adjustment`); dat zijn grootboekregels
+  zonder opwaarderingsverzoek en zonder betaling erachter. Ze verhogen wel wat
+  een klant kan uitgeven, maar er is geen euro binnengekomen en er is dus ook
+  geen btw over verschuldigd.
+
   ## Bedragen
 
   De catalogusprijzen zijn inclusief btw, dus het ontvangen bedrag is het
@@ -124,13 +132,23 @@ defmodule ControlPlane.Billing.Revenue do
   # Alleen wat daadwerkelijk betaald is, en op de datum waarop het betaald werd —
   # niet de datum waarop de klant op "opwaarderen" klikte. Een openstaande of
   # geannuleerde topup is geen omzet.
+  #
+  # `mollie_payment_id` is de harde grens tussen omzet en de rest: het bestaat
+  # alleen als er bij de betaalprovider werkelijk een betaling is aangemaakt.
+  # Handmatig toegekend tegoed uit het beheerpaneel komt hier sowieso niet
+  # langs — dat schrijft een grootboekregel (`admin_topup`, `admin_adjustment`)
+  # en géén opwaarderingsverzoek — maar zonder deze eis zou één nieuwe knop die
+  # wél een verzoek aanmaakt stilzwijgend in de btw-aangifte belanden. Er wordt
+  # aangifte gedaan op dit getal; het moet niet kloppen bij toeval maar bij
+  # constructie.
   defp paid_topups(from, to) do
     start = DateTime.new!(from, ~T[00:00:00], "Etc/UTC")
     stop = DateTime.new!(Date.add(to, 1), ~T[00:00:00], "Etc/UTC")
 
     from(t in TopupRequest,
       where:
-        t.status == :paid and not is_nil(t.paid_at) and t.paid_at >= ^start and t.paid_at < ^stop
+        t.status == :paid and not is_nil(t.paid_at) and not is_nil(t.mollie_payment_id) and
+          t.paid_at >= ^start and t.paid_at < ^stop
     )
   end
 end
