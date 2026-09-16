@@ -29,6 +29,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   require Logger
 
+  alias ControlPlane.Accounts
   alias ControlPlane.Backups
   alias ControlPlane.Billing
   alias ControlPlane.Credits
@@ -109,6 +110,10 @@ defmodule ControlPlane.Fleet.Reconciler do
 
     if is_nil(last) or now - last >= mi do
       meter_usage()
+      # Lift mee op dezelfde uurslag. Verlopen sessies worden door de query toch
+      # al geweigerd, dus dit is opruimen en geen beveiliging — een eigen timer
+      # ernaast zetten zou meer bewegende delen zijn dan het werk waard is.
+      purge_sessions()
       %{state | last_meter_ms: now}
     else
       state
@@ -242,6 +247,15 @@ defmodule ControlPlane.Fleet.Reconciler do
         "fleet reconciler delete-retry sweep failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
+  end
+
+  defp purge_sessions do
+    case Accounts.purge_expired_sessions() do
+      0 -> :ok
+      n -> Logger.info("verlopen sessies opgeruimd", count: n)
+    end
+  rescue
+    e -> Logger.error("opruimen van sessies mislukt: #{Exception.message(e)}")
   end
 
   defp meter_usage do

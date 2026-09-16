@@ -150,7 +150,7 @@ defmodule ControlPlane.Billing.Revenue do
     from(t in TopupRequest,
       where:
         t.status == :paid and not is_nil(t.paid_at) and t.paid_at >= ^start and t.paid_at < ^stop and
-          (is_nil(t.mollie_payment_id) or t.paid_via == "manual"),
+          (is_nil(t.mollie_payment_id) or is_nil(t.paid_via) or t.paid_via != "mollie"),
       order_by: [desc: t.paid_at]
     )
     |> join(:inner, [t], u in assoc(t, :user))
@@ -161,10 +161,15 @@ defmodule ControlPlane.Billing.Revenue do
       amount_cents: t.amount_cents,
       reason:
         fragment(
-          "case when ? is null then ? else ? end",
+          "case when ? is null then ? when ? = ? then ? when ? is null then ? else ? end",
           t.mollie_payment_id,
           "geen betaling bij de provider aangemaakt",
-          "met de hand op betaald gezet"
+          t.paid_via,
+          "manual",
+          "met de hand op betaald gezet",
+          t.paid_via,
+          "bevestiger onbekend",
+          "testbetaling, van vóór de live sleutel"
         )
     })
     |> Repo.all()
@@ -179,11 +184,12 @@ defmodule ControlPlane.Billing.Revenue do
   # één nieuwe knop die wél een verzoek aanmaakt stilzwijgend in de aangifte
   # belanden.
   #
-  # `paid_via` zegt wie die betaling bevestigde. Een verzoek kan bij Mollie zijn
-  # aangemaakt en daarna door een mens op betaald zijn gezet zonder dat er geld
-  # binnenkwam; dat is geen omzet. NULL betekent hier "van vóór deze kolom" en
-  # telt mee, want de twee rijen die dat betreft zijn echte Mollie-betalingen —
-  # zie de migratie. Alleen wat expliciet als handmatig is geregistreerd valt af.
+  # `paid_via` zegt wie die betaling bevestigde, en alleen `"mollie"` telt. Dat is
+  # strenger dan "niet handmatig", en met opzet: omzet hoort te bestaan uit
+  # betalingen waarvan de provider zelf heeft gezegd dat het geld er is, niet uit
+  # betalingen waarvan niemand het tegendeel heeft gezegd. Zo valt ook
+  # `"mollie_test"` af — de opwaarderingen van vóór de live sleutel, waar nooit
+  # echt geld in heeft gezeten.
   defp paid_topups(from, to) do
     start = DateTime.new!(from, ~T[00:00:00], "Etc/UTC")
     stop = DateTime.new!(Date.add(to, 1), ~T[00:00:00], "Etc/UTC")
@@ -191,7 +197,7 @@ defmodule ControlPlane.Billing.Revenue do
     from(t in TopupRequest,
       where:
         t.status == :paid and not is_nil(t.paid_at) and not is_nil(t.mollie_payment_id) and
-          (is_nil(t.paid_via) or t.paid_via == "mollie") and
+          t.paid_via == "mollie" and
           t.paid_at >= ^start and t.paid_at < ^stop
     )
   end

@@ -4,7 +4,14 @@ defmodule ControlPlane.Accounts.UserToken do
 
   A raw 32-byte random token is generated and handed to the client once; only its
   SHA-256 hash is persisted (in the `token` column) so a database leak cannot be
-  replayed. Session tokens are valid for `@session_validity_in_days` days.
+  replayed.
+
+  A session ends in one of two ways: it reaches `@session_validity_in_days` days
+  after being handed out, or it sits unused for `@idle_timeout_in_days` days.
+  The second one does the real work. A token that leaks is usually replayed days
+  later, and an absolute window alone would keep honouring it for the rest of its
+  term; going stale on silence closes that door without logging out someone who
+  is actually using the panel.
   """
   use Ecto.Schema
   import Ecto.Query
@@ -15,13 +22,31 @@ defmodule ControlPlane.Accounts.UserToken do
   @hash_algorithm :sha256
   @rand_size 32
 
-  @session_validity_in_days 60
+  @session_validity_in_days 30
+  @idle_timeout_in_days 7
+
+  # Iedere request het tijdstip bijwerken zou een schrijfactie per request
+  # betekenen op de tabel die ook elke request leest. Een kwartier speling kost
+  # niets aan veiligheid — de drempel is dagen — en scheelt vrijwel alle writes.
+  @touch_after_seconds 900
+
+  @doc "Hoe lang een sessie hooguit meegaat, en hoe lang hij ongebruikt mag zijn."
+  @spec session_limits() :: %{max_days: pos_integer(), idle_days: pos_integer()}
+  def session_limits, do: %{max_days: @session_validity_in_days, idle_days: @idle_timeout_in_days}
+
+  @doc "Of `last_used_at` ver genoeg in het verleden ligt om te herschrijven."
+  @spec needs_touch?(DateTime.t() | nil, DateTime.t()) :: boolean()
+  def needs_touch?(nil, _now), do: true
+
+  def needs_touch?(last_used_at, now),
+    do: DateTime.diff(now, last_used_at) >= @touch_after_seconds
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "user_tokens" do
     field :token, :binary
     field :context, :string
+    field :last_used_at, :utc_datetime
 
     belongs_to :user, User
 
@@ -38,13 +63,21 @@ defmodule ControlPlane.Accounts.UserToken do
     token = :crypto.strong_rand_bytes(@rand_size)
     hashed_token = :crypto.hash(@hash_algorithm, token)
 
-    {token, %UserToken{token: hashed_token, context: "session", user_id: user.id}}
+    {token,
+     %UserToken{
+       token: hashed_token,
+       context: "session",
+       user_id: user.id,
+       last_used_at: DateTime.utc_now() |> DateTime.truncate(:second)
+     }}
   end
 
   @doc """
-  Query that fetches the `User` associated with a non-expired session token.
+  Query that fetches the `User` and the token row for a still-valid session.
 
-  `token` is the raw token; it is hashed before lookup so it matches what is stored.
+  `token` is the raw token; it is hashed before lookup so it matches what is
+  stored. Both windows are checked here rather than in the caller: a session that
+  is too old, or too long untouched, must not resolve to a user at all.
   """
   def verify_session_token_query(token) do
     hashed_token = :crypto.hash(@hash_algorithm, token)
@@ -52,10 +85,26 @@ defmodule ControlPlane.Accounts.UserToken do
     query =
       from token in by_token_and_context_query(hashed_token, "session"),
         join: user in assoc(token, :user),
-        where: token.inserted_at > ago(@session_validity_in_days, "day"),
-        select: user
+        where:
+          token.inserted_at > ago(@session_validity_in_days, "day") and
+            token.last_used_at > ago(@idle_timeout_in_days, "day"),
+        select: {user, token}
 
     {:ok, query}
+  end
+
+  @doc """
+  Query over session rows that neither window can still save.
+
+  Used by the periodic sweep: keeping dead rows around costs an index and makes
+  "where am I logged in" longer than it is true.
+  """
+  def expired_sessions_query do
+    from t in UserToken,
+      where:
+        t.context == "session" and
+          (t.inserted_at <= ago(@session_validity_in_days, "day") or
+             t.last_used_at <= ago(@idle_timeout_in_days, "day"))
   end
 
   # Email-link tokens: "confirm" (registration) and "reset_password". Unlike

@@ -189,6 +189,55 @@ defmodule ControlPlane.BillingRevenueTest do
       assert regel.reason =~ "hand"
     end
 
+    test "een betaling uit de testperiode telt niet mee en staat apart" do
+      # Tot 14 september 2026 stond Mollie op de testsleutel. Zulke rijen zien er
+      # in de database uit als echte betalingen — status, bedrag, een Mollie-id —
+      # terwijl er nooit geld voor binnenkwam. Ze horen dus niet in de aangifte,
+      # maar wel in het overzicht: anders is het verschil met de bankafschriften
+      # niet te verklaren.
+      u = user("test1@bunk.test")
+
+      {:ok, r} =
+        Credits.create_mollie_topup(u.id, 5000, "tr_test_#{System.unique_integer([:positive])}")
+
+      {:ok, r} = Credits.mark_topup_paid(r.id, "mollie")
+
+      Repo.update!(
+        Ecto.Changeset.change(r,
+          paid_via: "mollie_test",
+          paid_at: DateTime.new!(~D[2026-09-13], ~T[12:00:00], "Etc/UTC")
+        )
+      )
+
+      assert %{payments: 0, gross_cents: 0} = Revenue.summary(~D[2026-09-01], ~D[2026-09-30])
+      assert [regel] = Revenue.excluded(~D[2026-09-01], ~D[2026-09-30])
+      assert regel.amount_cents == 5000
+      assert regel.reason =~ "test"
+    end
+
+    test "een bevestiger die ontbreekt telt niet mee, in plaats van mee te liften" do
+      # NULL betekende hier ooit "van vóór deze kolom" en telde daarom mee. Dat
+      # maakt elke toekomstige rij zonder bevestiger stilzwijgend tot omzet; de
+      # veilige kant van die keuze is niet meetellen.
+      u = user("test2@bunk.test")
+
+      {:ok, r} =
+        Credits.create_mollie_topup(u.id, 1500, "tr_null_#{System.unique_integer([:positive])}")
+
+      {:ok, r} = Credits.mark_topup_paid(r.id, "mollie")
+
+      Repo.update!(
+        Ecto.Changeset.change(r,
+          paid_via: nil,
+          paid_at: DateTime.new!(~D[2026-09-20], ~T[12:00:00], "Etc/UTC")
+        )
+      )
+
+      assert %{payments: 0, gross_cents: 0} = Revenue.summary(~D[2026-09-01], ~D[2026-09-30])
+      assert [%{reason: reden}] = Revenue.excluded(~D[2026-09-01], ~D[2026-09-30])
+      assert reden =~ "onbekend"
+    end
+
     test "een betaling die de webhook bevestigde telt gewoon mee" do
       u = user("hand6@bunk.test")
       paid_topup(u, 2500, ~D[2026-04-04])

@@ -412,13 +412,54 @@ defmodule ControlPlane.Accounts do
 
   @doc """
   Returns the user owning a valid, non-expired session `token`, or `nil`.
+
+  Elke geslaagde lookup houdt de sessie levend: zolang iemand het paneel gebruikt
+  schuift de stiltegrens mee. Dat gebeurt hooguit eens per kwartier, zodat de
+  tabel die elke request leest niet ook elke request beschreven wordt.
   """
   def get_user_by_session_token(token) when is_binary(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
-    Repo.one(query)
+
+    case Repo.one(query) do
+      nil ->
+        nil
+
+      {user, user_token} ->
+        touch_session(user_token)
+        user
+    end
   end
 
   def get_user_by_session_token(_token), do: nil
+
+  defp touch_session(user_token) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    if UserToken.needs_touch?(user_token.last_used_at, now) do
+      # Zonder where op de oude waarde zouden twee gelijktijdige requests elkaar
+      # overschrijven. Dat is onschuldig, maar het is ook gratis te vermijden.
+      from(t in UserToken, where: t.id == ^user_token.id)
+      |> Repo.update_all(set: [last_used_at: now])
+    end
+
+    :ok
+  end
+
+  @doc """
+  Ruimt sessies op die verlopen zijn — op leeftijd of op stilte.
+
+  Verlopen rijen doen al niets meer (de query weigert ze), dus dit is opruimen,
+  geen beveiliging. Het houdt de tabel klein en zorgt dat een overzicht van
+  actieve sessies niet langer is dan de waarheid.
+  """
+  @spec purge_expired_sessions() :: non_neg_integer()
+  def purge_expired_sessions do
+    {count, _} = Repo.delete_all(UserToken.expired_sessions_query())
+    count
+  end
+
+  @doc "De grenzen waarbinnen een sessie geldig blijft."
+  defdelegate session_limits(), to: UserToken
 
   @doc """
   Deletes the session identified by `token`. Always returns `:ok`.

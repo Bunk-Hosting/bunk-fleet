@@ -12,6 +12,29 @@ import { useToast } from "@/components/ui/use-toast";
 
 type SetupStep = "idle" | "scanning" | "confirming" | "disabling";
 
+const UITLEG = [
+  {
+    term: "Authenticator-app (TOTP)",
+    uitleg:
+      "Je app maakt elke dertig seconden een nieuwe code. Die heb je naast je wachtwoord nodig om in te loggen, dus met alleen een uitgelekt wachtwoord komt niemand binnen.",
+  },
+  {
+    term: "Passkeys",
+    uitleg:
+      "In plaats van een wachtwoord tekent je telefoon of laptop het inloggen met een sleutel die het apparaat nooit verlaat. Er valt niets te onderscheppen en niets te phishen, want de sleutel werkt alleen op bunkhosting.nl.",
+  },
+  {
+    term: "Allebei tegelijk kan",
+    uitleg:
+      "Een passkey vervangt je wachtwoord, TOTP komt er juist bovenop. Wie beide aanzet houdt een tweede manier over als een telefoon kwijtraakt.",
+  },
+  {
+    term: "Automatisch uitloggen",
+    uitleg:
+      "Een sessie stopt na zeven dagen zonder activiteit, en hoe dan ook na dertig dagen. Dat beperkt hoe lang een gestolen sessie van een meegelezen of achtergelaten apparaat nog bruikbaar is.",
+  },
+];
+
 function BeveiligingContent() {
   const { user, refresh } = useUser();
   const { toast } = useToast();
@@ -174,7 +197,7 @@ function BeveiligingContent() {
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-display font-bold">Beveiliging</h1>
-        <p className="text-muted-foreground mt-1">Beheer twee-factor-authenticatie voor je account.</p>
+        <p className="text-muted-foreground mt-1">Kies hoe je inlogt: een authenticator-app, een passkey, of allebei.</p>
       </div>
 
       {/* MFA-prompt banner — alleen zichtbaar na eerste inlog zonder TOTP */}
@@ -348,16 +371,6 @@ function BeveiligingContent() {
         )}
       </div>
 
-      {/* Uitleg */}
-      <div className="text-sm text-muted-foreground space-y-1 px-1">
-        <p className="font-medium text-foreground">Wat is TOTP?</p>
-        <p>
-          TOTP (Time-based One-Time Password) genereert elke 30 seconden een unieke code in je authenticator-app.
-          Naast je wachtwoord heb je deze code nodig om in te loggen. Zelfs als je wachtwoord uitgelekt is,
-          kan niemand zonder je telefoon inloggen.
-        </p>
-      </div>
-
       {/* Passkeys */}
       <div className="card-gradient-border rounded-xl p-6 bg-card space-y-4">
         <div className="flex items-start justify-between gap-4">
@@ -411,6 +424,17 @@ function BeveiligingContent() {
           </>
         )}
       </div>
+
+      {/* Uitleg staat onder de opties, niet ertussen: tekst tussen twee kaarten
+          breekt de rij en laat het lijken alsof hij bij de onderste hoort. */}
+      <dl className="space-y-4 rounded-xl border bg-muted/30 p-6 text-sm">
+        {UITLEG.map((item) => (
+          <div key={item.term}>
+            <dt className="font-medium text-foreground">{item.term}</dt>
+            <dd className="mt-1 text-muted-foreground">{item.uitleg}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
