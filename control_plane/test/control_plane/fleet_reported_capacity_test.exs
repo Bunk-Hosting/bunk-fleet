@@ -14,6 +14,7 @@ defmodule ControlPlane.FleetReportedCapacityTest do
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
+  alias ControlPlane.Fleet.Reservation
   alias ControlPlane.Fleet.Scheduler
   alias ControlPlane.Repo
 
@@ -90,7 +91,77 @@ defmodule ControlPlane.FleetReportedCapacityTest do
     refute gekozen.id == vol.id
   end
 
-  test "de heartbeat schrijft de gemelde cijfers, maar niet de boekhouding" do
+  defp heartbeat(n, extra \\ %{}) do
+    Fleet.mark_online_heartbeat(
+      n,
+      Map.merge(
+        %{
+          "total_vcpu" => 4,
+          "total_ram_mb" => 11_843,
+          "total_disk_gb" => 94,
+          "reported_avail_vcpu" => 2,
+          "reported_avail_ram_mb" => 3651,
+          "reported_avail_disk_gb" => 70
+        },
+        extra
+      )
+    )
+  end
+
+  defp gereserveerd(n, ram_mb, status) do
+    Repo.insert!(%Reservation{
+      node_id: n.id,
+      vcpu: 1,
+      ram_mb: ram_mb,
+      disk_gb: 10,
+      status: status
+    })
+  end
+
+  test "de heartbeat leidt de vrije ruimte af in plaats van hem te raden" do
+    # available_* begon ooit bij het totaal van de machine en werd daarna alleen
+    # nog verlaagd bij een reservering. Op een host die ook iets anders draait is
+    # dat vanaf de eerste seconde onwaar, en omdat het maar een keer werd gezet
+    # corrigeerde geen enkele heartbeat het ooit nog.
+    r = regio()
+    n = node(r, %{available_ram_mb: 10_819})
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    assert bijgewerkt.reported_avail_ram_mb == 3651
+    assert bijgewerkt.available_ram_mb == 3651
+  end
+
+  test "ruimte die al aan een lopende bestelling is beloofd telt niet mee" do
+    # Dit is de eigenschap waar het echt om gaat, en die deze test bewaakte toen
+    # available_* nog onaangeroerd bleef: een VPS die wordt aangemaakt draait nog
+    # niet, dus de agent telt zijn geheugen nog als vrij. Zonder aftrek zou
+    # dezelfde ruimte twee keer verkocht kunnen worden.
+    r = regio()
+    n = node(r, %{available_ram_mb: 10_819})
+    gereserveerd(n, 1024, :held)
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    assert bijgewerkt.available_ram_mb == 3651 - 1024
+  end
+
+  test "een afgeronde of losgelaten reservering telt niet dubbel" do
+    # Een draaiende VPS zit al in wat de agent meldt; hem hier nog eens aftrekken
+    # zou de node ten onrechte voller maken dan hij is.
+    r = regio()
+    n = node(r, %{available_ram_mb: 10_819})
+    gereserveerd(n, 2048, :committed)
+    gereserveerd(n, 4096, :released)
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    assert bijgewerkt.available_ram_mb == 3651
+  end
+
+  test "een agent die niets meldt houdt de bestaande boekhouding" do
+    # Een oudere agent kent reported_avail_* niet. Die node op nul zetten zou hem
+    # uit de roulatie halen voor iets wat hij niet verkeerd doet.
     r = regio()
     n = node(r, %{available_ram_mb: 5000})
 
@@ -98,17 +169,19 @@ defmodule ControlPlane.FleetReportedCapacityTest do
       Fleet.mark_online_heartbeat(n, %{
         "total_vcpu" => 4,
         "total_ram_mb" => 11_843,
-        "total_disk_gb" => 94,
-        "reported_avail_vcpu" => 2,
-        "reported_avail_ram_mb" => 3651,
-        "reported_avail_disk_gb" => 70
+        "total_disk_gb" => 94
       })
 
-    assert bijgewerkt.reported_avail_ram_mb == 3651
-
-    # Dit is de kern: een heartbeat mag available_* niet aanraken. Zou hij dat
-    # wel doen, dan zien twee bestellingen tussen twee heartbeats allebei
-    # dezelfde ruimte en boeken ze de node samen over.
     assert bijgewerkt.available_ram_mb == 5000
+  end
+
+  test "een agent zonder zicht op zijn hypervisor levert geen plaatsbare ruimte op" do
+    r = regio()
+    n = node(r, %{available_ram_mb: 10_819})
+
+    {:ok, bijgewerkt} = heartbeat(n, %{"capacity_error" => "geen verbinding"})
+
+    assert bijgewerkt.available_ram_mb == 0
+    assert bijgewerkt.reported_avail_ram_mb == 0
   end
 end

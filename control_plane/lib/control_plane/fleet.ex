@@ -297,7 +297,7 @@ defmodule ControlPlane.Fleet do
       # drain within thirty seconds, silently, which is how a node you are trying
       # to empty fills back up while you watch.
       |> Map.put(:status, if(node.status == :draining, do: :draining, else: :online))
-      |> maybe_init_available(node, totals)
+      |> derive_available(node, totals)
 
     # PERF: only a real status transition (offline/pending -> online) or the
     # first heartbeat (which seeds available_*) is UI-relevant. A routine
@@ -305,8 +305,13 @@ defmodule ControlPlane.Fleet do
     # — otherwise every node's heartbeat forces every connected dashboard to a
     # full reload (O(nodes x dashboards) per interval). Capacity changes are
     # broadcast by the scheduler, and offline transitions by the reconciler.
+    # Nu available_* wordt afgeleid kan een gewone heartbeat hem wel degelijk
+    # veranderen -- als de operator zelf iets start of stopt. Alleen dán is er
+    # ook echt iets te tonen; op een stabiele machine blijft het cijfer gelijk en
+    # blijft deze heartbeat stil.
     transition? =
-      node.status not in [:online, :draining] or is_nil(node.available_vcpu)
+      node.status not in [:online, :draining] or is_nil(node.available_vcpu) or
+        capacity_changed?(node, attrs)
 
     node
     |> Node.mark_online_changeset(attrs)
@@ -342,10 +347,69 @@ defmodule ControlPlane.Fleet do
 
   defp tap_ok(result, _fun), do: result
 
-  # A node enrolls before it has reported any capacity, so `available_*` starts
-  # nil. On the FIRST heartbeat (which establishes total_*) we seed available_*
-  # to the totals — a fresh node hosts no VPSes. After that, available_* is owned
-  # exclusively by the scheduler and heartbeats never touch it again.
+  defp capacity_changed?(%Node{} = node, attrs) do
+    Enum.any?([:available_vcpu, :available_ram_mb, :available_disk_gb], fn veld ->
+      Map.has_key?(attrs, veld) and Map.fetch!(attrs, veld) != Map.fetch!(node, veld)
+    end)
+  end
+
+  # Wat de scheduler nog mag vergeven, afgeleid in plaats van geraden.
+  #
+  # Tot nu toe werd available_* bij de eerste heartbeat eenmalig gelijkgesteld aan
+  # het totaal van de machine, en daarna alleen nog verlaagd bij een reservering.
+  # Dat startpunt gaat ervan uit dat de hele machine van Bunk is. Draait er ook
+  # iets anders op -- het control plane zelf, een router, een website -- dan is
+  # het vanaf de eerste seconde een fictie, en omdat het maar één keer gebeurt
+  # corrigeert geen enkele heartbeat het ooit nog. Op de eerste node van deze
+  # vloot scheelde dat 7 GB: 10819 MB "vrij" terwijl er 3651 MB vrij was.
+  #
+  # Wat er werkelijk te vergeven is, is wat de node vrij ziet minus wat er al is
+  # beloofd aan VPS'en die nog gemaakt worden. Die draaien nog niet, dus de agent
+  # telt hun geheugen nog als vrij; zonder die aftrek zou dezelfde ruimte twee
+  # keer verkocht kunnen worden. Zo afgeleid klopt het cijfer in beide richtingen
+  # en herstelt het zich vanzelf.
+  defp derive_available(attrs, %Node{} = node, totals) do
+    case reported_capacity(totals) do
+      nil -> maybe_init_available(attrs, node, totals)
+      reported -> Map.merge(attrs, minus_held(node.id, reported))
+    end
+  end
+
+  # Een agent van voor het reported_avail_*-veld meldt deze getallen niet. Die
+  # nodes houden het oude gedrag: liever het bekende startpunt dan een node die
+  # nergens meer voor in aanmerking komt omdat er nil binnenkwam.
+  defp reported_capacity(%{
+         reported_avail_vcpu: vcpu,
+         reported_avail_ram_mb: ram,
+         reported_avail_disk_gb: disk
+       })
+       when is_integer(vcpu) and is_integer(ram) and is_integer(disk) do
+    %{vcpu: vcpu, ram_mb: ram, disk_gb: disk}
+  end
+
+  defp reported_capacity(_totals), do: nil
+
+  defp minus_held(node_id, reported) do
+    held =
+      Repo.one(
+        from r in Reservation,
+          where: r.node_id == ^node_id and r.status == :held,
+          select: %{
+            vcpu: coalesce(sum(r.vcpu), 0),
+            ram_mb: coalesce(sum(r.ram_mb), 0),
+            disk_gb: coalesce(sum(r.disk_gb), 0)
+          }
+      ) || %{vcpu: 0, ram_mb: 0, disk_gb: 0}
+
+    %{
+      available_vcpu: max(0, reported.vcpu - held.vcpu),
+      available_ram_mb: max(0, reported.ram_mb - held.ram_mb),
+      available_disk_gb: max(0, reported.disk_gb - held.disk_gb)
+    }
+  end
+
+  # Alleen nog voor een agent die geen reported_avail_* meldt: een node schrijft
+  # zich in voordat hij capaciteit heeft gemeld, dus available_* begint op nil.
   defp maybe_init_available(attrs, %Node{available_vcpu: nil}, totals) do
     attrs
     |> Map.put(:available_vcpu, totals[:total_vcpu])
