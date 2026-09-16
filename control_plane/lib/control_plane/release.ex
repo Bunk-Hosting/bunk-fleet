@@ -6,6 +6,7 @@ defmodule ControlPlane.Release do
   @app :control_plane
 
   alias ControlPlane.Credits.Reset
+  alias ControlPlane.Repo
 
   @doc "Runs all pending migrations for every configured repo."
   def migrate do
@@ -27,22 +28,33 @@ defmodule ControlPlane.Release do
   @spec reset_credits(keyword()) :: :ok
   def reset_credits(opts \\ []) do
     load_app()
-    {:ok, _} = Application.ensure_all_started(@app)
+    doen? = Keyword.get(opts, :doen, false)
 
-    regels = Reset.plan()
-
-    Enum.each(regels, fn %{email: email, saldo: saldo} ->
-      IO.puts("#{String.pad_trailing(email, 34)} #{Reset.euro(saldo)} -> 0.00 EUR")
-    end)
-
-    if Keyword.get(opts, :doen, false) do
-      Reset.apply!()
-      IO.puts("\n#{length(regels)} tegoed(en) teruggezet.")
-    else
-      IO.puts("\nProefdraai over #{length(regels)} tegoed(en). Roep aan met doen: true.")
-    end
+    # Alleen de repo starten, niet de hele applicatie. `ensure_all_started` zou
+    # ook de webserver optuigen, en die poort is op productie al bezet door de
+    # instantie die gewoon draait — de taak viel daar prompt op om.
+    {:ok, _, _} = Ecto.Migrator.with_repo(Repo, fn _repo -> rapporteer(doen?) end)
 
     :ok
+  end
+
+  defp rapporteer(doen?) do
+    regels = Reset.plan()
+    Enum.each(regels, &toon/1)
+    afronden(regels, doen?)
+  end
+
+  defp toon(%{email: email, saldo: saldo}) do
+    IO.puts("#{String.pad_trailing(email, 34)} #{Reset.euro(saldo)} -> 0.00 EUR")
+  end
+
+  defp afronden(regels, true) do
+    Reset.apply!()
+    IO.puts("\n#{length(regels)} tegoed(en) teruggezet.")
+  end
+
+  defp afronden(regels, false) do
+    IO.puts("\nProefdraai over #{length(regels)} tegoed(en). Roep aan met doen: true.")
   end
 
   @doc "Rolls `repo` back to `version`."
