@@ -246,19 +246,32 @@ func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
 }
 
 // Capacity implements provider.Provider. It queries node status and the guest
-// list and combines them on a best-effort basis.
+// lists and combines them on a best-effort basis.
+//
+// Both QEMU guests and LXC containers count. A node is rarely only Bunk's: on
+// the first one the router, the control plane and three containers were already
+// there, and the containers alone held 2.5 GB. Asking only for /qemu made that
+// memory invisible and the node advertised capacity it did not have.
 func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
 	var ns nodeStatus
 	if err := c.doJSON(ctx, http.MethodGet, "/nodes/"+url.PathEscape(c.cfg.Node)+"/status", nil, &ns); err != nil {
 		return provider.Capacity{}, err
 	}
 
-	var gl guestList
-	// A failure to list guests is non-fatal: we still report node totals.
-	if err := c.doJSON(ctx, http.MethodGet, "/nodes/"+url.PathEscape(c.cfg.Node)+"/qemu", nil, &gl); err != nil {
-		return parseCapacity(ns, nil), nil
+	// A failure to list one kind is non-fatal: we still report node totals and
+	// whatever the other list gave. It does make the node look emptier than it
+	// is, so the heartbeat that follows is the pessimistic case, not a silent
+	// overstatement of a whole node.
+	guests := make([]guestEntry, 0, 8)
+	for _, kind := range []string{"qemu", "lxc"} {
+		var gl guestList
+		path := "/nodes/" + url.PathEscape(c.cfg.Node) + "/" + kind
+		if err := c.doJSON(ctx, http.MethodGet, path, nil, &gl); err != nil {
+			continue
+		}
+		guests = append(guests, gl.Data...)
 	}
-	return parseCapacity(ns, gl.Data), nil
+	return parseCapacity(ns, guests), nil
 }
 
 // --- Lifecycle ------------------------------------------------------------
