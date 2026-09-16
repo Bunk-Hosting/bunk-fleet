@@ -194,7 +194,6 @@ func TestAuthHeader(t *testing.T) {
 }
 
 func TestParseCapacity(t *testing.T) {
-	const mib = 1 << 20
 	const gib = 1 << 30
 
 	// freeMem wordt nog steeds gezet omdat Proxmox het meestuurt, maar het is
@@ -357,5 +356,33 @@ func TestParseCapacityMemoryNeverNegative(t *testing.T) {
 	}
 	if got.AvailVCPU != 0 {
 		t.Errorf("AvailVCPU = %d, want 0 bij overcommit", got.AvailVCPU)
+	}
+}
+
+// LXC-containers tellen net zo hard mee als VM's.
+//
+// De agent vroeg eerst alleen /nodes/{node}/qemu op. Op de eerste node hielden
+// drie containers 2,5 GB vast die daardoor onzichtbaar bleven: hij meldde 6211
+// MB vrij terwijl er 3651 te vergeven was. parseCapacity maakt geen onderscheid
+// naar soort gast; deze test legt vast dat het ook niet mag.
+func TestParseCapacityCountsContainersToo(t *testing.T) {
+	const mib = 1 << 20
+
+	var ns nodeStatus
+	ns.Data.CPUInfo.CPUs = 4
+	ns.Data.Memory.Total = 11843 * mib
+
+	guests := []guestEntry{
+		{VMID: 102, Status: "running", CPUs: 2, MaxMem: 4096 * mib}, // VM
+		{VMID: 100, Status: "running", CPUs: 1, MaxMem: 512 * mib},  // VM
+		{VMID: 105, Status: "running", CPUs: 1, MaxMem: 1024 * mib}, // VM
+		{VMID: 101, Status: "running", CPUs: 1, MaxMem: 1024 * mib}, // container
+		{VMID: 103, Status: "running", CPUs: 1, MaxMem: 512 * mib},  // container
+		{VMID: 104, Status: "running", CPUs: 1, MaxMem: 1024 * mib}, // container
+	}
+
+	got := parseCapacity(ns, guests)
+	if got.AvailRAMMB != 3651 {
+		t.Errorf("AvailRAMMB = %d, want 3651 (VM's én containers afgetrokken)", got.AvailRAMMB)
 	}
 }
