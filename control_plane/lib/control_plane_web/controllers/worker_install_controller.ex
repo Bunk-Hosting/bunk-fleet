@@ -76,7 +76,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
 
     conn
     |> put_resp_content_type("text/x-shellscript")
-    |> send_resp(200, wizard(cp))
+    |> send_resp(200, render_script(cp))
   end
 
   defp request_base(%{scheme: scheme, host: host, port: port}) do
@@ -84,7 +84,17 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     "#{scheme}://#{host}#{p}"
   end
 
-  defp wizard(cp) do
+  @doc """
+  Bouwt het installatiescript op voor een control plane op `cp`.
+
+  Publiek omdat het script buiten een request gecontroleerd moet kunnen worden:
+  het is shell die uit een Elixir-string wordt samengesteld, dus de compiler
+  zegt er niets over en een typefout komt anders pas boven water op de machine
+  van een operator, halverwege een installatie als root. CI rendert het hiermee
+  en haalt het door `bash -n`.
+  """
+  @spec render_script(String.t()) :: String.t()
+  def render_script(cp) do
     template_id = Application.get_env(:control_plane, :default_template_id, 9000)
 
     """

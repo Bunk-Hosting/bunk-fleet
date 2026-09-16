@@ -123,6 +123,16 @@ jobs:
       - name: Run tests
         run: mix test
 
+      # Het installatiescript is shell die uit een Elixir-string wordt opgebouwd,
+      # dus de compiler zegt er niets over. Hier wel, want deze runner heeft bash;
+      # de container waarin de suite lokaal draait niet, en een test die zich per
+      # omgeving anders gedraagt is geen test.
+      - name: Install script is valid shell
+        run: |
+          mix run --no-start -e 'File.write!("install.sh", ControlPlaneWeb.WorkerInstallController.render_script("https://app.example.test"))'
+          bash -n install.sh
+          rm -f install.sh
+
       # Dialyzer last: it is the slowest step and the least likely to fail, so
       # everything cheaper gets to report first.
       - name: Restore Dialyzer PLT

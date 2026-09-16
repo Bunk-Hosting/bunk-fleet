@@ -48,6 +48,10 @@ defmodule ControlPlane.Release do
     IO.puts("#{String.pad_trailing(email, 34)} #{Reset.euro(saldo)} -> 0.00 EUR")
   end
 
+  defp afronden([], _doen?) do
+    IO.puts("Alle tegoeden staan al op nul.")
+  end
+
   defp afronden(regels, true) do
     Reset.apply!()
     IO.puts("\n#{length(regels)} tegoed(en) teruggezet.")
