@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, HardDrive, Trash2, Plus, Copy, Check } from "lucide-react";
+import { Loader2, RefreshCw, HardDrive, Trash2, Plus, Copy, Check, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,17 +16,33 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   pending: "outline",
 };
 
-function Bar({ used, total }: { used: number; total: number }) {
-  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+function Bar({ used, total }: { used: number | null; total: number | null }) {
+  // Nog niets gemeld is iets anders dan nul gemeld. "0/0" leest als een node
+  // zonder capaciteit, terwijl het betekent dat hij nog nooit iets heeft gezegd.
+  if (total === null || total === 0) {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">nog niet gemeld</div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" />
+      </div>
+    );
+  }
+
+  const gebruikt = used ?? 0;
+  const pct = Math.min(100, Math.round((gebruikt / total) * 100));
   return (
     <div className="space-y-1">
-      <div className="text-xs text-muted-foreground">{used}/{total}</div>
+      <div className="text-xs text-muted-foreground">{gebruikt}/{total}</div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 }
+
+// MB naar hele GB, met null als null: een node die niets meldt houdt "niets
+// gemeld" en wordt geen nul.
+const gb = (mb: number | null) => (mb === null ? null : Math.round(mb / 1024));
 
 function NodesInner() {
   const { toast } = useToast();
@@ -191,7 +207,8 @@ function NodesInner() {
 
       <div className="grid gap-4">
         {nodes.map((n) => {
-          const used = (t: number, a: number) => Math.max(0, t - a);
+          const used = (t: number | null, a: number | null) =>
+            t === null || a === null ? null : Math.max(0, t - a);
           return (
             <Card key={n.id}>
               <CardContent className="space-y-3 p-4">
@@ -253,13 +270,30 @@ function NodesInner() {
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium">RAM (GB)</p>
-                    <Bar used={Math.round(used(n.total_ram_mb, n.available_ram_mb) / 1024)} total={Math.round(n.total_ram_mb / 1024)} />
+                    <Bar
+                      used={gb(used(n.total_ram_mb, n.available_ram_mb))}
+                      total={gb(n.total_ram_mb)}
+                    />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium">Schijf (GB)</p>
                     <Bar used={used(n.total_disk_gb, n.available_disk_gb)} total={n.total_disk_gb} />
                   </div>
                 </div>
+                {n.capacity_error && (
+                  // Een node die leeft maar zijn hypervisor niet kan bereiken zag er
+                  // vroeger uit als een machine die uit staat. Dit is het verschil.
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                    <div className="text-xs">
+                      <p className="font-medium">Agent draait, maar kan de hypervisor niet bevragen</p>
+                      <p className="mt-0.5 break-words text-muted-foreground">{n.capacity_error}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Er wordt niets nieuws op deze node geplaatst zolang dit er staat.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {n.last_heartbeat_at && (
                   <p className="text-xs text-muted-foreground">
                     Laatste heartbeat: {new Date(n.last_heartbeat_at).toLocaleString("nl-NL")}

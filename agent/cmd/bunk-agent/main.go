@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -158,14 +159,15 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 		})
 	default:
 		return proxmox.New(proxmox.Config{
-			BackupStorage: cfg.Proxmox.BackupStorage,
-			Host:          cfg.Proxmox.Host,
-			Node:          cfg.Proxmox.Node,
-			TokenID:       cfg.Proxmox.TokenID,
-			TokenSecret:   cfg.Proxmox.TokenSecret,
-			VerifySSL:     cfg.Proxmox.VerifySSL,
-			Bridge:        cfg.VpsNetwork.Bridge,
-			VLAN:          cfg.VpsNetwork.VLAN,
+			BackupStorage:     cfg.Proxmox.BackupStorage,
+			VCPUOversubscribe: cfg.Proxmox.VCPUOversubscribe,
+			Host:              cfg.Proxmox.Host,
+			Node:              cfg.Proxmox.Node,
+			TokenID:           cfg.Proxmox.TokenID,
+			TokenSecret:       cfg.Proxmox.TokenSecret,
+			VerifySSL:         cfg.Proxmox.VerifySSL,
+			Bridge:            cfg.VpsNetwork.Bridge,
+			VLAN:              cfg.VpsNetwork.VLAN,
 		})
 	}
 }
@@ -202,27 +204,38 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 	hbCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
+	hb := transport.Heartbeat{
+		NodeID:  cp.NodeID(),
+		At:      time.Now().UTC(),
+		Version: version,
+	}
+
+	// A failed capacity query used to return here, which meant no heartbeat at
+	// all. The control plane then saw the same thing it sees for a machine that
+	// is switched off, and marked the node offline after two minutes -- hiding
+	// the fact that the agent is alive and that the hypervisor API is the
+	// problem. Report the failure instead: the node stays visible, and the
+	// control plane zeroes what it may schedule on it.
 	capacity, err := prov.Capacity(hbCtx)
 	if err != nil {
 		logger.Error("capacity query failed", "err", err)
-		return
-	}
-	capacity = capOffer(capacity, offer)
-
-	hb := transport.Heartbeat{
-		NodeID:      cp.NodeID(),
-		At:          time.Now().UTC(),
-		TotalVCPU:   capacity.TotalVCPU,
-		AvailVCPU:   capacity.AvailVCPU,
-		TotalRAMMB:  capacity.TotalRAMMB,
-		AvailRAMMB:  capacity.AvailRAMMB,
-		TotalDiskGB: capacity.TotalDiskGB,
-		AvailDiskGB: capacity.AvailDiskGB,
-		Version:     version,
+		hb.CapacityError = capacityReason(err)
+	} else {
+		capacity = capOffer(capacity, offer)
+		hb.TotalVCPU = capacity.TotalVCPU
+		hb.AvailVCPU = capacity.AvailVCPU
+		hb.TotalRAMMB = capacity.TotalRAMMB
+		hb.AvailRAMMB = capacity.AvailRAMMB
+		hb.TotalDiskGB = capacity.TotalDiskGB
+		hb.AvailDiskGB = capacity.AvailDiskGB
 	}
 
 	if err := cp.SendHeartbeat(hbCtx, hb); err != nil {
 		logger.Error("heartbeat send failed", "err", err)
+		return
+	}
+	if hb.CapacityError != "" {
+		logger.Info("heartbeat sent without capacity", "reason", hb.CapacityError)
 		return
 	}
 	logger.Info("heartbeat sent",
@@ -230,6 +243,22 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		"avail_ram_mb", capacity.AvailRAMMB,
 		"avail_disk_gb", capacity.AvailDiskGB,
 	)
+}
+
+// capacityReason turns a provider error into something an operator can act on
+// in the panel. It is trimmed because the column is bounded and a wall of text
+// is not more useful than its first line -- the agent's own log has the rest.
+func capacityReason(err error) string {
+	const maxLen = 200
+
+	reason := strings.TrimSpace(err.Error())
+	if reason == "" {
+		reason = "onbekende fout bij het opvragen van de capaciteit"
+	}
+	if len(reason) > maxLen {
+		reason = reason[:maxLen]
+	}
+	return reason
 }
 
 // consumeCommands drains the command channel until it is closed (on context

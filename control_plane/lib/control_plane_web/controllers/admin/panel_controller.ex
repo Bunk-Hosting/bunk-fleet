@@ -649,7 +649,8 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       available_ram_mb: n.available_ram_mb,
       available_disk_gb: n.available_disk_gb,
       last_heartbeat_at: n.last_heartbeat_at && DateTime.to_iso8601(n.last_heartbeat_at),
-      agent_version: n.agent_version
+      agent_version: n.agent_version,
+      capacity_error: n.capacity_error
     }
   end
 

@@ -45,6 +45,14 @@ type Config struct {
 	// BackupStorage is the PVE storage vzdump archives are written to. Empty
 	// means "local", which is the storage every install has.
 	BackupStorage string
+	// VCPUOversubscribe is how many vCPUs may be handed out per physical core.
+	// RAM cannot be oversubscribed -- hand out more than there is and something
+	// gets killed -- but a vCPU is a share of time, not a piece of hardware, and
+	// every hypervisor hands out more of them than it has cores. Counting them
+	// like RAM means a host can never sell more vCPU than it physically has, and
+	// stops selling entirely once its own guests use them up. Zero or less means
+	// the default.
+	VCPUOversubscribe int
 }
 
 // Client is a Proxmox VE provider implementation.
@@ -204,10 +212,23 @@ type guestList struct {
 // filesystem has left.
 //
 // It is split out from Capacity so it can be unit-tested without a live PVE.
-func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
+// defaultVCPUOversubscribe is the ratio used when none is configured. Three is
+// the conservative end of what hosting providers run; it is a default, not a
+// recommendation, and BUNK_VCPU_OVERSUBSCRIBE exists for the operator who knows
+// their own workload.
+const defaultVCPUOversubscribe = 3
+
+func parseCapacity(ns nodeStatus, guests []guestEntry, oversubscribe int) provider.Capacity {
 	const mib = 1 << 20
 	const gib = 1 << 30
 
+	if oversubscribe < 1 {
+		oversubscribe = defaultVCPUOversubscribe
+	}
+
+	// Total stays the honest physical count: that is what this machine is, and it
+	// is what an operator recognises in the panel. The oversubscription only
+	// widens what may still be handed out.
 	totalVCPU := ns.Data.CPUInfo.CPUs
 	totalRAMMB := int(ns.Data.Memory.Total / mib)
 
@@ -220,7 +241,7 @@ func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
 		}
 	}
 
-	availVCPU := totalVCPU - usedVCPU
+	availVCPU := totalVCPU*oversubscribe - usedVCPU
 	if availVCPU < 0 {
 		availVCPU = 0
 	}
@@ -271,7 +292,7 @@ func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
 		}
 		guests = append(guests, gl.Data...)
 	}
-	return parseCapacity(ns, guests), nil
+	return parseCapacity(ns, guests, c.cfg.VCPUOversubscribe), nil
 }
 
 // --- Lifecycle ------------------------------------------------------------

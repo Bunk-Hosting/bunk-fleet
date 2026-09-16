@@ -15,9 +15,20 @@ defmodule ControlPlaneWeb.HeartbeatController do
       # De agent meldt zowel zijn totalen als wat hij daarvan nog vrij ziet. Dat
       # laatste gaat naar reported_avail_*, niet naar available_*: dat laatste is
       # van de scheduler en mag niet door een heartbeat overschreven worden.
+      #
+      # `capacity_error` is de uitzondering op "een heartbeat meldt capaciteit":
+      # een agent die zijn hypervisor niet kan bevragen hoort alsnog te melden dat
+      # hij leeft, met de reden erbij. Zonder dat is hij niet te onderscheiden van
+      # een machine die uit staat.
       total_attrs =
         params
-        |> Map.take(["total_vcpu", "total_ram_mb", "total_disk_gb", "agent_version"])
+        |> Map.take([
+          "total_vcpu",
+          "total_ram_mb",
+          "total_disk_gb",
+          "agent_version",
+          "capacity_error"
+        ])
         |> Map.merge(%{
           "reported_avail_vcpu" => params["avail_vcpu"],
           "reported_avail_ram_mb" => params["avail_ram_mb"],

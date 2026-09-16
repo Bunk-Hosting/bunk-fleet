@@ -651,15 +651,21 @@ export interface AdminNode {
   status: string;
   owner_email: string | null;
   region: string | null;
-  total_vcpu: number;
-  total_ram_mb: number;
-  total_disk_gb: number;
-  available_vcpu: number;
-  available_ram_mb: number;
-  available_disk_gb: number;
+  // Null tot de eerste geslaagde heartbeat: een node die nog nooit heeft gemeld
+  // heeft geen capaciteit van nul, hij heeft er geen. Het verschil hoort in het
+  // scherm te blijven staan, anders lijkt een stille node een lege node.
+  total_vcpu: number | null;
+  total_ram_mb: number | null;
+  total_disk_gb: number | null;
+  available_vcpu: number | null;
+  available_ram_mb: number | null;
+  available_disk_gb: number | null;
   last_heartbeat_at: string | null;
   /** De build die deze node draait; null bij een agent van voor het versiestempel. */
   agent_version: string | null;
+  // Gevuld als de agent leeft maar zijn hypervisor niet kan bevragen. Dan is
+  // de node online zonder capaciteit, en dit zegt waarom.
+  capacity_error: string | null;
 }
 
 /**

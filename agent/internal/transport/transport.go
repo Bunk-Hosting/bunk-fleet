@@ -128,6 +128,12 @@ type Heartbeat struct {
 	// question the dashboard can answer, instead of one you answer by searching
 	// a stripped binary for a log string.
 	Version string `json:"agent_version,omitempty"`
+	// CapacityError says why this heartbeat carries no measured capacity. An
+	// agent that cannot reach its hypervisor is still alive and must still say
+	// so: without this the control plane sees nothing at all and marks the node
+	// offline, which looks exactly like a machine that is switched off and hides
+	// the one fact the operator needs. Empty on a normal heartbeat.
+	CapacityError string `json:"capacity_error,omitempty"`
 }
 
 // Command is a single instruction dispatched by the control plane.

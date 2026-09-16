@@ -22,6 +22,9 @@ type ProxmoxConfig struct {
 	TokenID     string
 	TokenSecret string
 	VerifySSL   bool
+	// VCPUOversubscribe is how many vCPUs may be handed out per physical core;
+	// 0 means the provider's default. RAM and disk are never oversubscribed.
+	VCPUOversubscribe int
 	// BackupStorage is the PVE storage VPS backups are written to; empty means
 	// "local", the storage every install has.
 	BackupStorage string
@@ -174,6 +177,10 @@ func Load() (Config, error) {
 			envOr("BUNK_PROXMOX_BACKUP_STORAGE", ""),
 			"PVE storage for VPS backups (empty = local)")
 
+		pveVCPUOver = fs.Int("proxmox-vcpu-oversubscribe",
+			envInt("BUNK_VCPU_OVERSUBSCRIBE", 0, &envErrs),
+			"vCPUs handed out per physical core (0 = default)")
+
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second, &envErrs), "capacity heartbeat interval")
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
@@ -227,12 +234,13 @@ func Load() (Config, error) {
 		},
 		ManageNetwork: *manageNetwork,
 		Proxmox: ProxmoxConfig{
-			Host:          *pveHost,
-			Node:          *pveNode,
-			TokenID:       *pveTokID,
-			TokenSecret:   *pveSecret,
-			VerifySSL:     *pveVerify,
-			BackupStorage: *pveBackupStorage,
+			Host:              *pveHost,
+			Node:              *pveNode,
+			TokenID:           *pveTokID,
+			TokenSecret:       *pveSecret,
+			VerifySSL:         *pveVerify,
+			BackupStorage:     *pveBackupStorage,
+			VCPUOversubscribe: *pveVCPUOver,
 		},
 		Esxi: EsxiConfig{
 			URL:          *esxiURL,

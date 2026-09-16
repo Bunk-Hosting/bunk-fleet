@@ -278,10 +278,12 @@ defmodule ControlPlane.Fleet do
         :total_ram_mb,
         :total_disk_gb,
         :agent_version,
+        :capacity_error,
         :reported_avail_vcpu,
         :reported_avail_ram_mb,
         :reported_avail_disk_gb
       ])
+      |> without_capacity_when_unknown()
 
     attrs =
       totals
@@ -307,6 +309,24 @@ defmodule ControlPlane.Fleet do
     |> Repo.update()
     |> tap_ok(fn _node -> if transition?, do: Events.broadcast_changed(:node) end)
   end
+
+  # Een heartbeat met een capacity_error komt van een agent die leeft maar zijn
+  # hypervisor niet kan bevragen. De getallen die daarbij zitten zijn nullen en
+  # geen meting, dus de laatst bekende totalen blijven staan -- die zeggen nog
+  # steeds wat deze machine is. Wat de agent vrij ziet gaat wel op nul: zolang
+  # hij niet kan kijken, mag de scheduler er niets op zetten.
+  defp without_capacity_when_unknown(%{capacity_error: reden} = totals)
+       when is_binary(reden) and reden != "" do
+    totals
+    |> Map.drop([:total_vcpu, :total_ram_mb, :total_disk_gb])
+    |> Map.merge(%{
+      reported_avail_vcpu: 0,
+      reported_avail_ram_mb: 0,
+      reported_avail_disk_gb: 0
+    })
+  end
+
+  defp without_capacity_when_unknown(totals), do: Map.put_new(totals, :capacity_error, nil)
 
   # Runs `fun` only when `result` is `{:ok, value}`, then returns `result`
   # unchanged. Used to fire a best-effort PubSub event as a side-effect after a

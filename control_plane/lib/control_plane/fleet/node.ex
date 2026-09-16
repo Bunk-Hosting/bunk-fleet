@@ -49,6 +49,11 @@ defmodule ControlPlane.Fleet.Node do
     # agent die nog van voor het versiestempel is.
     field :agent_version, :string
 
+    # Waarom deze node geen capaciteit kon melden, in de woorden van de agent.
+    # Leeg is het normale geval; staat hier iets, dan leeft de agent maar komt
+    # hij niet bij zijn hypervisor -- en plaatst de scheduler er niets.
+    field :capacity_error, :string
+
     # Wat de agent als vrij meldt. Los van available_*, dat van de scheduler is:
     # deze cijfers kennen ook wat er op de machine draait buiten Bunk om. nil =
     # nog niets gemeld; de scheduler slaat de eis dan over.
@@ -97,6 +102,7 @@ defmodule ControlPlane.Fleet.Node do
       :available_disk_gb,
       :last_heartbeat_at,
       :agent_version,
+      :capacity_error,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb,
@@ -246,6 +252,7 @@ defmodule ControlPlane.Fleet.Node do
       :total_disk_gb,
       :last_heartbeat_at,
       :agent_version,
+      :capacity_error,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb
@@ -277,6 +284,7 @@ defmodule ControlPlane.Fleet.Node do
       :available_disk_gb,
       :last_heartbeat_at,
       :agent_version,
+      :capacity_error,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb,

@@ -262,7 +262,7 @@ func TestParseCapacity(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parseCapacity(tc.ns, tc.guests)
+			got := parseCapacity(tc.ns, tc.guests, 1)
 			if got.TotalVCPU != tc.want.totalVCPU {
 				t.Errorf("TotalVCPU = %d, want %d", got.TotalVCPU, tc.want.totalVCPU)
 			}
@@ -292,7 +292,7 @@ func TestParseCapacityRootFSFreeFallback(t *testing.T) {
 	ns.Data.RootFS.Avail = 0        // not provided
 	ns.Data.RootFS.Free = 150 * gib // fallback source
 
-	got := parseCapacity(ns, nil)
+	got := parseCapacity(ns, nil, 1)
 	if got.AvailDiskGB != 150 {
 		t.Fatalf("AvailDiskGB fallback = %d, want 150", got.AvailDiskGB)
 	}
@@ -322,7 +322,7 @@ func TestParseCapacityMemoryCountsRunningGuests(t *testing.T) {
 		{VMID: 9000, Status: "stopped", CPUs: 2, MaxMem: 2048 * mib},
 	}
 
-	got := parseCapacity(ns, guests)
+	got := parseCapacity(ns, guests, 1)
 
 	// 11843 - (4096 + 512 + 1024) = 6211. Niet 878 (free) en niet 11843 (totaal).
 	if got.AvailRAMMB != 6211 {
@@ -350,7 +350,7 @@ func TestParseCapacityMemoryNeverNegative(t *testing.T) {
 		{VMID: 1, Status: "running", CPUs: 4, MaxMem: 4096 * mib},
 	}
 
-	got := parseCapacity(ns, guests)
+	got := parseCapacity(ns, guests, 1)
 	if got.AvailRAMMB != 0 {
 		t.Errorf("AvailRAMMB = %d, want 0 bij overcommit", got.AvailRAMMB)
 	}
@@ -381,8 +381,70 @@ func TestParseCapacityCountsContainersToo(t *testing.T) {
 		{VMID: 104, Status: "running", CPUs: 1, MaxMem: 1024 * mib}, // container
 	}
 
-	got := parseCapacity(ns, guests)
+	got := parseCapacity(ns, guests, 1)
 	if got.AvailRAMMB != 3651 {
 		t.Errorf("AvailRAMMB = %d, want 3651 (VM's én containers afgetrokken)", got.AvailRAMMB)
+	}
+}
+
+// nodeStatusFor bouwt een nodeStatus voor de tests hieronder. Dezelfde vorm als
+// de lokale helper in TestParseCapacity, maar op pakketniveau zodat meer dan een
+// test hem kan gebruiken.
+func nodeStatusFor(cpus int, totalMem, freeMem, totalDisk, availDisk int64) nodeStatus {
+	var ns nodeStatus
+	ns.Data.CPUInfo.CPUs = cpus
+	ns.Data.Memory.Total = totalMem
+	ns.Data.Memory.Free = freeMem
+	ns.Data.RootFS.Total = totalDisk
+	ns.Data.RootFS.Avail = availDisk
+	return ns
+}
+
+// Dit is de storing die deze tests bewaken. De control-plane-host heeft vier
+// fysieke cores en draait er zelf zeven aan gasten op -- volstrekt normaal, want
+// een vCPU is een aandeel in tijd en geen stuk hardware. Toch rekende de agent
+// 4 - 7 = 0 vrij, waarna de scheduler nergens meer iets kon plaatsen en elke
+// bestelling strandde op 409 no_capacity. RAM blijft wel streng: meer uitdelen
+// dan er is betekent dat er iets omvalt.
+func TestVCPUMayBeOversubscribedButRAMMayNot(t *testing.T) {
+	const gib = 1 << 30
+
+	ns := nodeStatusFor(4, 16*gib, 4*gib, 100*gib, 60*gib)
+	guests := []guestEntry{
+		{Status: "running", CPUs: 2, MaxMem: 4 * gib},
+		{Status: "running", CPUs: 2, MaxMem: 4 * gib},
+		{Status: "running", CPUs: 3, MaxMem: 2 * gib},
+	}
+
+	got := parseCapacity(ns, guests, 3)
+
+	// 4 cores x 3 = 12 uitdeelbaar, 7 vergeven, 5 over.
+	if got.AvailVCPU != 5 {
+		t.Errorf("AvailVCPU = %d, want 5", got.AvailVCPU)
+	}
+	// Het totaal blijft de eerlijke fysieke telling: dat is wat deze machine is.
+	if got.TotalVCPU != 4 {
+		t.Errorf("TotalVCPU = %d, want 4 (het fysieke aantal)", got.TotalVCPU)
+	}
+	// RAM ongemoeid: 16 GB totaal, 10 GB vergeven, 6 GB over.
+	if got.AvailRAMMB != 6*1024 {
+		t.Errorf("AvailRAMMB = %d, want %d", got.AvailRAMMB, 6*1024)
+	}
+}
+
+func TestVCPUOversubscribeFallsBackToTheDefault(t *testing.T) {
+	const gib = 1 << 30
+
+	ns := nodeStatusFor(4, 16*gib, 16*gib, 100*gib, 60*gib)
+	guests := []guestEntry{{Status: "running", CPUs: 4, MaxMem: 1 * gib}}
+
+	// Nul of minder is "niet ingesteld", niet "deel niets uit": een node met een
+	// lege of ontbrekende instelling moet blijven werken.
+	for _, factor := range []int{0, -1} {
+		got := parseCapacity(ns, guests, factor)
+		want := 4*defaultVCPUOversubscribe - 4
+		if got.AvailVCPU != want {
+			t.Errorf("factor %d: AvailVCPU = %d, want %d", factor, got.AvailVCPU, want)
+		}
 	}
 }
