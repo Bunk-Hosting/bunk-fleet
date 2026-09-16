@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
-ENV_FILE=/opt/bunk-fleet/.env.prod
+# De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
+# GitHub Actions-runner ze vanuit zijn eigen checkout kan draaien; standaard de
+# map waar dit script zelf in staat, zodat een handmatige aanroep vanaf /opt
+# blijft werken zoals hij deed.
+ROOT="${BUNK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
+# De secrets staan bewust NIET in de repo en niet in GitHub: ze liggen op de
+# machine zelf. Een uitrol leest ze daar, waar ze al waren.
+ENV_FILE="${BUNK_ENV_FILE:-/opt/bunk-fleet/.env.prod}"
 NET=bunkfleet
 PGNAME=bf-prod-pg
 CPNAME=bf-prod-cp
@@ -8,7 +16,7 @@ IMG=bunk-fleet-cp:latest
 
 # Dezelfde stempel als in de agentbinary: build-prod.sh schrijft hem hiernaast
 # weg. Hieraan leest de uitrol af welke nodes nog op een oudere agent draaien.
-BUNK_BUILD_VERSION="$(cat /opt/bunk-fleet/.build-version 2>/dev/null || echo "")"
+BUNK_BUILD_VERSION="$(cat "$ROOT/.build-version" 2>/dev/null || echo "")"
 
 # 1. Network (idempotent)
 docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/dev/null

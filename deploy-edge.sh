@@ -11,6 +11,11 @@ set -euo pipefail
 exec 9>/tmp/bunk-deploy-edge.lock
 flock 9
 
+# De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
+# GitHub Actions-runner ze vanuit zijn eigen checkout kan draaien; standaard de
+# map waar dit script zelf in staat, zodat een handmatige aanroep vanaf /opt
+# blijft werken zoals hij deed.
+ROOT="${BUNK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 NET=bunkfleet
 # frontend: internal only now (nginx fronts it)
 docker rm -f bunk-frontend >/dev/null 2>&1 || true
@@ -21,7 +26,7 @@ docker run -d --name bunk-frontend --network "$NET" --restart unless-stopped \
 docker rm -f bunk-edge >/dev/null 2>&1 || true
 docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
   -p 3001:80 \
-  -v /opt/bunk-fleet/edge.conf:/etc/nginx/conf.d/default.conf:ro \
+  -v "$ROOT/edge.conf":/etc/nginx/conf.d/default.conf:ro \
   nginx:1.27-alpine >/dev/null
 sleep 2
 echo "edge: $(docker inspect -f '{{.State.Status}}' bunk-edge)  frontend: $(docker inspect -f '{{.State.Status}}' bunk-frontend)"

@@ -3,7 +3,11 @@
 # static dir (served at /dist/bunk-worker for the install wizard). Run before
 # deploy-prod.sh:  bash build-prod.sh && bash deploy-prod.sh
 set -euo pipefail
-ROOT=/opt/bunk-fleet
+# De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
+# GitHub Actions-runner ze vanuit zijn eigen checkout kan draaien; standaard de
+# map waar dit script zelf in staat, zodat een handmatige aanroep vanaf /opt
+# blijft werken zoals hij deed.
+ROOT="${BUNK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 echo "=== 1/2 building worker agent binary (linux/amd64, static) ==="
 mkdir -p "$ROOT/control_plane/priv/static/dist"

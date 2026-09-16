@@ -1,0 +1,53 @@
+name: Deploy
+
+# Uitrollen gebeurt hier, niet vanaf iemands laptop. Een push naar main die de
+# CI haalt gaat vanzelf naar productie; er is geen tussenstap waar een mens iets
+# moet draaien en dus ook geen stap die iemand kan overslaan.
+on:
+  push:
+    branches: [main]
+  # Handmatig starten blijft mogelijk, bijvoorbeeld om een uitrol te herhalen
+  # nadat een machine terug is van onderhoud.
+  workflow_dispatch:
+
+# Twee uitrollen tegelijk hebben elkaar hier eerder de das omgedaan: allebei
+# bouwden ze hetzelfde image en de tweede herstartte de control plane terwijl de
+# eerste nog migreerde. Eén tegelijk, en een nieuwe wacht netjes.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # De self-hosted runner draait op de machine waar de stack staat. Dat is
+    # bewust: de secrets liggen daar in .env.prod en hoeven zo nooit in GitHub.
+    runs-on: [self-hosted, bunk-fleet]
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bouwen
+        run: bash build-prod.sh
+
+      - name: Control plane uitrollen
+        # Draait de migraties en vervangt de container. Het script faalt zelf als
+        # de nieuwe container niet gezond opkomt, dus een kapotte uitrol maakt
+        # deze stap rood in plaats van stilletts door te gaan.
+        run: bash deploy-prod.sh
+
+      - name: Frontend en edge uitrollen
+        run: bash deploy-frontend.sh
+
+      - name: Controleren dat het draait
+        # Een groene uitrol die niets serveert is geen groene uitrol.
+        run: |
+          set -e
+          for url in http://127.0.0.1:4000/api/v1/auth/me http://127.0.0.1:3001/login; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url")
+            echo "$url -> $code"
+            case "$code" in
+              200|401) ;;
+              *) echo "onverwachte status voor $url"; exit 1 ;;
+            esac
+          done
