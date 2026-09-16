@@ -62,19 +62,6 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
-  Returns the nodes attributed to the cost centre `owner_email` (matching
-  `nodes.owner_email`), region preloaded, newest first.
-  """
-  def list_nodes_for_owner(owner_email) do
-    Repo.all(
-      from n in Node,
-        where: n.owner_email == ^owner_email,
-        order_by: [desc: n.inserted_at],
-        preload: [:region]
-    )
-  end
-
-  @doc """
   Closes a node to new VPSes without taking anything away from the ones on it.
 
   This is what you do before maintenance, before removing a node, or when a
@@ -217,11 +204,6 @@ defmodule ControlPlane.Fleet do
 
   defp coerce_int(_), do: nil
 
-  @doc "The default region for self-service create (the old app is single-region)."
-  def default_region do
-    Repo.one(from r in Region, order_by: [asc: r.code], limit: 1)
-  end
-
   @doc """
   Returns the VPSes owned by `owner_id`, region preloaded, newest first.
   """
@@ -340,14 +322,6 @@ defmodule ControlPlane.Fleet do
   end
 
   defp maybe_init_available(attrs, %Node{}, _totals), do: attrs
-
-  @doc """
-  Lists nodes in the given region that are currently `:online` and have reported a
-  recent heartbeat.
-  """
-  def list_online_nodes_in_region(region_id) do
-    Repo.all(online_nodes_in_region_query(region_id))
-  end
 
   @doc """
   Query (not executed) selecting `:online` nodes in `region_id` with a recent

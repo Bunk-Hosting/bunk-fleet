@@ -21,7 +21,6 @@ defmodule ControlPlane.Credits do
 
   def signup_bonus_cents, do: @signup_bonus_cents
   def size_prices_cents, do: @size_prices_cents
-  def price_for_size(size), do: Map.get(@size_prices_cents, size)
 
   @doc "Current balance in cents (0 when the user has no entries)."
   @spec balance_cents(binary()) :: integer()

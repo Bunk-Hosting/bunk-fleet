@@ -17,11 +17,7 @@ import type {
   VpsPackage,
   VpsStatus,
   OsChoice,
-  BillingSettings,
   BillingOverview,
-  Invoice,
-  CompanySettings,
-  AdminBillingOverview,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -845,46 +841,5 @@ export const billingApi = {
       },
     };
   },
-  settings: {
-    get: async (): Promise<{ data: BillingSettings }> => ({
-      data: { billing_cycle: "monthly", billing_email: "" },
-    }),
-    update: async (
-      _data: Partial<BillingSettings>
-    ): Promise<{ data: BillingSettings }> => {
-      // bunk-fleet has no billing-settings endpoint yet — don't echo the input
-      // back as if it persisted (the UI would claim a save that never happened).
-      throw new Error("Factuurinstellingen zijn nog niet beschikbaar.");
-    },
-  },
-  invoices: {
-    list: async (
-      _params?: { status?: string }
-    ): Promise<{ data: { count: number; results: Invoice[] } }> => ({
-      data: { count: 0, results: [] },
-    }),
-    get: async (_id: string | number): Promise<{ data: Invoice }> => {
-      throw new Error("Facturen zijn nog niet beschikbaar.");
-    },
-    pay: async (_id: string | number) => {
-      throw new Error("Facturen zijn nog niet beschikbaar.");
-    },
-    downloadUrl: (_id: string | number) => "#",
-  },
 };
 
-export const adminBillingApi = {
-  overview: () => api.get<AdminBillingOverview>("/beheer/billing/overview"),
-  company: {
-    get: () => api.get<CompanySettings>("/beheer/billing/company"),
-    update: (data: Partial<CompanySettings>) =>
-      api.post<CompanySettings>("/beheer/billing/company", data),
-  },
-  invoices: {
-    list: (params?: { status?: string; user_id?: string }) =>
-      api.get<{ count: number; results: Invoice[] }>("/beheer/billing/invoices", { params }),
-    get: (id: string) => api.get<Invoice>(`/beheer/billing/invoices/${id}`),
-    update: (id: string, data: { status: string }) =>
-      api.patch<Invoice>(`/beheer/billing/invoices/${id}`, data),
-  },
-};
