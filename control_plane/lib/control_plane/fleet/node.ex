@@ -48,6 +48,13 @@ defmodule ControlPlane.Fleet.Node do
     # De build die deze node draait, zoals de agent hem zelf meldt. nil = een
     # agent die nog van voor het versiestempel is.
     field :agent_version, :string
+
+    # Wat de agent als vrij meldt. Los van available_*, dat van de scheduler is:
+    # deze cijfers kennen ook wat er op de machine draait buiten Bunk om. nil =
+    # nog niets gemeld; de scheduler slaat de eis dan over.
+    field :reported_avail_vcpu, :integer
+    field :reported_avail_ram_mb, :integer
+    field :reported_avail_disk_gb, :integer
     field :enroll_token_hash, :string
     field :agent_token_hash, :string
     field :public_key, :string
@@ -90,6 +97,9 @@ defmodule ControlPlane.Fleet.Node do
       :available_disk_gb,
       :last_heartbeat_at,
       :agent_version,
+      :reported_avail_vcpu,
+      :reported_avail_ram_mb,
+      :reported_avail_disk_gb,
       :enroll_token_hash,
       :agent_token_hash,
       :public_key,
@@ -235,7 +245,10 @@ defmodule ControlPlane.Fleet.Node do
       :total_ram_mb,
       :total_disk_gb,
       :last_heartbeat_at,
-      :agent_version
+      :agent_version,
+      :reported_avail_vcpu,
+      :reported_avail_ram_mb,
+      :reported_avail_disk_gb
     ])
     |> clamp_capacity()
     |> trim_agent_version()
@@ -264,6 +277,9 @@ defmodule ControlPlane.Fleet.Node do
       :available_disk_gb,
       :last_heartbeat_at,
       :agent_version,
+      :reported_avail_vcpu,
+      :reported_avail_ram_mb,
+      :reported_avail_disk_gb,
       :status
     ])
     |> clamp_capacity()

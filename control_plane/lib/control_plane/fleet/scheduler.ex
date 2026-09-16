@@ -88,6 +88,17 @@ defmodule ControlPlane.Fleet.Scheduler do
         n.available_ram_mb >= ^ram_mb and
         n.available_disk_gb >= ^disk_gb
     )
+    # Tweede horde: wat de agent zelf nog vrij ziet. available_* begint bij het
+    # totaal van de machine en weet niets van wat daar al op draaide voordat
+    # Bunk er was — op de eerste node scheelde dat 7 GB. is_nil laat een node
+    # door die nog niets heeft gemeld; die stond er voorheen ook, en hem nu
+    # blokkeren zou een werkende node onbruikbaar maken op een ontbrekend cijfer.
+    |> where(
+      [n],
+      (is_nil(n.reported_avail_vcpu) or n.reported_avail_vcpu >= ^vcpu) and
+        (is_nil(n.reported_avail_ram_mb) or n.reported_avail_ram_mb >= ^ram_mb) and
+        (is_nil(n.reported_avail_disk_gb) or n.reported_avail_disk_gb >= ^disk_gb)
+    )
     # Deterministic lock-acquisition order so concurrent schedulers never grab
     # the same candidate rows in opposite orders (deadlock avoidance).
     |> order_by([n], asc: n.id)

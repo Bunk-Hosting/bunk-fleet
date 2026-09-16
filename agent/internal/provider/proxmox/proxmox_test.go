@@ -197,6 +197,9 @@ func TestParseCapacity(t *testing.T) {
 	const mib = 1 << 20
 	const gib = 1 << 30
 
+	// freeMem wordt nog steeds gezet omdat Proxmox het meestuurt, maar het is
+	// bewust niet meer de bron van AvailRAMMB: dat is totaal minus wat draaiende
+	// gasten toegewezen hebben. Deze tests laten die twee juist uiteenlopen.
 	makeNS := func(cpus int, totalMem, freeMem, totalDisk, availDisk int64) nodeStatus {
 		var ns nodeStatus
 		ns.Data.CPUInfo.CPUs = cpus
@@ -218,40 +221,43 @@ func TestParseCapacity(t *testing.T) {
 		}
 	}{
 		{
+			// Zonder gasten is het hele geheugen te vergeven, ook al noemt
+			// Proxmox maar 48 GB "free" — de rest zit in page cache en komt vrij
+			// zodra een gast hem nodig heeft.
 			name: "no guests reports full node",
 			ns:   makeNS(16, 64*gib, 48*gib, 500*gib, 400*gib),
 			want: struct {
 				totalVCPU, availVCPU     int
 				totalRAMMB, availRAMMB   int
 				totalDiskGB, availDiskGB int
-			}{16, 16, 65536, 49152, 500, 400},
+			}{16, 16, 65536, 65536, 500, 400},
 		},
 		{
-			name: "running guests subtract from avail vcpu",
+			name: "running guests subtract from avail vcpu and ram",
 			ns:   makeNS(16, 64*gib, 48*gib, 500*gib, 400*gib),
 			guests: []guestEntry{
-				{Status: "running", CPUs: 4},
-				{Status: "running", CPUs: 2},
-				{Status: "stopped", CPUs: 8}, // ignored
+				{Status: "running", CPUs: 4, MaxMem: 8 * gib},
+				{Status: "running", CPUs: 2, MaxMem: 4 * gib},
+				{Status: "stopped", CPUs: 8, MaxMem: 32 * gib}, // ignored
 			},
 			want: struct {
 				totalVCPU, availVCPU     int
 				totalRAMMB, availRAMMB   int
 				totalDiskGB, availDiskGB int
-			}{16, 10, 65536, 49152, 500, 400},
+			}{16, 10, 65536, 53248, 500, 400},
 		},
 		{
-			name: "oversubscribed avail vcpu clamps at zero",
+			name: "oversubscribed avail vcpu and ram clamp at zero",
 			ns:   makeNS(4, 16*gib, 4*gib, 100*gib, 10*gib),
 			guests: []guestEntry{
-				{Status: "running", CPUs: 4},
-				{Status: "running", CPUs: 4},
+				{Status: "running", CPUs: 4, MaxMem: 12 * gib},
+				{Status: "running", CPUs: 4, MaxMem: 12 * gib},
 			},
 			want: struct {
 				totalVCPU, availVCPU     int
 				totalRAMMB, availRAMMB   int
 				totalDiskGB, availDiskGB int
-			}{4, 0, 16384, 4096, 100, 10},
+			}{4, 0, 16384, 0, 100, 10},
 		},
 	}
 
@@ -290,5 +296,66 @@ func TestParseCapacityRootFSFreeFallback(t *testing.T) {
 	got := parseCapacity(ns, nil)
 	if got.AvailDiskGB != 150 {
 		t.Fatalf("AvailDiskGB fallback = %d, want 150", got.AvailDiskGB)
+	}
+}
+
+// Geheugen wordt geteld als toezegging, niet als vrije RAM van de host.
+//
+// Dit is de fout die op de eerste node zat: de control plane dacht 10,8 GB vrij
+// te hebben terwijl er 8 GB aan draaiende gasten was toegewezen. Linux besteedt
+// zijn ongebruikte geheugen aan page cache, dus "free" is onbruikbaar laag; wat
+// een scheduler nodig heeft is wat er nog te beloven valt.
+func TestParseCapacityMemoryCountsRunningGuests(t *testing.T) {
+	const mib = 1 << 20
+	const gib = 1 << 30
+
+	var ns nodeStatus
+	ns.Data.CPUInfo.CPUs = 4
+	ns.Data.Memory.Total = 11843 * mib
+	ns.Data.Memory.Free = 878 * mib // page cache slokt de rest op
+	ns.Data.RootFS.Total = 94 * gib
+	ns.Data.RootFS.Avail = 70 * gib
+
+	guests := []guestEntry{
+		{VMID: 102, Status: "running", CPUs: 2, MaxMem: 4096 * mib},
+		{VMID: 100, Status: "running", CPUs: 1, MaxMem: 512 * mib},
+		{VMID: 105, Status: "running", CPUs: 1, MaxMem: 1024 * mib},
+		{VMID: 9000, Status: "stopped", CPUs: 2, MaxMem: 2048 * mib},
+	}
+
+	got := parseCapacity(ns, guests)
+
+	// 11843 - (4096 + 512 + 1024) = 6211. Niet 878 (free) en niet 11843 (totaal).
+	if got.AvailRAMMB != 6211 {
+		t.Errorf("AvailRAMMB = %d, want 6211 (totaal minus draaiende gasten)", got.AvailRAMMB)
+	}
+	if got.TotalRAMMB != 11843 {
+		t.Errorf("TotalRAMMB = %d, want 11843", got.TotalRAMMB)
+	}
+	// Een gestopte gast houdt geen geheugen bezet op de host.
+	if got.AvailVCPU != 0 {
+		t.Errorf("AvailVCPU = %d, want 0", got.AvailVCPU)
+	}
+}
+
+// Meer toegewezen dan de machine heeft (overcommit) mag geen negatief getal
+// opleveren: dat zou als "heel veel vrij" door de scheduler heen glippen.
+func TestParseCapacityMemoryNeverNegative(t *testing.T) {
+	const mib = 1 << 20
+
+	var ns nodeStatus
+	ns.Data.CPUInfo.CPUs = 2
+	ns.Data.Memory.Total = 2048 * mib
+
+	guests := []guestEntry{
+		{VMID: 1, Status: "running", CPUs: 4, MaxMem: 4096 * mib},
+	}
+
+	got := parseCapacity(ns, guests)
+	if got.AvailRAMMB != 0 {
+		t.Errorf("AvailRAMMB = %d, want 0 bij overcommit", got.AvailRAMMB)
+	}
+	if got.AvailVCPU != 0 {
+		t.Errorf("AvailVCPU = %d, want 0 bij overcommit", got.AvailVCPU)
 	}
 }

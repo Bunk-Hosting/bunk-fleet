@@ -273,7 +273,15 @@ defmodule ControlPlane.Fleet do
     totals =
       total_attrs
       |> normalize_keys()
-      |> Map.take([:total_vcpu, :total_ram_mb, :total_disk_gb, :agent_version])
+      |> Map.take([
+        :total_vcpu,
+        :total_ram_mb,
+        :total_disk_gb,
+        :agent_version,
+        :reported_avail_vcpu,
+        :reported_avail_ram_mb,
+        :reported_avail_disk_gb
+      ])
 
     attrs =
       totals

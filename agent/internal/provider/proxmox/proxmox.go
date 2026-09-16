@@ -188,9 +188,20 @@ type guestList struct {
 }
 
 // parseCapacity computes a Capacity snapshot from a node status payload and the
-// list of guests. Available vCPU is derived by subtracting the sum of vCPUs
-// assigned to running guests from the node's physical core count (clamped at
-// zero). Memory/disk availability come straight from the node status.
+// list of guests.
+//
+// Both vCPU and memory availability are "what can still be promised": the node's
+// physical total minus what running guests already have assigned. For memory
+// that is deliberately NOT the node's free memory. Linux spends whatever it can
+// on page cache, so a host with 4 GB genuinely spare reports a few hundred MB
+// free; scheduling on that number refuses every placement. It is equally wrong
+// in the other direction on a freshly booted host, where nothing is cached yet
+// and the free figure counts memory that guests will claim the moment they are
+// started.
+//
+// Disk stays filesystem-based: guest volumes are thin, so a 20 GB disk does not
+// occupy 20 GB until it is written, and the binding constraint is what the
+// filesystem has left.
 //
 // It is split out from Capacity so it can be unit-tested without a live PVE.
 func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
@@ -198,23 +209,32 @@ func parseCapacity(ns nodeStatus, guests []guestEntry) provider.Capacity {
 	const gib = 1 << 30
 
 	totalVCPU := ns.Data.CPUInfo.CPUs
+	totalRAMMB := int(ns.Data.Memory.Total / mib)
 
 	usedVCPU := 0
+	usedRAMMB := 0
 	for _, g := range guests {
 		if g.Status == "running" {
 			usedVCPU += int(g.CPUs)
+			usedRAMMB += int(g.MaxMem / mib)
 		}
 	}
+
 	availVCPU := totalVCPU - usedVCPU
 	if availVCPU < 0 {
 		availVCPU = 0
 	}
 
+	availRAMMB := totalRAMMB - usedRAMMB
+	if availRAMMB < 0 {
+		availRAMMB = 0
+	}
+
 	out := provider.Capacity{
 		TotalVCPU:   totalVCPU,
 		AvailVCPU:   availVCPU,
-		TotalRAMMB:  int(ns.Data.Memory.Total / mib),
-		AvailRAMMB:  int(ns.Data.Memory.Free / mib),
+		TotalRAMMB:  totalRAMMB,
+		AvailRAMMB:  availRAMMB,
 		TotalDiskGB: int(ns.Data.RootFS.Total / gib),
 		AvailDiskGB: int(ns.Data.RootFS.Avail / gib),
 	}

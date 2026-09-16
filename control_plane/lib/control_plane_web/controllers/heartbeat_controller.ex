@@ -12,8 +12,17 @@ defmodule ControlPlaneWeb.HeartbeatController do
     node = conn.assigns.current_node
 
     if node.id == node_id do
+      # De agent meldt zowel zijn totalen als wat hij daarvan nog vrij ziet. Dat
+      # laatste gaat naar reported_avail_*, niet naar available_*: dat laatste is
+      # van de scheduler en mag niet door een heartbeat overschreven worden.
       total_attrs =
-        Map.take(params, ["total_vcpu", "total_ram_mb", "total_disk_gb", "agent_version"])
+        params
+        |> Map.take(["total_vcpu", "total_ram_mb", "total_disk_gb", "agent_version"])
+        |> Map.merge(%{
+          "reported_avail_vcpu" => params["avail_vcpu"],
+          "reported_avail_ram_mb" => params["avail_ram_mb"],
+          "reported_avail_disk_gb" => params["avail_disk_gb"]
+        })
 
       case Fleet.mark_online_heartbeat(node, total_attrs) do
         {:ok, _node} ->
