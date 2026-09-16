@@ -660,6 +660,13 @@ export interface AdminNode {
   available_vcpu: number | null;
   available_ram_mb: number | null;
   available_disk_gb: number | null;
+  /**
+   * Wat de node zelf nog vrij ziet. Plaatsing vereist dat dit én available_*
+   * ruimte hebben, dus het laagste van de twee is het bindende getal.
+   */
+  reported_avail_vcpu: number | null;
+  reported_avail_ram_mb: number | null;
+  reported_avail_disk_gb: number | null;
   last_heartbeat_at: string | null;
   /** De build die deze node draait; null bij een agent van voor het versiestempel. */
   agent_version: string | null;

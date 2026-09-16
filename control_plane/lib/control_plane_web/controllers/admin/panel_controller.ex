@@ -648,6 +648,12 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       available_vcpu: n.available_vcpu,
       available_ram_mb: n.available_ram_mb,
       available_disk_gb: n.available_disk_gb,
+      # Wat de node zelf ziet. Plaatsing vereist dat beide cijfers ruimte hebben,
+      # dus het laagste is het bindende -- en alleen het schedulercijfer tonen
+      # geeft een beheerder een ruimer beeld dan de werkelijkheid toelaat.
+      reported_avail_vcpu: n.reported_avail_vcpu,
+      reported_avail_ram_mb: n.reported_avail_ram_mb,
+      reported_avail_disk_gb: n.reported_avail_disk_gb,
       last_heartbeat_at: n.last_heartbeat_at && DateTime.to_iso8601(n.last_heartbeat_at),
       agent_version: n.agent_version,
       capacity_error: n.capacity_error

@@ -207,8 +207,22 @@ function NodesInner() {
 
       <div className="grid gap-4">
         {nodes.map((n) => {
+          // Plaatsing vereist dat zowel de scheduler als de node zelf ruimte
+          // ziet, dus het laagste van de twee bepaalt wat er nog verkocht kan
+          // worden. Alleen het schedulercijfer tonen geeft een ruimer beeld dan
+          // de werkelijkheid toelaat -- en dat is precies het getal waarop je
+          // besluit of er een node bij moet.
+          const bindend = (sched: number | null, gemeld: number | null) =>
+            sched === null ? gemeld : gemeld === null ? sched : Math.min(sched, gemeld);
           const used = (t: number | null, a: number | null) =>
             t === null || a === null ? null : Math.max(0, t - a);
+          const vrijVcpu = bindend(n.available_vcpu, n.reported_avail_vcpu);
+          const vrijRam = bindend(n.available_ram_mb, n.reported_avail_ram_mb);
+          const vrijDisk = bindend(n.available_disk_gb, n.reported_avail_disk_gb);
+          const wijktAf =
+            n.reported_avail_ram_mb !== null &&
+            n.available_ram_mb !== null &&
+            n.reported_avail_ram_mb < n.available_ram_mb;
           return (
             <Card key={n.id}>
               <CardContent className="space-y-3 p-4">
@@ -266,18 +280,15 @@ function NodesInner() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <p className="mb-1 text-xs font-medium">vCPU</p>
-                    <Bar used={used(n.total_vcpu, n.available_vcpu)} total={n.total_vcpu} />
+                    <Bar used={used(n.total_vcpu, vrijVcpu)} total={n.total_vcpu} />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium">RAM (GB)</p>
-                    <Bar
-                      used={gb(used(n.total_ram_mb, n.available_ram_mb))}
-                      total={gb(n.total_ram_mb)}
-                    />
+                    <Bar used={gb(used(n.total_ram_mb, vrijRam))} total={gb(n.total_ram_mb)} />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium">Schijf (GB)</p>
-                    <Bar used={used(n.total_disk_gb, n.available_disk_gb)} total={n.total_disk_gb} />
+                    <Bar used={used(n.total_disk_gb, vrijDisk)} total={n.total_disk_gb} />
                   </div>
                 </div>
                 {n.capacity_error && (
@@ -293,6 +304,17 @@ function NodesInner() {
                       </p>
                     </div>
                   </div>
+                )}
+                {wijktAf && (
+                  // De scheduler houdt zijn eigen boekhouding bij en die kan
+                  // ruimer staan dan wat er werkelijk vrij is. Dat verschil
+                  // hoort zichtbaar te zijn, niet weggemiddeld.
+                  <p className="text-xs text-muted-foreground">
+                    De node meldt minder vrij dan de scheduler denkt te hebben
+                    ({Math.round((n.reported_avail_ram_mb ?? 0) / 1024)} GB tegenover{" "}
+                    {Math.round((n.available_ram_mb ?? 0) / 1024)} GB RAM). Er wordt met het laagste
+                    gerekend.
+                  </p>
                 )}
                 {n.last_heartbeat_at && (
                   <p className="text-xs text-muted-foreground">

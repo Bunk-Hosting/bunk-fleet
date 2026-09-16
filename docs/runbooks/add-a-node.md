@@ -215,6 +215,21 @@ of two things the agent depends on: the disk must be `scsi0`, because that is
 what gets resized to the ordered size, and there must be a cloud-init drive, or
 the address, user and SSH keys are configured into nothing.
 
+**Node is online but offers nothing.** The panel says how much is free; when the
+node reports less than the scheduler thinks it has, it says so there too, and the
+lower of the two is what counts. A node offering zero vCPU on a busy host used to
+be normal and is not any more: available vCPU is `cores × BUNK_VCPU_OVERSUBSCRIBE
+− assigned`, default factor 3. RAM is never oversubscribed, so a node with no
+free RAM genuinely has none.
+
+**Node shows a warning that the agent cannot reach the hypervisor.** That is an
+agent which is alive and heartbeating, but whose Proxmox or ESXi API is not
+answering — wrong address or port, a token without the rights it needs, or a
+firewall in between. The message in the panel is the agent's own error. Nothing
+new is placed on that node until it clears, which it does by itself on the first
+heartbeat that can measure again. Before this existed such a node simply went
+offline, which looked exactly like a machine that was switched off.
+
 **VPS gets an address but no connectivity.** Ask who owns the gateway. With
 `BUNK_MANAGE_NETWORK=1`, `ip addr show vmbr2` on the node should carry the
 assigned `.1`, `sysctl net.ipv4.ip_forward` should be 1, and

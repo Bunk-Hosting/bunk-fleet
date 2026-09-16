@@ -78,12 +78,27 @@ stored control-plane side.
 | `hypervisor`          | enum   | `proxmox` \| `esxi`.                          |
 | `capacity_total`      | object | `{ vcpu, ram_mb, disk_gb }` — physical totals. |
 | `capacity_available`  | object | `{ vcpu, ram_mb, disk_gb }` — schedulable now. |
+| `capacity_error`      | string | Why this heartbeat carries no measured capacity. Absent when all is well. |
 | `health`              | enum   | `healthy` \| `degraded` \| `draining`.         |
 | `running_vms`         | uint   | Count of active VMs (sanity/reconciliation).   |
 
 Missed heartbeats (channel down or stale `seq`) mark the node offline and
 trigger drain/reschedule (see `architecture.md`). Capacity from the latest
 heartbeat is the scheduler's input for placement.
+
+**`capacity_error` exists because silence is ambiguous.** An agent that cannot
+reach its hypervisor used to send nothing at all, so the node went offline after
+the heartbeat TTL — indistinguishable from a machine that is switched off, and
+missing the one fact needed to fix it. Such an agent now heartbeats anyway and
+says why it has no numbers. The control plane keeps the last known totals (the
+zeroes in that message are the absence of a measurement, not a measurement of
+zero), sets what the node reports as free to zero so nothing is placed there, and
+clears the field on the next healthy heartbeat.
+
+**Available vCPU is oversubscribed, available RAM is not.** Hand out more RAM
+than exists and something gets killed; a vCPU is a share of time. The agent
+reports `cores × BUNK_VCPU_OVERSUBSCRIBE − assigned` (default factor 3) as
+available, while `capacity_total.vcpu` stays the honest physical count.
 
 ---
 
