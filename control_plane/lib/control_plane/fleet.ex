@@ -72,8 +72,8 @@ defmodule ControlPlane.Fleet do
   Emptying it afterwards is deliberate and manual — moving a customer's VPS is not
   something to trigger by changing a status field.
   """
-  def drain_node(node_id) do
-    set_node_status(node_id, :draining, [:online, :offline, :pending])
+  def drain_node(node_id, reason \\ nil) do
+    set_node_status(node_id, :draining, [:online, :offline, :pending], reason)
   end
 
   @doc """
@@ -84,29 +84,33 @@ defmodule ControlPlane.Fleet do
   seconds away at most — settles the question either way.
   """
   def resume_node(node_id) do
-    set_node_status(node_id, :online, [:draining])
+    # De reden verdwijnt bij het heropenen: iemand heeft ernaar gekeken en
+    # besloten dat het weer mag. Hem laten staan zou de volgende lezer vertellen
+    # dat er nog iets mis is.
+    set_node_status(node_id, :online, [:draining], nil)
   end
 
-  defp set_node_status(node_id, status, from) do
+  defp set_node_status(node_id, status, from, reason) do
     case Repo.get(Node, node_id) do
       nil ->
         {:error, :not_found}
 
       %Node{status: current} = node when current != status ->
         if current in from,
-          do: transition_node(node, status),
+          do: transition_node(node, status, reason),
           else: {:error, {:invalid_status, current}}
 
       %Node{} = node ->
         # Already there. Draining a draining node is not an error; it is the
-        # state the caller asked for.
-        {:ok, node}
+        # state the caller asked for. De reden wordt wel bijgewerkt: een tweede
+        # mislukking met een andere oorzaak is nieuwere informatie dan de eerste.
+        transition_node(node, status, reason)
     end
   end
 
-  defp transition_node(node, status) do
+  defp transition_node(node, status, reason) do
     node
-    |> Node.mark_online_changeset(%{status: status})
+    |> Node.mark_online_changeset(%{status: status, drain_reason: reason})
     |> Repo.update()
     |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
   end

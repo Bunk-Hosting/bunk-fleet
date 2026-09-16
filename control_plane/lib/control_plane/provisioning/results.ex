@@ -29,6 +29,7 @@ defmodule ControlPlane.Provisioning.Results do
   alias ControlPlane.Clock
   alias ControlPlane.Console.HostKeys
   alias ControlPlane.Credits
+  alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Command
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Node
@@ -146,7 +147,7 @@ defmodule ControlPlane.Provisioning.Results do
 
   # Provision failed: mark the VPS failed and release its held reservation, adding
   # the freed capacity back to the node.
-  defp finalize_vps(multi, %Command{kind: :provision, vps_id: vps_id}, :failed, result)
+  defp finalize_vps(multi, %Command{kind: :provision, vps_id: vps_id} = command, :failed, result)
        when not is_nil(vps_id) do
     multi
     |> Multi.run(:vps, fn repo, _changes ->
@@ -175,6 +176,7 @@ defmodule ControlPlane.Provisioning.Results do
     # compensating :delete so the orphan is destroyed rather than lingering and
     # silently consuming the operator's real capacity forever.
     |> maybe_cleanup_orphan(vps_id, sane_vm_id(result["vm_id"]))
+    |> maybe_close_node(command, result)
   end
 
   # Delete succeeded: the VM is gone, so mark the VPS :deleted, release its
@@ -431,6 +433,48 @@ defmodule ControlPlane.Provisioning.Results do
       {:ok, vps}
     end
   end
+
+  # Een ontbrekende template is geen incident maar een toestand: hij is er niet,
+  # dus de volgende bestelling op deze node faalt precies zo, en de daarna ook.
+  # Zolang de node openstaat kiest de scheduler hem juist het liefst -- hij heeft
+  # immers de meeste vrije ruimte, want er staat niets op. Daarom sluit een
+  # mislukking hierop de node af in plaats van hem te laten herhalen.
+  #
+  # Alleen bij dit soort fout. Een netwerkhapering of een volle schijf is wel een
+  # incident, en een node daarvoor dichtzetten zou een tijdelijke storing tot een
+  # blijvende maken.
+  @template_failure ~r/(clone template|template .* not found|template is required|esxi: template)/i
+
+  defp maybe_close_node(multi, %Command{node_id: node_id}, result) when not is_nil(node_id) do
+    reden = result["error"]
+
+    if is_binary(reden) and Regex.match?(@template_failure, reden) do
+      Multi.run(multi, :close_node, fn _repo, _changes -> close_node(node_id, reden) end)
+    else
+      multi
+    end
+  end
+
+  defp maybe_close_node(multi, _command, _result), do: multi
+
+  defp close_node(node_id, reden) do
+    Logger.warning("node #{node_id} afgesloten na een mislukte bestelling: #{kort(reden)}")
+
+    case Fleet.drain_node(node_id, kort(reden)) do
+      {:ok, node} ->
+        {:ok, node}
+
+      # Een node die intussen is verwijderd of al dicht staat mag deze transactie
+      # niet terugdraaien: de VPS is nog steeds mislukt en dat moet hoe dan ook
+      # worden vastgelegd.
+      {:error, _reden} ->
+        {:ok, :niet_afgesloten}
+    end
+  end
+
+  # De kolom is begrensd en het paneel toont hem op een kaart; de eerste regel
+  # zegt wat er mis is, de rest staat in Activiteit.
+  defp kort(reden), do: reden |> String.trim() |> String.slice(0, 200)
 
   defp maybe_cleanup_orphan(multi, _vps_id, nil), do: multi
 

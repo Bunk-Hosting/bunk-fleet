@@ -54,6 +54,11 @@ defmodule ControlPlane.Fleet.Node do
     # hij niet bij zijn hypervisor -- en plaatst de scheduler er niets.
     field :capacity_error, :string
 
+    # Waarom deze node dicht staat voor nieuwe VPS'en, als het systeem hem zelf
+    # heeft afgesloten. Leeg bij een node die een beheerder met de hand sloot:
+    # die weet zelf waarom.
+    field :drain_reason, :string
+
     # Wat de agent als vrij meldt. Los van available_*, dat van de scheduler is:
     # deze cijfers kennen ook wat er op de machine draait buiten Bunk om. nil =
     # nog niets gemeld; de scheduler slaat de eis dan over.
@@ -103,6 +108,7 @@ defmodule ControlPlane.Fleet.Node do
       :last_heartbeat_at,
       :agent_version,
       :capacity_error,
+      :drain_reason,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb,
@@ -253,6 +259,7 @@ defmodule ControlPlane.Fleet.Node do
       :last_heartbeat_at,
       :agent_version,
       :capacity_error,
+      :drain_reason,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb
@@ -285,6 +292,7 @@ defmodule ControlPlane.Fleet.Node do
       :last_heartbeat_at,
       :agent_version,
       :capacity_error,
+      :drain_reason,
       :reported_avail_vcpu,
       :reported_avail_ram_mb,
       :reported_avail_disk_gb,

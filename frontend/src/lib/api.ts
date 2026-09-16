@@ -673,6 +673,11 @@ export interface AdminNode {
   // Gevuld als de agent leeft maar zijn hypervisor niet kan bevragen. Dan is
   // de node online zonder capaciteit, en dit zegt waarom.
   capacity_error: string | null;
+  /**
+   * Waarom deze node dicht staat, als het systeem hem zelf heeft afgesloten na
+   * een mislukte bestelling. Leeg bij een node die met de hand is gesloten.
+   */
+  drain_reason: string | null;
 }
 
 /**

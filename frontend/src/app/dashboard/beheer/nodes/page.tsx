@@ -305,6 +305,20 @@ function NodesInner() {
                     </div>
                   </div>
                 )}
+                {n.drain_reason && (
+                  // Anders staat er alleen "draining" en weet niemand een week
+                  // later of hij weer open mag.
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                    <div className="text-xs">
+                      <p className="font-medium">Automatisch afgesloten na een mislukte bestelling</p>
+                      <p className="mt-0.5 break-words text-muted-foreground">{n.drain_reason}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Los de oorzaak op en klik daarna op Heropenen.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {wijktAf && (
                   // De scheduler houdt zijn eigen boekhouding bij en die kan
                   // ruimer staan dan wat er werkelijk vrij is. Dat verschil
