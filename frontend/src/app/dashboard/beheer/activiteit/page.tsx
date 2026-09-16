@@ -33,8 +33,10 @@ function ActiviteitInner() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(
+    // Geen setLoading hier: loading begint op true en een synchrone setState in
+    // een effect kost een extra rendercyclus. De knoppen hieronder zetten hem,
+    // want dan staat er al een tabel op het scherm die vervangen wordt.
     (status: string) => {
-      setLoading(true);
       adminApi
         .commands(status || undefined)
         .then(setCommands)
@@ -63,12 +65,23 @@ function ActiviteitInner() {
               key={f.key}
               variant={filter === f.key ? "default" : "outline"}
               size="sm"
-              onClick={() => setFilter(f.key)}
+              onClick={() => {
+                setLoading(true);
+                setFilter(f.key);
+              }}
             >
               {f.label}
             </Button>
           ))}
-          <Button variant="ghost" size="sm" className="gap-2" onClick={() => load(filter)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2"
+            onClick={() => {
+              setLoading(true);
+              load(filter);
+            }}
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>

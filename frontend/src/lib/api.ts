@@ -141,6 +141,11 @@ api.interceptors.response.use(
     // the token and send the user back to login.
     if (status === 401 && typeof window !== "undefined" && !url.includes("/auth/login") && !window.location.pathname.startsWith("/login")) {
       resetClientState();
+      // Bewust een harde navigatie en geen router.push: dit is een
+      // axios-interceptor buiten de React-boom, waar geen router bestaat. Een
+      // volledige herlaadbeurt is hier bovendien het doel — na een verlopen
+      // sessie mag er geen component blijven staan met oude gegevens erin.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/login";
     }
     return Promise.reject(error);

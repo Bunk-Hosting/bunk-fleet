@@ -32,7 +32,9 @@ export default function VpsListPage() {
   }, []);
 
   useEffect(() => {
-    fetchVps();
+    // Via een microtask: dan kan een synchrone worp uit fetchVps nooit binnen
+    // dezelfde rendercyclus state zetten. Voor de gebruiker onmerkbaar.
+    queueMicrotask(fetchVps);
   }, [fetchVps]);
 
   // Poll zolang er een VPS in een overgangsstatus zit, zodat de lijst

@@ -26,8 +26,9 @@ function KlantDetail() {
   const [data, setData] = useState<AdminUserDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Zie abonnementen/page.tsx: loading begint op true, dus geen synchrone
+  // setState in het effect.
   const load = useCallback(() => {
-    setLoading(true);
     adminApi
       .userDetail(id)
       .then(setData)

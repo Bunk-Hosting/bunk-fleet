@@ -46,7 +46,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchUser();
+    // Via een microtask: fetchUser zet state, en dat synchroon doen in een
+    // effect kost een extra rendercyclus voordat er iets op het scherm staat.
+    queueMicrotask(fetchUser);
   }, [fetchUser]);
 
   return (

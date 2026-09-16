@@ -15,7 +15,6 @@ interface GlobalErrorProps {
  */
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   React.useEffect(() => {
-    // eslint-disable-next-line no-console
     console.error("[global error boundary]", error);
   }, [error]);
 

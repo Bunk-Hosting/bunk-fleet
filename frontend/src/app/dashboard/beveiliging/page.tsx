@@ -106,10 +106,12 @@ function BeveiligingContent() {
     }
   }, [toast]);
 
-  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd
+  // Auto-start setup wanneer de gebruiker via de MFA-prompt is doorgestuurd.
+  // Via een microtask: startSetup zet meteen loading, en dat synchroon doen in
+  // een effect kost een extra rendercyclus.
   React.useEffect(() => {
     if (isMfaPrompt && user && !user.totp_enabled && step === "idle") {
-      startSetup();
+      queueMicrotask(startSetup);
     }
   }, [isMfaPrompt, user, step, startSetup]);
 

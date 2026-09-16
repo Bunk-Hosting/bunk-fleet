@@ -155,8 +155,12 @@ export default function VpsDetailPage() {
   };
 
   useEffect(() => {
-    fetchVps();
-    fetchBackups();
+    // Zie dashboard/vps/page.tsx: via een microtask, zodat een synchrone worp
+    // niet in dezelfde rendercyclus state zet.
+    queueMicrotask(() => {
+      fetchVps();
+      fetchBackups();
+    });
   }, [fetchVps, fetchBackups]);
 
   // Poll zolang de VPS in een overgangsstatus zit, of kort na een

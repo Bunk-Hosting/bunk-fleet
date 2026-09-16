@@ -25,7 +25,6 @@ interface DashboardErrorProps {
  */
 export default function DashboardError({ error, reset }: DashboardErrorProps) {
   React.useEffect(() => {
-    // eslint-disable-next-line no-console
     console.error("[dashboard error boundary]", error);
     reportClientError(error.message, {
       stack: error.stack,

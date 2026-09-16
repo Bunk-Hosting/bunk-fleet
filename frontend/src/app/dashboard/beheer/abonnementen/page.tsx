@@ -22,8 +22,10 @@ function AbonnementenInner() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // setLoading staat bewust niet hier: loading begint al op true, en een
+  // synchrone setState in een effect kost een extra rendercyclus. De
+  // verversknop zet hem wel, want dan staat er al iets op het scherm.
   const load = useCallback(() => {
-    setLoading(true);
     adminApi
       .subscriptions()
       .then(setData)
@@ -50,7 +52,15 @@ function AbonnementenInner() {
           <h1 className="text-2xl font-bold tracking-tight">Abonnementen</h1>
           <p className="text-muted-foreground">Wat er loopt, en wat er niet meer geïnd wordt.</p>
         </div>
-        <Button variant="ghost" size="sm" className="gap-2" onClick={load}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-2"
+          onClick={() => {
+            setLoading(true);
+            load();
+          }}
+        >
           <RefreshCw className="h-4 w-4" /> Ververs
         </Button>
       </div>

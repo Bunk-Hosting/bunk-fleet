@@ -30,8 +30,10 @@ function OmzetInner() {
   const [from, setFrom] = useState(jaarBegin());
   const [to, setTo] = useState(vandaag());
 
+  // Zonder setLoading: die staat al op true bij het openen, en synchroon
+  // setState aanroepen in een effect kost een extra rendercyclus. De knop
+  // hieronder zet hem wel.
   const load = useCallback(() => {
-    setLoading(true);
     adminApi
       .revenue(from, to)
       .then(setData)
@@ -90,7 +92,15 @@ function OmzetInner() {
             <label className="text-xs text-muted-foreground">Tot en met</label>
             <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" />
           </div>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={load}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2"
+            onClick={() => {
+              setLoading(true);
+              load();
+            }}
+          >
             <RefreshCw className="h-4 w-4" /> Toon
           </Button>
           <Button size="sm" className="gap-2" onClick={exporteer} disabled={!data?.invoices.length}>

@@ -11,15 +11,18 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
-  const [status, setStatus] = React.useState<"loading" | "success" | "error">("loading");
-  const [message, setMessage] = React.useState("");
+  // Of er een token in de link staat weten we bij het renderen al. Dat in een
+  // effect alsnog in state zetten kost een extra rendercyclus waarin de pagina
+  // "bezig" toont voor iets dat nooit gaat lukken.
+  const [status, setStatus] = React.useState<"loading" | "success" | "error">(
+    token ? "loading" : "error",
+  );
+  const [message, setMessage] = React.useState(
+    token ? "" : "Geen verificatietoken gevonden in de link.",
+  );
 
   React.useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      setMessage("Geen verificatietoken gevonden in de link.");
-      return;
-    }
+    if (!token) return;
 
     authApi
       .verifyEmail(token)

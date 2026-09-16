@@ -157,8 +157,11 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # eslint rechtstreeks: `next lint` is in Next 16 een dunne wrapper zonder
+      # --max-warnings, en de vlag stil verliezen zou de lintdrempel uitzetten
+      # zonder dat iemand het merkt.
       - name: Lint
-        run: npx next lint --max-warnings 0
+        run: npx eslint . --max-warnings 0
 
       - name: Known vulnerabilities
         # Production dependencies only: a dev-tool advisory should not block a

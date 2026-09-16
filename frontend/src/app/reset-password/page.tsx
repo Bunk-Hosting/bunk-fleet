@@ -17,16 +17,18 @@ function ResetPasswordContent() {
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [status, setStatus] = React.useState<"form" | "success" | "error">("form");
-  const [errorMessage, setErrorMessage] = React.useState("");
+  // Een ontbrekend token is bij het renderen al bekend; dat hoort in de
+  // begintoestand en niet in een effect, dat een extra rendercyclus kost.
+  const [status, setStatus] = React.useState<"form" | "success" | "error">(
+    token ? "form" : "error",
+  );
+  const [errorMessage, setErrorMessage] = React.useState(
+    token ? "" : "Geen resettoken gevonden in de link. Vraag een nieuwe resetlink aan.",
+  );
 
   React.useEffect(() => {
     ensureCsrfCookie();
-    if (!token) {
-      setStatus("error");
-      setErrorMessage("Geen resettoken gevonden in de link. Vraag een nieuwe resetlink aan.");
-    }
-  }, [token]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
