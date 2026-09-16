@@ -6,6 +6,10 @@ PGNAME=bf-prod-pg
 CPNAME=bf-prod-cp
 IMG=bunk-fleet-cp:latest
 
+# Dezelfde stempel als in de agentbinary: build-prod.sh schrijft hem hiernaast
+# weg. Hieraan leest de uitrol af welke nodes nog op een oudere agent draaien.
+BUNK_BUILD_VERSION="$(cat /opt/bunk-fleet/.build-version 2>/dev/null || echo "")"
+
 # 1. Network (idempotent)
 docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/dev/null
 
@@ -92,6 +96,7 @@ docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -p 127.0.0.1:4000:4000 \
   -e PHX_SERVER=true \
+  -e BUNK_BUILD_VERSION="$BUNK_BUILD_VERSION" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e ADMIN_TOKEN="$ADMIN_TOKEN" \

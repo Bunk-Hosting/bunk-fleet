@@ -33,6 +33,7 @@ defmodule ControlPlane.Fleet.Reconciler do
   alias ControlPlane.Billing
   alias ControlPlane.Credits
   alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.AgentUpdate
   alias ControlPlane.Provisioning
   alias ControlPlane.Subscriptions
 
@@ -95,6 +96,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
     settle_subscriptions()
+    roll_out_agent()
     schedule_tick(interval_ms)
     {:noreply, state}
   end
@@ -280,6 +282,16 @@ defmodule ControlPlane.Fleet.Reconciler do
         "fleet reconciler subscription settle failed: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
+  end
+
+  # De agent-uitrol gaat in golven: eerst één node als kanarie, daarna de rest.
+  # Deze tik is wat hem vooruit duwt — er gebeurt alleen iets als er iets te doen
+  # is, en zodra alles op de doelversie zit is het een enkele query.
+  defp roll_out_agent do
+    case AgentUpdate.dispatch_wave() do
+      {:dispatched, n} -> Logger.info("agent-uitrol: update klaargezet voor #{n} node(s)")
+      _ -> :ok
+    end
   end
 
   defp schedule_tick(interval_ms) do

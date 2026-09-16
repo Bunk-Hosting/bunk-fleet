@@ -1,8 +1,13 @@
 defmodule ControlPlane.FleetAgentUpdateTest do
   @moduledoc """
-  Na een uitrol moeten de nodes te horen krijgen dat ze mogen gaan kijken.
+  De uitrol van een nieuwe agentbinary gaat in golven.
+
+  Eerst één node als kanarie; pas als die zich met de nieuwe versie terugmeldt
+  volgt de rest. Blijft hij weg, dan stopt de uitrol en blijft de fleet op de
+  oude binary staan — dat is de hele reden dat dit niet meer alles-in-een-keer
+  gebeurt.
   """
-  use ControlPlane.DataCase, async: true
+  use ControlPlane.DataCase, async: false
 
   import Ecto.Query
 
@@ -12,79 +17,133 @@ defmodule ControlPlane.FleetAgentUpdateTest do
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Repo
 
-  defp region do
-    Repo.insert!(%Region{code: "nl-#{System.unique_integer([:positive])}", name: "Regio"})
+  @doel "abc1234"
+
+  setup do
+    vorige = Application.get_env(:control_plane, :build_version)
+    Application.put_env(:control_plane, :build_version, @doel)
+    on_exit(fn -> restore(vorige) end)
+
+    %{
+      regio: Repo.insert!(%Region{code: "r-#{System.unique_integer([:positive])}", name: "Regio"})
+    }
   end
 
-  defp node(status, r) do
-    Repo.insert!(%Node{
-      name: "node-#{System.unique_integer([:positive])}",
-      status: status,
-      hypervisor: :proxmox,
-      region_id: r.id
-    })
+  defp restore(nil), do: Application.delete_env(:control_plane, :build_version)
+  defp restore(v), do: Application.put_env(:control_plane, :build_version, v)
+
+  defp fleet_node(regio, attrs \\ %{}) do
+    Repo.insert!(
+      struct(
+        %Node{
+          name: "node-#{System.unique_integer([:positive])}",
+          region_id: regio.id,
+          hypervisor: :proxmox,
+          status: :online
+        },
+        attrs
+      )
+    )
   end
 
-  defp updates_for(node_id) do
+  defp updates(node_id) do
     Repo.all(from c in Command, where: c.node_id == ^node_id and c.kind == :update)
   end
 
-  test "online nodes krijgen een update, offline nodes niet" do
-    r = region()
-    online = node(:online, r)
-    offline = node(:offline, r)
-
-    assert AgentUpdate.dispatch_to_online_nodes() == 1
-
-    assert [%Command{kind: :update, status: :pending}] = updates_for(online.id)
-
-    # Een node die uit staat hoeft niets: zijn eigen timer haalt het in zodra hij
-    # terug is. Hem nu een commando geven laat alleen werk klaarliggen dat bij
-    # terugkomst al achterhaald kan zijn.
-    assert [] = updates_for(offline.id)
+  defp alle_updates do
+    Repo.all(from c in Command, where: c.kind == :update, select: c.node_id)
   end
 
-  test "een node die aan het leeglopen is telt mee" do
-    r = region()
-    draining = node(:draining, r)
+  defp afronden(node, versie) do
+    Repo.update_all(
+      from(c in Command, where: c.node_id == ^node.id and c.kind == :update),
+      set: [status: :done]
+    )
 
-    assert AgentUpdate.dispatch_to_online_nodes() == 1
-    assert [%Command{kind: :update}] = updates_for(draining.id)
+    node |> Ecto.Changeset.change(agent_version: versie) |> Repo.update!()
   end
 
-  test "twee keer uitrollen stapelt geen commando's op" do
-    r = region()
-    n = node(:online, r)
+  test "de eerste golf is één node, ook als er vier achterlopen", %{regio: r} do
+    for _ <- 1..4, do: fleet_node(r)
 
-    assert AgentUpdate.dispatch_to_online_nodes() == 1
-    # Dit is het geval dat telt: de control plane herstart een paar keer achter
-    # elkaar. Zonder deze controle staat er daarna een rij identieke commando's
-    # klaar die de node stuk voor stuk afhandelt.
-    assert AgentUpdate.dispatch_to_online_nodes() == 0
-
-    assert [_enkele] = updates_for(n.id)
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
+    assert length(alle_updates()) == 1
   end
 
-  test "een afgehandelde update blokkeert de volgende niet" do
-    r = region()
-    n = node(:online, r)
+  test "zolang de kanarie niets meldt gebeurt er niets", %{regio: r} do
+    for _ <- 1..3, do: fleet_node(r)
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
 
-    assert AgentUpdate.dispatch_to_online_nodes() == 1
-
-    [cmd] = updates_for(n.id)
-    cmd |> Ecto.Changeset.change(status: :done) |> Repo.update!()
-
-    assert AgentUpdate.dispatch_to_online_nodes() == 1
-    assert length(updates_for(n.id)) == 2
+    # Dit is de kern: een tweede tik mag de rest niet alsnog meesleuren.
+    assert :waiting = AgentUpdate.dispatch_wave()
+    assert :waiting = AgentUpdate.dispatch_wave()
+    assert length(alle_updates()) == 1
   end
 
-  test "het commando hoort bij de node en niet bij een VPS" do
-    r = region()
-    n = node(:online, r)
-    AgentUpdate.dispatch_to_online_nodes()
+  test "zodra de kanarie draait volgt de rest in groepen van twee", %{regio: r} do
+    nodes = for _ <- 1..4, do: fleet_node(r)
 
-    [cmd] = updates_for(n.id)
-    assert cmd.vps_id == nil
-    assert cmd.payload == %{}
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
+    [kanarie_id] = alle_updates()
+    kanarie = Enum.find(nodes, &(&1.id == kanarie_id))
+    afronden(kanarie, @doel)
+
+    assert {:dispatched, 2} = AgentUpdate.dispatch_wave()
+    assert :waiting = AgentUpdate.dispatch_wave()
+  end
+
+  test "een node die de doelversie al draait krijgt niets", %{regio: r} do
+    fleet_node(r, %{agent_version: @doel})
+    achter = fleet_node(r)
+
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
+    assert [_] = updates(achter.id)
+  end
+
+  test "is de hele fleet bij, dan is er niets te doen", %{regio: r} do
+    fleet_node(r, %{agent_version: @doel})
+    fleet_node(r, %{agent_version: @doel})
+
+    assert :up_to_date = AgentUpdate.dispatch_wave()
+    assert alle_updates() == []
+  end
+
+  test "offline nodes blijven buiten de uitrol", %{regio: r} do
+    uit = fleet_node(r, %{status: :offline})
+    assert :up_to_date = AgentUpdate.dispatch_wave()
+    assert updates(uit.id) == []
+  end
+
+  test "een node die leegloopt telt wel mee", %{regio: r} do
+    leeg = fleet_node(r, %{status: :draining})
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
+    assert [_] = updates(leeg.id)
+  end
+
+  test "een kanarie die vastloopt stopt de uitrol en meldt dat", %{regio: r} do
+    for _ <- 1..3, do: fleet_node(r)
+    assert {:dispatched, 1} = AgentUpdate.dispatch_wave()
+
+    # Terug in de tijd: het commando staat er langer dan het geduld toelaat.
+    Repo.update_all(
+      from(c in Command, where: c.kind == :update),
+      set: [inserted_at: DateTime.add(DateTime.utc_now(), -3600, :second)]
+    )
+
+    assert :stalled = AgentUpdate.dispatch_wave()
+
+    # En de rest blijft staan waar hij stond. Dat is het punt van een kanarie:
+    # liever een fleet op een oude binary dan een fleet op een kapotte.
+    assert length(alle_updates()) == 1
+  end
+
+  test "zonder versiestempel doet de uitrol niets", %{regio: r} do
+    Application.delete_env(:control_plane, :build_version)
+    fleet_node(r)
+
+    # Er is dan niets om "klaar" aan af te lezen. Blind versturen zou elke tik
+    # opnieuw een commando opleveren; de nachtelijke timer op de node vangt dit.
+    assert :no_target = AgentUpdate.dispatch_wave()
+    assert alle_updates() == []
   end
 end

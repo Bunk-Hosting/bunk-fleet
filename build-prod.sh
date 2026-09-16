@@ -22,6 +22,8 @@ if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
   AGENT_VERSION="${AGENT_VERSION}-vuil"
 fi
 echo "agent-versie: $AGENT_VERSION"
+# Ook voor de control plane: hij leest hieraan af welke nodes nog achterlopen.
+printf %s "$AGENT_VERSION" > "$ROOT/.build-version"
 
 docker run --rm \
   -v "$ROOT/agent":/src \

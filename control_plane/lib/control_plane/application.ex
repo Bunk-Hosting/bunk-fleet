@@ -6,8 +6,6 @@ defmodule ControlPlane.Application do
   use Application
   require Logger
 
-  alias ControlPlane.Fleet.AgentUpdate
-
   @impl true
   def start(_type, _args) do
     children =
@@ -46,23 +44,11 @@ defmodule ControlPlane.Application do
     if Application.get_env(:control_plane, :report_security_posture, true),
       do: ControlPlane.SecurityPosture.report()
 
-    # Een nieuwe control plane betekent bijna altijd ook een nieuwe agentbinary,
-    # want ze worden uit dezelfde boom gebouwd. Elke online node krijgt daarom te
-    # horen dat hij mag gaan kijken; wie al bij is doet niets. Zonder dit komt
-    # een node daar pas achter wanneer zijn eigen nachtelijke timer loopt.
-    #
-    # In een aparte taak: een node die niet luistert mag het opstarten van de
-    # control plane niet ophouden. Uit in :test, waar het de databasesandbox in
-    # zou lopen.
-    if Application.get_env(:control_plane, :dispatch_agent_updates, true),
-      do: Task.start(&dispatch_agent_updates/0)
+    # De agent-uitrol wordt niet meer hier gestart. Hij gaat in golven — eerst
+    # één node als kanarie — en dat vraagt om herhaald kijken of de vorige golf
+    # is aangekomen. De reconciler tikt daar al voor; zie Fleet.AgentUpdate.
 
     result
-  end
-
-  defp dispatch_agent_updates do
-    aantal = AgentUpdate.dispatch_to_online_nodes()
-    if aantal > 0, do: Logger.info("update klaargezet voor #{aantal} node(s)")
   end
 
   # The node-health reconciler is skipped in the test env (see config/test.exs)

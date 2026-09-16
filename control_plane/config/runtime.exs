@@ -1,5 +1,12 @@
 import Config
 
+# De build waar deze release uit komt. De agent wordt uit dezelfde boom gebouwd
+# en meldt hetzelfde stempel in zijn heartbeat, dus hieraan leest de uitrol af
+# welke nodes nog achterlopen. Ontbreekt hij, dan is er niets om tegen af te
+# lezen en doet de uitrol niets; de nachtelijke timer op elke node is dan het
+# vangnet.
+config :control_plane, build_version: System.get_env("BUNK_BUILD_VERSION")
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration
