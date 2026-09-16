@@ -16,8 +16,14 @@ browser console are all the agent dialling out over HTTPS.
 - **An API token** for it: Datacenter → Permissions → API Tokens. The agent needs
   enough rights to clone, configure, start, stop and destroy VMs
   (`PVEVMAdmin` on `/` is the blunt version).
-- **A cloud-init template** to clone. Without one the node enrols and heartbeats
-  happily and every provision fails.
+- **A cloud-init template** to clone. On a Proxmox host the installer builds one
+  for you if the VMID the control plane provisions with does not exist yet: it
+  pulls Ubuntu's own cloud image, verifies its published checksum, and turns it
+  into a template. You are asked which storage it goes on and can say no. It is
+  still a prerequisite everywhere else -- on ESXi the wizard imports an OVA, and
+  when the agent runs on a helper VM instead of the host there is no `qm` to
+  import with, so you build it by hand. Without a template the node enrols and
+  heartbeats happily and every provision fails.
 - **A bridge for customer traffic.** Node → Network → Create → Linux Bridge, no
   ports, no address. `vmbr2` by convention. It must exist before the install: the
   agent will address a bridge, never create one.
@@ -87,6 +93,26 @@ gateway on the bridge and NAT customer traffic out of the node's own uplink.
 The wizard asks for the API details, how much of the machine to offer, and the
 network question from §1. It does not ask for an IP plan: the control plane
 assigns the node a `/22` out of `10.10.0.0/16` and hands it back at enrolment.
+
+On the Proxmox host it also asks about the template, but only when one is
+missing:
+
+```
+Template voor nieuwe VPS'en:
+  Er is nog geen template met VMID 9000 op deze node. Zonder
+  template schrijft de node zich wel in, maar mislukt elke bestelling.
+  Nu aanmaken uit Ubuntu's cloud-image? (J/n): 
+  Opslag voor de template [local-lvm]: 
+```
+
+The storage has to exist; the installer checks with `pvesm status` before it
+downloads anything and lists what is available if the name is wrong. Answering
+no skips the step and leaves the node without a template, which is a legitimate
+choice if you keep a golden image of your own -- give it VMID 9000.
+
+The step is best-effort. If it fails the installer says why and carries on
+installing the agent, and it removes the half-built VM rather than leaving a
+broken 9000 behind for the next run to mistake for a finished template.
 
 ---
 
@@ -178,8 +204,16 @@ by hand.
 **Node never appears.** The token is single-use: if the install was run twice,
 the second run consumed nothing and the agent has no credentials. Mint another.
 
-**Node online, every provision fails.** Almost always the template: the name in
-`BUNK_ESXI_TEMPLATE` / the Proxmox template id does not exist on that host.
+**Node online, every provision fails.** Almost always the template. On ESXi,
+check that `BUNK_ESXI_TEMPLATE` names a VM that exists. On Proxmox, run
+`qm config 9000` on the host: no such VM means the installer's template step was
+skipped or failed, and `journalctl -u bunk-worker` will show the clone failing on
+that id. Re-run the installer to have it built, or build it by hand.
+
+A template that exists but produces unusable VPSes is nearly always missing one
+of two things the agent depends on: the disk must be `scsi0`, because that is
+what gets resized to the ordered size, and there must be a cloud-init drive, or
+the address, user and SSH keys are configured into nothing.
 
 **VPS gets an address but no connectivity.** Ask who owns the gateway. With
 `BUNK_MANAGE_NETWORK=1`, `ip addr show vmbr2` on the node should carry the

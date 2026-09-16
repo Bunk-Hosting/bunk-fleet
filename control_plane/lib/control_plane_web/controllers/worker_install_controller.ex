@@ -85,6 +85,8 @@ defmodule ControlPlaneWeb.WorkerInstallController do
   end
 
   defp wizard(cp) do
+    template_id = Application.get_env(:control_plane, :default_template_id, 9000)
+
     """
     #!/usr/bin/env bash
     # bunk-worker installer. Run on a Linux machine that can reach your Proxmox
@@ -140,6 +142,92 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       else
         echo "!! Kon de template niet automatisch aanmaken (check datastore/resource-pool/netwerk/rechten)."
         echo "   De agent draait wel, maar kan pas VPS'en aanmaken zodra er een cloud-init template bestaat."
+          return 1
+      fi
+    }
+
+    # Zero-touch Proxmox template. Een node zonder template schrijft zich vrolijk
+    # in en gaat op groen, waarna elke bestelling faalt op "clone template" --
+    # de meest gemelde storing bij een nieuwe node. Bestaat het VMID nog niet,
+    # dan halen we Ubuntu's officiele cloud-image op en maken er een template van.
+    #
+    # Alleen op de Proxmox-host zelf: importeren gaat via qm, dat lokale toegang
+    # tot de opslag nodig heeft. Over de API alleen kan dit niet. Best-effort,
+    # net als de ESXi-kant: mislukt het, dan een melding en de agent gaat door.
+    ensure_proxmox_template() {
+      if ! command -v qm >/dev/null 2>&1; then
+        echo "!! qm niet gevonden -- dit is de Proxmox-host zelf niet."
+        echo "   Maak de template met de hand aan op de host, met VMID $PX_TMPL_ID."
+        return 1
+      fi
+      if qm config "$PX_TMPL_ID" >/dev/null 2>&1; then
+        echo "-> Template $PX_TMPL_ID bestaat al -- geen actie nodig."
+        return 0
+      fi
+      # Opslag eerst controleren, voordat er honderden MB's binnengehaald worden
+      # die daarna toch nergens heen kunnen.
+      if ! pvesm status --storage "$PX_TMPL_STORE" >/dev/null 2>&1; then
+        echo "!! Opslag '$PX_TMPL_STORE' bestaat niet op deze node. Beschikbaar:"
+        pvesm status 2>/dev/null | awk 'NR > 1 { print "   - " $1 }'
+        return 1
+      fi
+      echo "-> Template $PX_TMPL_ID ontbreekt; Ubuntu cloud-image ophalen (kan enkele minuten duren)..."
+      base="https://cloud-images.ubuntu.com/releases/22.04/release"
+      imgname="ubuntu-22.04-server-cloudimg-amd64.img"
+      itmp="$(mktemp)" || { echo "!! Kon geen tijdelijk bestand maken (schijf vol? check: df -h /)"; return 1; }
+      # Ubuntu publiceert SHA256SUMS naast het image; dezelfde controle als op de
+      # binary hieronder, en de enige manier om een afgekapte download te zien
+      # voordat er een kapotte template uit rolt.
+      expected="$(curl -fsSL "$base/SHA256SUMS" 2>/dev/null | awk -v f="$imgname" '$2 == f || $2 == "*" f { print $1 }')" || expected=""
+      if ! curl -fsSL "$base/$imgname" -o "$itmp"; then
+        echo "!! Download van het cloud-image mislukt (geen netwerk of schijf vol? check: df -h /)"
+        rm -f "$itmp"; return 1
+      fi
+      if [ -n "$expected" ]; then
+        actual="$(sha256sum "$itmp" | awk '{ print $1 }')"
+        if [ "$expected" != "$actual" ]; then
+          echo "!! Checksum-mismatch op het cloud-image (verwacht $expected, kreeg $actual)."
+          echo "!! Er wordt GEEN template aangemaakt."
+          rm -f "$itmp"; return 1
+        fi
+        echo "   checksum OK ($actual)"
+      else
+        echo "   (geen SHA256SUMS op te halen -- integriteitscontrole overgeslagen)"
+      fi
+      # De VPS'en krijgen hun eigen net0 van de agent; de bridge hier is alleen
+      # wat de template zelf draagt voor het geval de agent er geen meestuurt.
+      tbridge="${VPS_BRIDGE:-vmbr0}"
+      if qm create "$PX_TMPL_ID" --name bunk-ubuntu-2204 --ostype l26 --memory 1024 --cores 1 --scsihw virtio-scsi-single --net0 "virtio,bridge=$tbridge" >/dev/null &&
+         qm importdisk "$PX_TMPL_ID" "$itmp" "$PX_TMPL_STORE" >/dev/null; then
+        rm -f "$itmp"
+      else
+        echo "!! Aanmaken of importeren mislukt (rechten, of opslag '$PX_TMPL_STORE' vol?)."
+        rm -f "$itmp"
+        qm destroy "$PX_TMPL_ID" --purge >/dev/null 2>&1 || true
+        return 1
+      fi
+      # Het volume-id uit de config lezen in plaats van het te construeren: op
+      # LVM/ZFS heet het vm-ID-disk-0, op een directory-opslag ID/vm-ID-disk-0.raw.
+      imported="$(qm config "$PX_TMPL_ID" | awk -F ': ' '/^unused[0-9]+:/ { print $2; exit }')"
+      if [ -z "$imported" ]; then
+        echo "!! De geimporteerde schijf is niet terug te vinden in de VM-config."
+        qm destroy "$PX_TMPL_ID" --purge >/dev/null 2>&1 || true
+        return 1
+      fi
+      # scsi0 en een cloud-init-drive zijn geen smaak: de agent vergroot scsi0 bij
+      # het uitrollen en zet ipconfig0/ciuser/sshkeys, wat zonder cloud-init-drive
+      # nergens landt.
+      if qm set "$PX_TMPL_ID" --scsi0 "$imported" >/dev/null &&
+         qm set "$PX_TMPL_ID" --ide2 "$PX_TMPL_STORE:cloudinit" >/dev/null &&
+         qm set "$PX_TMPL_ID" --boot order=scsi0 --serial0 socket --vga serial0 >/dev/null &&
+         qm template "$PX_TMPL_ID" >/dev/null; then
+        echo "-> Template $PX_TMPL_ID aangemaakt en klaar voor gebruik."
+      else
+        echo "!! Kon de template niet afmaken (check rechten en de opslag '$PX_TMPL_STORE')."
+        echo "   De agent draait wel, maar kan pas VPS'en aanmaken zodra er een template bestaat."
+        # Opruimen, anders staat er een halve VM met dit VMID en slaat een
+        # volgende installatie de template-stap over omdat hij "al bestaat".
+        qm destroy "$PX_TMPL_ID" --purge >/dev/null 2>&1 || true
         return 1
       fi
     }
@@ -250,9 +338,37 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
     fi
 
+    # Het VMID komt uit de control plane: dat is het template dat bij een
+    # bestelling wordt meegestuurd wanneer een pakket er zelf geen noemt. Een
+    # ander nummer hier zou een node opleveren die groen staat en niets kan.
+    PX_TMPL_ID="#{template_id}"
+    PX_TMPL_STORE=""
+    if [ "$ON_PVE_HOST" = "true" ]; then
+      echo
+      echo "Template voor nieuwe VPS'en:"
+      if qm config "$PX_TMPL_ID" >/dev/null 2>&1; then
+        echo "  Template $PX_TMPL_ID staat er al."
+      else
+        echo "  Er is nog geen template met VMID $PX_TMPL_ID op deze node. Zonder"
+        echo "  template schrijft de node zich wel in, maar mislukt elke bestelling."
+        read -r -p "  Nu aanmaken uit Ubuntu's cloud-image? (J/n): " MT </dev/tty
+        case "$MT" in
+          n|N)
+            echo "  Overgeslagen. Maak hem later met de hand aan, met VMID $PX_TMPL_ID."
+            ;;
+          *)
+            read -r -p "  Opslag voor de template [local-lvm]: " PX_TMPL_STORE </dev/tty
+            PX_TMPL_STORE="${PX_TMPL_STORE:-local-lvm}"
+            ;;
+        esac
+      fi
+    fi
+
     echo
     if [ "$HYP" = "esxi" ]; then
-      ensure_esxi_template || echo "(template-stap overgeslagen — zie melding hierboven)"
+      ensure_esxi_template || echo "(template-stap overgeslagen -- zie melding hierboven)"
+    elif [ -n "$PX_TMPL_STORE" ]; then
+      ensure_proxmox_template || echo "(template-stap overgeslagen -- zie melding hierboven)"
     fi
 
     echo
