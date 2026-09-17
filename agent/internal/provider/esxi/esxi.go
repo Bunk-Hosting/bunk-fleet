@@ -562,6 +562,21 @@ func singleLine(s string) string {
 	return s
 }
 
+// yamlQuote wraps a value in single quotes so YAML reads it as the literal text.
+//
+// Newlines are already refused by singleLine, wat het ergste geval afdekt. Maar
+// een wachtwoord als `{a: b}` wordt zonder aanhalingstekens een map, `*iets` een
+// verwijzing naar een anchor, `waarde # nog wat` verliest alles achter het hekje,
+// en `ja` wordt een boolean. Dat is geen inbraak -- de waarde komt van ons eigen
+// control plane -- maar het is wel een klant die niet kan inloggen op de VPS die
+// hij net besteld heeft, om een reden die niemand aan de buitenkant ziet.
+//
+// Binnen enkele aanhalingstekens betekent YAML niets meer, op het aanhalingsteken
+// zelf na; dat wordt verdubbeld.
+func yamlQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // cloudInit builds guestinfo metadata + userdata (NoCloud-style) from the spec.
 func cloudInit(spec provider.VMSpec) (metadata, userdata string) {
 	var b strings.Builder
@@ -593,9 +608,9 @@ func cloudInit(spec provider.VMSpec) (metadata, userdata string) {
 		b.WriteString("ssh_pwauth: true\n")
 		b.WriteString("chpasswd:\n  expire: false\n  users:\n")
 		b.WriteString("    - name: ")
-		b.WriteString(user)
+		b.WriteString(yamlQuote(user))
 		b.WriteString("\n      password: ")
-		b.WriteString(pass)
+		b.WriteString(yamlQuote(pass))
 		b.WriteString("\n      type: text\n")
 	}
 

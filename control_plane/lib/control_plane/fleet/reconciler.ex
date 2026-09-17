@@ -60,6 +60,11 @@ defmodule ControlPlane.Fleet.Reconciler do
   # zet alleen commando's in de weg van echt werk.
   @default_drift_interval_ms 30 * 60 * 1000
 
+  # Vier keer per dag. Het gaat om rijen van drie maanden oud; of die er een paar
+  # uur langer staan maakt niemand uit, en vaker kijken betekent vaker een query
+  # die niets vindt.
+  @default_purge_interval_ms 6 * 60 * 60 * 1000
+
   @doc """
   Starts the reconciler.
 
@@ -81,6 +86,7 @@ defmodule ControlPlane.Fleet.Reconciler do
       Keyword.get(opts, :backup_check_interval_ms, @default_backup_check_interval_ms)
 
     drift_interval_ms = Keyword.get(opts, :drift_interval_ms, @default_drift_interval_ms)
+    purge_interval_ms = Keyword.get(opts, :purge_interval_ms, @default_purge_interval_ms)
 
     schedule_tick(interval_ms)
 
@@ -92,7 +98,9 @@ defmodule ControlPlane.Fleet.Reconciler do
        backup_check_interval_ms: backup_check_interval_ms,
        last_backup_check_ms: nil,
        drift_interval_ms: drift_interval_ms,
-       last_drift_ms: nil
+       last_drift_ms: nil,
+       purge_interval_ms: purge_interval_ms,
+       last_purge_ms: nil
      }}
   end
 
@@ -124,6 +132,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     retry_stuck_deletes()
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
+    state = maybe_purge_commands(state)
     settle_subscriptions()
     roll_out_agent()
     maybe_check_drift(state)
@@ -179,6 +188,31 @@ defmodule ControlPlane.Fleet.Reconciler do
   end
 
   defp maybe_check_drift(state), do: state
+
+  # Afgehandelde commando's van drie maanden oud. Zie
+  # `Provisioning.purge_old_commands/2` voor waarom die weg mogen en waarom er
+  # een bovengrens per ronde op zit.
+  defp maybe_purge_commands(%{purge_interval_ms: pi, last_purge_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= pi do
+      purge_commands()
+      %{state | last_purge_ms: now}
+    else
+      state
+    end
+  end
+
+  defp maybe_purge_commands(state), do: state
+
+  defp purge_commands do
+    case Provisioning.purge_old_commands() do
+      0 -> :ok
+      n -> Logger.info("oude commando's opgeruimd", count: n)
+    end
+  rescue
+    e -> Logger.error("opruimen van commando's mislukt: #{Exception.message(e)}")
+  end
 
   defp check_drift do
     case Drift.request_all() do

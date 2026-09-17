@@ -143,6 +143,47 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Verwijdert afgehandelde commando's ouder dan `dagen`, en geeft terug hoeveel.
+
+  De tabel werd nooit opgeschoond. Elk commando dat ooit naar een node ging staat
+  er nog, met een payload en een resultaat per rij, en dat groeit met het aantal
+  VPS'en maal het aantal handelingen dat eraan is verricht. Het enige wat er ooit
+  nog naar kijkt is een mens die uitzoekt wat er een keer misging, en die kijkt
+  niet drie maanden terug.
+
+  Alleen `:done` en `:failed` gaan weg. Een commando dat nog `:pending` of
+  `:delivered` is, is werk dat nog moet gebeuren -- hoe oud het ook is. Een oude
+  rij in die toestand betekent dat er iets vastzit, en dat is een reden om te
+  kijken, niet om te wissen.
+
+  Per aanroep een begrensd aantal rijen. De eerste keer dat dit draait staan er
+  mogelijk honderdduizenden; die in één transactie verwijderen houdt een lock
+  vast terwijl klanten op hun paneel zitten te wachten. Wat blijft staan gaat de
+  volgende ronde mee.
+  """
+  @spec purge_old_commands(pos_integer(), pos_integer()) :: non_neg_integer()
+  def purge_old_commands(dagen \\ 90, hoogstens \\ 5_000) do
+    cutoff = Clock.shift(-dagen * 24 * 3600)
+
+    oud =
+      Repo.all(
+        from c in Command,
+          where: c.status in [:done, :failed] and c.updated_at < ^cutoff,
+          select: c.id,
+          limit: ^hoogstens
+      )
+
+    case oud do
+      [] ->
+        0
+
+      ids ->
+        {aantal, _} = Repo.delete_all(from c in Command, where: c.id in ^ids)
+        aantal
+    end
+  end
+
+  @doc """
   Fails VPSes still `:provisioning` on a node that has gone away, and returns how
   many.
 

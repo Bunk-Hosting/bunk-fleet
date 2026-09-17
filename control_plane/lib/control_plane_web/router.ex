@@ -100,6 +100,17 @@ defmodule ControlPlaneWeb.Router do
   pipeline :user_api do
     plug :accepts, ["json"]
     plug ControlPlaneWeb.Plugs.ApiAuth
+
+    # Ruim, want dit is het hele paneel: de lijst, de details, het bijwerken van
+    # statussen. Vijf verzoeken per seconde haalt een mens niet met klikken, maar
+    # een script dat `backup_now` in een lus aanroept wel -- en dat kost per
+    # poging een transactie, ook als de controle hem daarna afwijst. Op de
+    # gebruiker en niet op het IP: zie de plug.
+    plug ControlPlaneWeb.Plugs.RateLimit,
+      bucket: "user_api",
+      max: 300,
+      window_ms: 60_000,
+      by: :user
   end
 
   # Admin panel API: authenticated on the caller's OWN session token and gated to

@@ -146,9 +146,38 @@ func TestCloudInitUserPassword(t *testing.T) {
 		SSHKeys:   []string{"ssh-rsa AAAA key"},
 		CloudInit: map[string]string{"user": "bunk", "password": "s3cret"},
 	})
-	if !contains(userdata, "chpasswd:") || !contains(userdata, "name: bunk") ||
-		!contains(userdata, "password: s3cret") || !contains(userdata, "ssh_pwauth: true") {
+	if !contains(userdata, "chpasswd:") || !contains(userdata, "name: 'bunk'") ||
+		!contains(userdata, "password: 's3cret'") || !contains(userdata, "ssh_pwauth: true") {
 		t.Errorf("userdata missing password stanza: %q", userdata)
+	}
+}
+
+// Een wachtwoord is willekeurige tekst en YAML leest willekeurige tekst als
+// structuur. Zonder aanhalingstekens wordt `{a: b}` een map, `*x` een verwijzing
+// en verdwijnt alles achter een `#`. Geen inbraak -- de waarde komt van ons eigen
+// control plane -- maar wel een klant die niet in zijn verse VPS komt om een
+// reden die aan de buitenkant niet te zien is.
+func TestCloudInitQuotesAwkwardPasswords(t *testing.T) {
+	gevallen := []struct {
+		naam, wachtwoord, verwacht string
+	}{
+		{"map", "{a: b}", "password: '{a: b}'"},
+		{"anchor", "*anchor", "password: '*anchor'"},
+		{"hekje", "geheim # nietwaar", "password: 'geheim # nietwaar'"},
+		{"boolean", "yes", "password: 'yes'"},
+		{"aanhalingsteken", "het's", "password: 'het''s'"},
+	}
+
+	for _, g := range gevallen {
+		t.Run(g.naam, func(t *testing.T) {
+			_, userdata := cloudInit(provider.VMSpec{
+				Name:      "vm1",
+				CloudInit: map[string]string{"user": "bunk", "password": g.wachtwoord},
+			})
+			if !contains(userdata, g.verwacht) {
+				t.Errorf("verwachtte %q in de userdata, kreeg:\n%s", g.verwacht, userdata)
+			}
+		})
 	}
 }
 

@@ -118,14 +118,38 @@ echo "=== migrating ==="
 # the whole prod config block on any release command, and without these it prints
 # its "SMTP_HOST is not set" warning on every single deploy — a false alarm that
 # trains you to ignore the one message that matters when mail really is unset.
-docker run --rm --network "$NET" \
+# De uitvoer gaat naar een bestand en niet door `tail`. Dat stond hier wel, en
+# het kostte een avond: een migratie faalde, en omdat alleen de laatste vier
+# regels werden getoond bleef er precies de stacktrace over ZONDER de regel die
+# zegt wat er mis was. Een foutmelding afkappen op het aantal regels knipt altijd
+# de belangrijkste eraf, want die staat bovenaan.
+migratie_uitvoer=$(mktemp)
+if docker run --rm --network "$NET" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e ADMIN_TOKEN="$ADMIN_TOKEN" \
   -e PHX_HOST="$PHX_HOST" -e PUBLIC_URL="$PUBLIC_URL" -e PORT=4000 \
   -e SMTP_HOST -e SMTP_PORT -e SMTP_USERNAME -e SMTP_PASSWORD \
   -e MAIL_FROM_ADDRESS -e MAIL_FROM_NAME -e OPS_EMAIL \
-  "$IMG" eval "ControlPlane.Release.migrate()" 2>&1 | tail -4
+  "$IMG" eval "ControlPlane.Release.migrate()" > "$migratie_uitvoer" 2>&1
+then
+  # Bij een geslaagde migratie is de staart genoeg: wat er is gedraaid.
+  tail -4 "$migratie_uitvoer"
+  rm -f "$migratie_uitvoer"
+else
+  echo "=== de migratie is mislukt; dit is de VOLLEDIGE uitvoer ==="
+  cat "$migratie_uitvoer"
+  # Ook op de machine zelf neerleggen: een workflowlog verloopt en is niet te
+  # lezen zonder GitHub, en dit is het moment waarop je hem nodig hebt.
+  if [ -w "$BUNK_LOG_DIR" ] 2>/dev/null; then
+    cp "$migratie_uitvoer" "$BUNK_LOG_DIR/migratie-mislukt-$(date +%Y%m%d-%H%M%S).log" || true
+    echo "(ook bewaard in $BUNK_LOG_DIR)"
+  fi
+  rm -f "$migratie_uitvoer"
+  # De draaiende container is met opzet nog niet aangeraakt: een mislukte
+  # migratie hoort de uitrol te stoppen mét de oude versie nog in de lucht.
+  exit 1
+fi
 
 # 5. (Re)start the control-plane server
 # The -e list below is an ALLOW-LIST, not a pass-through: a variable added to
