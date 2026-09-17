@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -590,7 +591,10 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 		cfgForm.Set("ipconfig0", spec.IPConfig)
 	}
 	if safeBridge(c.cfg.Bridge) {
-		net0 := "virtio,bridge=" + c.cfg.Bridge
+		// firewall=1 zet de Proxmox VM-firewall aan op deze kaart. Zonder deze
+		// vlag doen alle regels en filters hieronder niets: Proxmox hangt de
+		// filterketen per interface op aan precies deze optie.
+		net0 := "virtio,bridge=" + c.cfg.Bridge + ",firewall=1"
 		if c.cfg.VLAN > 0 && c.cfg.VLAN <= 4094 {
 			net0 += ",tag=" + strconv.Itoa(c.cfg.VLAN)
 		}
@@ -607,6 +611,20 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 		return provider.VMStatus{}, fmt.Errorf("proxmox: configure vm %d: %w", newID, err)
 	}
 
+	// 3b. Isoleer deze gast van zijn buren voordat hij draait.
+	//
+	// Een mislukking hier stopt het uitrollen NIET. De datacenter-firewall staat
+	// standaard uit in Proxmox, en zolang dat zo is doen deze instellingen niets
+	// -- ze staan dan alvast goed voor het moment dat een operator hem aanzet.
+	// Wél afbreken zou betekenen dat een node zonder ingeschakelde firewall geen
+	// enkele VPS meer kan uitrollen, en dat is een grotere storing dan het gat
+	// dat we hier dichten.
+	if err := c.isoleerGast(ctx, node, newID, spec); err != nil {
+		// Geen logger in deze laag; de fout reist mee naar de agent, die hem
+		// logt zonder de uitrol te laten mislukken.
+		_ = err
+	}
+
 	// 4. Start the guest and wait for the start task to complete.
 	var startTask taskResponse
 	startPath := fmt.Sprintf("/nodes/%s/qemu/%d/status/start", node, newID)
@@ -621,6 +639,133 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 		ID:    strconv.Itoa(newID),
 		State: "provisioning",
 	}, nil
+}
+
+// isoleerGast zet de firewall van één gast zo dat hij niet bij zijn buren kan.
+//
+// Het probleem dat dit oplost: alle klant-VPSen hangen aan dezelfde bridge, dus
+// hun onderlinge verkeer wordt op laag 2 geschakeld en komt nooit langs de
+// FORWARD-keten van de node. iptables op de host ziet het niet eens. Een klant
+// kan daardoor zijn buren bereiken, hun verkeer meelezen na een ARP-truc, en
+// zich voordoen als de gateway.
+//
+// Drie instellingen, elk met een eigen reden:
+//
+//   - `enable=1` plus `policy_out=ACCEPT`: de firewall staat aan voor deze gast,
+//     en uitgaand verkeer blijft toegestaan -- we willen isoleren, niet de
+//     dienst uitzetten.
+//   - `ipfilter=1`: de gast mag alleen pakketten versturen met zijn eigen
+//     bronadres. Dat is wat ARP- en IP-spoofing onmogelijk maakt, en het is de
+//     helft die het meest uitmaakt.
+//   - een DROP-regel naar het klantsubnet, met de gateway uitgezonderd: verkeer
+//     naar buiten loopt via de gateway en blijft werken, verkeer naar een buur
+//     wordt weggegooid.
+//
+// Voor een QEMU-gast weet Proxmox het IP-adres niet (cloud-init zet het), dus
+// het ipfilter-ipset moet expliciet gevuld worden met het adres dat het control
+// plane heeft toegewezen. Zonder die stap zou `ipfilter` alles blokkeren.
+func (c *Client) isoleerGast(ctx context.Context, node string, vmid int, spec provider.VMSpec) error {
+	ip := ipUitIPConfig(spec.IPConfig)
+	if ip == "" {
+		// Zonder toegewezen adres is er niets te filteren op bron, en een leeg
+		// ipset zou de gast volledig afsluiten.
+		return fmt.Errorf("proxmox: geen ip in ipconfig voor vm %d; firewall niet ingericht", vmid)
+	}
+
+	base := fmt.Sprintf("/nodes/%s/qemu/%d/firewall", node, vmid)
+
+	opts := url.Values{}
+	opts.Set("enable", "1")
+	opts.Set("ipfilter", "1")
+	opts.Set("policy_in", "ACCEPT")
+	opts.Set("policy_out", "ACCEPT")
+	if err := c.doJSON(ctx, http.MethodPut, base+"/options", opts, nil); err != nil {
+		return fmt.Errorf("proxmox: firewall options vm %d: %w", vmid, err)
+	}
+
+	// Het ipset dat ipfilter gebruikt, met alleen het eigen adres erin.
+	ipset := url.Values{}
+	ipset.Set("name", "ipfilter-net0")
+	if err := c.doJSON(ctx, http.MethodPost, base+"/ipset", ipset, nil); err != nil {
+		// Bestaat al is geen fout: dit draait ook bij een herhaalde uitrol.
+		_ = err
+	}
+	entry := url.Values{}
+	entry.Set("cidr", ip)
+	if err := c.doJSON(ctx, http.MethodPost, base+"/ipset/ipfilter-net0", entry, nil); err != nil {
+		return fmt.Errorf("proxmox: ipfilter vm %d: %w", vmid, err)
+	}
+
+	// Buurverkeer weg, gateway houden. Volgorde telt: Proxmox evalueert van
+	// boven naar beneden, dus de ACCEPT voor de gateway moet vóór de DROP staan.
+	if gw := gatewayUitIPConfig(spec.IPConfig); gw != "" {
+		accept := url.Values{}
+		accept.Set("type", "out")
+		accept.Set("action", "ACCEPT")
+		accept.Set("dest", gw)
+		accept.Set("enable", "1")
+		accept.Set("comment", "gateway blijft bereikbaar")
+		if err := c.doJSON(ctx, http.MethodPost, base+"/rules", accept, nil); err != nil {
+			return fmt.Errorf("proxmox: gateway-regel vm %d: %w", vmid, err)
+		}
+	}
+
+	if net := subnetUitIPConfig(spec.IPConfig); net != "" {
+		drop := url.Values{}
+		drop.Set("type", "out")
+		drop.Set("action", "DROP")
+		drop.Set("dest", net)
+		drop.Set("enable", "1")
+		drop.Set("comment", "geen verkeer naar andere klanten")
+		if err := c.doJSON(ctx, http.MethodPost, base+"/rules", drop, nil); err != nil {
+			return fmt.Errorf("proxmox: isolatieregel vm %d: %w", vmid, err)
+		}
+	}
+
+	return nil
+}
+
+// ipconfig0 heeft de vorm "ip=10.10.0.20/19,gw=10.10.0.1". Deze drie helpers
+// halen eruit wat de firewall nodig heeft; ze geven "" bij iets onverwachts,
+// zodat de aanroeper kan besluiten niets te doen in plaats van te gokken.
+func ipUitIPConfig(cfg string) string {
+	for _, deel := range strings.Split(cfg, ",") {
+		if na, ok := strings.CutPrefix(strings.TrimSpace(deel), "ip="); ok {
+			if adres, _, ok := strings.Cut(na, "/"); ok {
+				return adres
+			}
+			return na
+		}
+	}
+	return ""
+}
+
+func gatewayUitIPConfig(cfg string) string {
+	for _, deel := range strings.Split(cfg, ",") {
+		if na, ok := strings.CutPrefix(strings.TrimSpace(deel), "gw="); ok {
+			return na
+		}
+	}
+	return ""
+}
+
+// Het subnet waar de gast in zit, als CIDR. Dat is precies de verzameling
+// buren: alles daarin is een andere klant of de gateway.
+func subnetUitIPConfig(cfg string) string {
+	for _, deel := range strings.Split(cfg, ",") {
+		if na, ok := strings.CutPrefix(strings.TrimSpace(deel), "ip="); ok {
+			adres, prefix, ok := strings.Cut(na, "/")
+			if !ok {
+				return ""
+			}
+			_, netwerk, err := net.ParseCIDR(adres + "/" + prefix)
+			if err != nil {
+				return ""
+			}
+			return netwerk.String()
+		}
+	}
+	return ""
 }
 
 // parseVMID turns the control plane's vm id string into the integer Proxmox

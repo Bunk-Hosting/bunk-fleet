@@ -134,6 +134,9 @@ defmodule ControlPlaneWeb.Router do
     # want dat is het hele punt: het is de enige pagina die iemand zoekt vóór
     # hij besluit waar hij anders naartoe gaat met wat hij gevonden heeft.
     get "/.well-known/security.txt", SecurityController, :security_txt
+    # Voor een watchdog buiten deze machine. Open, want een watchdog heeft geen
+    # inloggegevens; hij geeft alleen 200 of 503 en verder niets.
+    get "/healthz", SecurityController, :healthz
   end
 
   # Open, unauthenticated auth endpoints are rate-limited per client IP to blunt

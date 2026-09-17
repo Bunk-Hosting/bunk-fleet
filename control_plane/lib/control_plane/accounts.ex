@@ -563,6 +563,20 @@ defmodule ControlPlane.Accounts do
         # meer binnen te kunnen.
         Repo.delete_all(from t in UserToken, where: t.user_id == ^id)
         Repo.delete_all(from p in Passkey, where: p.user_id == ^id)
+
+        # En het adres dat buiten de users-tabel is blijven staan. `vpses`
+        # bewaart het als los label naast `owner_id`, en dat label overleefde
+        # het anonimiseren -- waarmee "verwijderd" in het beheerscherm stond
+        # terwijl het adres er in de VPS-lijst gewoon nog bij hing.
+        #
+        # Alleen `vpses`: `nodes`, `enroll_tokens` en `usage_records` dragen het
+        # adres van een node-EIGENAAR, en dat is een andere betrokkene met een
+        # eigen account. Die meenemen zou het adres van iemand anders wissen.
+        Repo.update_all(
+          from(v in Vps, where: v.owner_id == ^id),
+          set: [owner_email: vervangend]
+        )
+
         {:ok, :anonymised}
 
       {:error, changeset} ->
@@ -570,7 +584,13 @@ defmodule ControlPlane.Accounts do
     end
   end
 
-  defp hard_delete_user(%User{} = user) do
+  defp hard_delete_user(%User{id: id} = user) do
+    # Eerst het losse label, dán de rij. Andersom is te laat: zodra de gebruiker
+    # weg is wordt `owner_id` op de VPS'en genilificeerd en is niet meer te
+    # bepalen welke rijen van hem waren -- het adres blijft dan staan op een VPS
+    # die niemand meer kan koppelen, wat slechter is dan waar we begonnen.
+    Repo.update_all(from(v in Vps, where: v.owner_id == ^id), set: [owner_email: nil])
+
     case Repo.delete(user) do
       {:ok, _} -> {:ok, :deleted}
       {:error, changeset} -> {:error, changeset}

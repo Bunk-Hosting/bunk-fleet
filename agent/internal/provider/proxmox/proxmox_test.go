@@ -495,3 +495,57 @@ func TestFirstFreeVMIDHandlesASingleNumber(t *testing.T) {
 		t.Errorf("kreeg %d, %v; wil 2500, nil", got, err)
 	}
 }
+
+// De helpers die ipconfig0 uit elkaar halen bepalen wat er in de firewall
+// terechtkomt. Een verkeerd subnet zou óf niets isoleren, óf de gast van zijn
+// eigen gateway afsnijden.
+func TestIPConfigOntleden(t *testing.T) {
+	cases := []struct {
+		cfg    string
+		ip     string
+		gw     string
+		subnet string
+		waarom string
+	}{
+		{
+			cfg:    "ip=10.10.0.20/19,gw=10.10.0.1",
+			ip:     "10.10.0.20",
+			gw:     "10.10.0.1",
+			subnet: "10.10.0.0/19",
+			waarom: "de gewone vorm",
+		},
+		{
+			cfg:    "gw=192.168.1.1,ip=192.168.1.50/24",
+			ip:     "192.168.1.50",
+			gw:     "192.168.1.1",
+			subnet: "192.168.1.0/24",
+			waarom: "volgorde mag niet uitmaken",
+		},
+		{
+			cfg:    "ip=dhcp",
+			ip:     "dhcp",
+			gw:     "",
+			subnet: "",
+			waarom: "dhcp levert geen bruikbaar subnet; dan liever niets dan iets verkeerds",
+		},
+		{
+			cfg:    "",
+			ip:     "",
+			gw:     "",
+			subnet: "",
+			waarom: "leeg blijft leeg",
+		},
+	}
+
+	for _, c := range cases {
+		if got := ipUitIPConfig(c.cfg); got != c.ip {
+			t.Errorf("%s: ip = %q, wil %q", c.waarom, got, c.ip)
+		}
+		if got := gatewayUitIPConfig(c.cfg); got != c.gw {
+			t.Errorf("%s: gateway = %q, wil %q", c.waarom, got, c.gw)
+		}
+		if got := subnetUitIPConfig(c.cfg); got != c.subnet {
+			t.Errorf("%s: subnet = %q, wil %q", c.waarom, got, c.subnet)
+		}
+	}
+}

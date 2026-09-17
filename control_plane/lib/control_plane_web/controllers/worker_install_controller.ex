@@ -287,7 +287,20 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       read -r -p "Proxmox node-naam (bv. pve): " PXNODE </dev/tty
       read -r -p "Proxmox API token-id (user@realm!tokenid): " PXTID </dev/tty
       read -r -s -p "Proxmox API token-secret: " PXSEC </dev/tty; echo
-      read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) VSSL=true;; *) VSSL=false;; esac
+      # Standaard AAN. Een API-token voor Proxmox is root-equivalent; wie het
+      # verkeer ernaartoe kan onderscheppen heeft daarmee elke VM op die node.
+      # De vraag stond eerder op "j/N" en daarmee stond verificatie standaard
+      # uit: één keer enter drukken was genoeg om het weg te geven.
+      #
+      # Wie een zelfondertekend certificaat gebruikt moet nu bewust "n" typen,
+      # en krijgt te zien wat dat betekent.
+      echo
+      echo "  TLS-certificaat van de Proxmox-API verifiëren?"
+      echo "  Zeg alleen NEE bij een zelfondertekend certificaat op een netwerk dat je"
+      echo "  vertrouwt: zonder verificatie kan iemand tussen deze machine en Proxmox"
+      echo "  het API-token meelezen, en dat token is root op die node."
+      read -r -p "  Verifiëren? (J/n): " VS </dev/tty
+      case "$VS" in n|N) VSSL=false;; *) VSSL=true;; esac
     elif [ "$HYP" = "esxi" ]; then
       read -r -p "vSphere/ESXi adres (bv. 192.168.1.50 of vcenter.school.nl): " ESXI_URL </dev/tty
       # Accept a bare IP/hostname: add the scheme + /sdk path govmomi expects,
@@ -298,7 +311,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       echo "   -> gebruik URL: $ESXI_URL"
       read -r -p "Gebruiker (bv. administrator@vsphere.local): " ESXI_USER </dev/tty
       read -r -s -p "Wachtwoord: " ESXI_PASS </dev/tty; echo
-      read -r -p "TLS-certificaat verifiëren? (j/N): " VS </dev/tty; case "$VS" in j|J|y|Y) ESXI_INSECURE=false;; *) ESXI_INSECURE=true;; esac
+      # Zie de opmerking bij Proxmox hierboven: standaard aan, bewust uitzetten.
+      echo
+      echo "  TLS-certificaat van vSphere/ESXi verifiëren?"
+      echo "  Zeg alleen NEE bij een zelfondertekend certificaat op een vertrouwd netwerk:"
+      echo "  zonder verificatie kan iemand ertussen je beheerderswachtwoord meelezen."
+      read -r -p "  Verifiëren? (J/n): " VS </dev/tty
+      case "$VS" in n|N) ESXI_INSECURE=true;; *) ESXI_INSECURE=false;; esac
       # Datacenter/folder matter on vCenter (multiple of each); on a standalone
       # ESXi host leave them empty and the default is used.
       read -r -p "Datacenter (vCenter; leeg = standaard/losse ESXi-host): " ESXI_DC </dev/tty
@@ -449,6 +468,55 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     rm -f "$btmp"
     install -d -m 700 /var/lib/bunk-worker
 
+    echo "-> instellingen wegschrijven..."
+    # De instellingen staan in een apart bestand met mode 600, niet als
+    # Environment=-regels in de unit. Twee redenen, en de tweede is de echte:
+    #
+    #   1. De unit zelf staat standaard wereldleesbaar in /etc/systemd/system.
+    #   2. `systemctl show bunk-worker` toont Environment=-waarden aan ELKE
+    #      lokale gebruiker, ook zonder root. Een chmod op de unit helpt daar
+    #      niets tegen; de inhoud van een EnvironmentFile komt er niet in.
+    #
+    # Hierin staan het Proxmox API-token (root-equivalent op die node), het
+    # vSphere-wachtwoord en het enroll-token.
+    install -d -m 700 /etc/bunk-worker
+    umask 077
+    cat > /etc/bunk-worker/agent.env <<ENVF
+    BUNK_CONTROL_PLANE_URL=$CP
+    BUNK_ENROLL_TOKEN=$TOKEN
+    BUNK_OWNER_EMAIL=$OWNER
+    BUNK_HYPERVISOR=$HYP
+    BUNK_PROXMOX_HOST=$PXHOST
+    BUNK_PROXMOX_NODE=$PXNODE
+    BUNK_PROXMOX_TOKEN_ID=$PXTID
+    BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
+    BUNK_PROXMOX_VERIFY_SSL=$VSSL
+    BUNK_VMID_MIN=${VMID_MIN:-0}
+    BUNK_VMID_MAX=${VMID_MAX:-0}
+    BUNK_ESXI_URL=${ESXI_URL}
+    BUNK_ESXI_USER=${ESXI_USER}
+    BUNK_ESXI_PASSWORD=${ESXI_PASS}
+    BUNK_ESXI_INSECURE=${ESXI_INSECURE:-false}
+    BUNK_ESXI_DATACENTER=${ESXI_DC}
+    BUNK_ESXI_DATASTORE=${ESXI_DS}
+    BUNK_ESXI_RESOURCE_POOL=${ESXI_RP}
+    BUNK_ESXI_FOLDER=${ESXI_FOLDER}
+    BUNK_ESXI_TEMPLATE=${ESXI_TMPL}
+    BUNK_OFFER_VCPU=${OFFER_VCPU:-0}
+    BUNK_OFFER_RAM_MB=${OFFER_RAM:-0}
+    BUNK_OFFER_DISK_GB=${OFFER_DISK:-0}
+    BUNK_VPS_BRIDGE=${VPS_BRIDGE}
+    BUNK_VPS_VLAN=${VPS_VLAN:-0}
+    BUNK_VPS_GATEWAY=${VPS_GW}
+    BUNK_VPS_CIDR_PREFIX=${VPS_CIDR}
+    BUNK_VPS_RANGE_START=${VPS_RSTART}
+    BUNK_VPS_RANGE_END=${VPS_REND}
+    BUNK_MANAGE_NETWORK=${MANAGE_NET}
+    BUNK_STATE_DIR=/var/lib/bunk-worker
+    ENVF
+    chmod 600 /etc/bunk-worker/agent.env
+    umask 022
+
     echo "-> systemd-service installeren..."
     cat > /etc/systemd/system/bunk-worker.service <<UNIT
     [Unit]
@@ -457,37 +525,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Wants=network-online.target
 
     [Service]
-    Environment=BUNK_CONTROL_PLANE_URL=$CP
-    Environment=BUNK_ENROLL_TOKEN=$TOKEN
-    Environment=BUNK_OWNER_EMAIL=$OWNER
-    Environment=BUNK_HYPERVISOR=$HYP
-    Environment=BUNK_PROXMOX_HOST=$PXHOST
-    Environment=BUNK_PROXMOX_NODE=$PXNODE
-    Environment=BUNK_PROXMOX_TOKEN_ID=$PXTID
-    Environment=BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
-    Environment=BUNK_PROXMOX_VERIFY_SSL=$VSSL
-    Environment=BUNK_VMID_MIN=${VMID_MIN:-0}
-    Environment=BUNK_VMID_MAX=${VMID_MAX:-0}
-    Environment=BUNK_ESXI_URL=${ESXI_URL}
-    Environment=BUNK_ESXI_USER=${ESXI_USER}
-    Environment=BUNK_ESXI_PASSWORD=${ESXI_PASS}
-    Environment=BUNK_ESXI_INSECURE=${ESXI_INSECURE:-false}
-    Environment=BUNK_ESXI_DATACENTER=${ESXI_DC}
-    Environment=BUNK_ESXI_DATASTORE=${ESXI_DS}
-    Environment=BUNK_ESXI_RESOURCE_POOL=${ESXI_RP}
-    Environment=BUNK_ESXI_FOLDER=${ESXI_FOLDER}
-    Environment=BUNK_ESXI_TEMPLATE=${ESXI_TMPL}
-    Environment=BUNK_OFFER_VCPU=${OFFER_VCPU:-0}
-    Environment=BUNK_OFFER_RAM_MB=${OFFER_RAM:-0}
-    Environment=BUNK_OFFER_DISK_GB=${OFFER_DISK:-0}
-    Environment=BUNK_VPS_BRIDGE=${VPS_BRIDGE}
-    Environment=BUNK_VPS_VLAN=${VPS_VLAN:-0}
-    Environment=BUNK_VPS_GATEWAY=${VPS_GW}
-    Environment=BUNK_VPS_CIDR_PREFIX=${VPS_CIDR}
-    Environment=BUNK_VPS_RANGE_START=${VPS_RSTART}
-    Environment=BUNK_VPS_RANGE_END=${VPS_REND}
-    Environment=BUNK_MANAGE_NETWORK=${MANAGE_NET}
-    Environment=BUNK_STATE_DIR=/var/lib/bunk-worker
+    EnvironmentFile=/etc/bunk-worker/agent.env
     ExecStart=/usr/local/bin/bunk-worker
     Restart=always
     RestartSec=5

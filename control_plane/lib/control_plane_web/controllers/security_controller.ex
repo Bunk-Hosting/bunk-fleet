@@ -22,6 +22,33 @@ defmodule ControlPlaneWeb.SecurityController do
   @max_field 300
 
   @doc """
+  Of dit control plane werk kan doen.
+
+  Niet "of het proces draait": dat weet een watchdog al als hij verbinding
+  krijgt. De vraag is of het ook íéts kan, en daarvoor is de database de enige
+  afhankelijkheid die ertoe doet -- zonder database kan hier geen VPS besteld,
+  geen commando uitgedeeld en geen euro geboekt worden.
+
+  Bewust zonder authenticatie en zonder gegevens: een watchdog heeft geen
+  inloggegevens en een statuspagina hoort niets te verklappen. Alleen 200 of
+  503, en één woord.
+  """
+  def healthz(conn, _params) do
+    case ControlPlane.Repo.query("SELECT 1", [], timeout: 2_000) do
+      {:ok, _} ->
+        conn |> put_resp_content_type("text/plain") |> send_resp(200, "ok")
+
+      {:error, _reden} ->
+        # 503 en niet 500: dit is "tijdelijk niet beschikbaar", en dat is precies
+        # wat een watchdog moet kunnen onderscheiden van een kapotte route.
+        conn |> put_resp_content_type("text/plain") |> send_resp(503, "database")
+    end
+  rescue
+    _ ->
+      conn |> put_resp_content_type("text/plain") |> send_resp(503, "database")
+  end
+
+  @doc """
   `/.well-known/security.txt` volgens RFC 9116.
 
   Wie een lek vindt moet kunnen zien waar hij het meldt, zonder te gokken tussen

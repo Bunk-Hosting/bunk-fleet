@@ -184,10 +184,13 @@ func TestCreateVMHappyPath(t *testing.T) {
 
 	cfg, _ := r.seen("POST", "/nodes/pve/qemu/131/config")
 	for field, want := range map[string]string{
-		"cores":      "2",
-		"memory":     "2048",
-		"ipconfig0":  "ip=10.10.0.21/22,gw=10.10.0.1",
-		"net0":       "virtio,bridge=vmbr1,tag=42",
+		"cores":     "2",
+		"memory":    "2048",
+		"ipconfig0": "ip=10.10.0.21/22,gw=10.10.0.1",
+		// firewall=1 hoort erbij: zonder die vlag hangt Proxmox geen
+		// filterketen aan deze interface en doen ipfilter en de
+		// isolatieregels niets. Zie isoleerGast.
+		"net0":       "virtio,bridge=vmbr1,firewall=1,tag=42",
 		"ciuser":     "bunk",
 		"cipassword": "pw",
 	} {

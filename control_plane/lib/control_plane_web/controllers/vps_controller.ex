@@ -25,6 +25,7 @@ defmodule ControlPlaneWeb.VpsController do
   alias ControlPlane.Fleet.Package
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Idempotency
   alias ControlPlane.Provisioning
 
   def index(conn, _params) do
@@ -48,6 +49,57 @@ defmodule ControlPlaneWeb.VpsController do
   def create(conn, params) do
     user = conn.assigns.current_user
 
+    # Een bestelling die twee keer binnenkomt hoort één VPS op te leveren. De
+    # client stuurt daarvoor een `Idempotency-Key`; zonder sleutel verandert er
+    # niets aan het gedrag, want een oudere client mag hier niet op stuklopen.
+    case Idempotency.claim(user.id, sleutel(conn), Idempotency.vps_create()) do
+      {:ok, {:done, vps_id}} ->
+        # Dit verzoek is al eerder gelukt. Hetzelfde antwoord teruggeven is het
+        # hele punt: de klant heeft zijn VPS, hij heeft alleen het antwoord
+        # gemist.
+        json(conn, %{vps: vps_json(Fleet.get_vps_for_owner(user.id, vps_id))})
+
+      {:error, :in_flight} ->
+        error(conn, :conflict, "order_in_progress")
+
+      {:ok, claim} ->
+        bestel(conn, user, params, claim)
+    end
+  end
+
+  # De claim is `{:claimed, rij}` met een sleutel, of `:zonder_sleutel`.
+  defp bestel(conn, user, params, claim) do
+    case maak_vps(conn, user, params) do
+      {:gelukt, conn, vps_id} ->
+        afronden(claim, vps_id)
+        conn
+
+      {:mislukt, conn} ->
+        # Vrijgeven, zodat de klant het met dezelfde sleutel opnieuw kan
+        # proberen. Blijven plakken zou hem buitensluiten van zijn eigen
+        # bestelling.
+        vrijgeven(claim)
+        conn
+    end
+  end
+
+  defp afronden({:claimed, rij}, vps_id), do: Idempotency.finish(rij, vps_id)
+  defp afronden(:zonder_sleutel, _vps_id), do: :ok
+
+  defp vrijgeven({:claimed, rij}), do: Idempotency.release(rij)
+  defp vrijgeven(:zonder_sleutel), do: :ok
+
+  # De sleutel zoals de client hem meestuurt. Alleen de header: een veld in de
+  # body zou door een herhaalde submit van een formulier meekomen, en dan dekt
+  # hij precies het geval niet af waarvoor hij bestaat.
+  defp sleutel(conn) do
+    case get_req_header(conn, "idempotency-key") do
+      [waarde | _] when is_binary(waarde) -> String.trim(waarde)
+      _ -> nil
+    end
+  end
+
+  defp maak_vps(conn, user, params) do
     attrs = build_attrs(params)
 
     with :ok <- validate_provision_input(attrs),
@@ -68,22 +120,40 @@ defmodule ControlPlaneWeb.VpsController do
          # paid for. Until this lands the entry is an orphan, which is exactly
          # what Credits.refund_orphan_charges/1 looks for.
          {:ok, _} <- Credits.attach_vps(charge, vps.id) do
-      conn
-      |> put_status(:created)
-      # Re-read rather than render the struct the transaction returned: that one
-      # has no node or port forwards loaded, so create would answer with a null
-      # endpoint for a VPS that has one, and disagree with show/index about the
-      # same machine.
-      |> json(%{vps: vps_json(Fleet.get_vps_for_owner(user.id, vps.id) || vps)})
+      antwoord =
+        conn
+        |> put_status(:created)
+        # Re-read rather than render the struct the transaction returned: that one
+        # has no node or port forwards loaded, so create would answer with a null
+        # endpoint for a VPS that has one, and disagree with show/index about the
+        # same machine.
+        |> json(%{vps: vps_json(Fleet.get_vps_for_owner(user.id, vps.id) || vps)})
+
+      {:gelukt, antwoord, vps.id}
     else
-      nil -> error(conn, :unprocessable_entity, "no_matching_package")
-      {:error, :input_too_large} -> error(conn, :unprocessable_entity, "input_too_large")
-      {:error, :no_delivery_consent} -> error(conn, :unprocessable_entity, "no_delivery_consent")
-      {:error, :region_not_found} -> error(conn, :unprocessable_entity, "region_not_found")
-      {:error, :insufficient_credits} -> error(conn, :payment_required, "insufficient_credits")
-      {:error, :quota_exceeded} -> error(conn, :too_many_requests, "quota_exceeded")
-      {:error, :no_capacity} -> error(conn, :conflict, "no_capacity")
-      {:error, _reason} -> error(conn, :unprocessable_entity, "invalid_vps")
+      nil ->
+        {:mislukt, error(conn, :unprocessable_entity, "no_matching_package")}
+
+      {:error, :input_too_large} ->
+        {:mislukt, error(conn, :unprocessable_entity, "input_too_large")}
+
+      {:error, :no_delivery_consent} ->
+        {:mislukt, error(conn, :unprocessable_entity, "no_delivery_consent")}
+
+      {:error, :region_not_found} ->
+        {:mislukt, error(conn, :unprocessable_entity, "region_not_found")}
+
+      {:error, :insufficient_credits} ->
+        {:mislukt, error(conn, :payment_required, "insufficient_credits")}
+
+      {:error, :quota_exceeded} ->
+        {:mislukt, error(conn, :too_many_requests, "quota_exceeded")}
+
+      {:error, :no_capacity} ->
+        {:mislukt, error(conn, :conflict, "no_capacity")}
+
+      {:error, _reason} ->
+        {:mislukt, error(conn, :unprocessable_entity, "invalid_vps")}
     end
   end
 

@@ -101,6 +101,45 @@ defmodule ControlPlane.ProvisioningGuestNameTest do
     assert length(Enum.uniq(namen)) == 2
   end
 
+  test "het unieke deel overleeft het afkappen" do
+    # Dit is waar het misgaat als je het niet afdwingt: met vier lange stukken
+    # valt precies het achtervoegsel eraf, en dat is het enige wat deze machine
+    # van die van een andere klant onderscheidt. De agent herkent zijn VM aan
+    # deze naam.
+    naam = gastnaam("{naam}-{klant}-{node}-{id}", String.duplicate("lange-klantnaam-", 5))
+
+    assert String.length(naam) <= 63
+    assert naam =~ ~r/-[0-9a-f]{8}$/, "het id staat niet meer achteraan: #{naam}"
+  end
+
+  test "twee VPS'en met dezelfde lange naam blijven ook na afkappen verschillend" do
+    # De vorige test bewijst dat er een id achteraan staat; deze bewijst dat het
+    # ook echt onderscheidt.
+    region = regio()
+    _node = fleet_node(region, "{naam}-{klant}-{node}-{id}")
+    lang = String.duplicate("precies-dezelfde-naam-", 4)
+
+    namen =
+      for _ <- 1..2 do
+        {:ok, %{command: %Command{payload: payload}}} =
+          Provisioning.create_vps(%{
+            name: lang,
+            region_id: region.id,
+            vcpu: 1,
+            ram_mb: 1024,
+            disk_gb: 20,
+            owner_email: "zelfde@voorbeeld.nl"
+          })
+
+        payload["name"]
+      end
+
+    assert length(Enum.uniq(namen)) == 2,
+           "beide VPS'en kregen dezelfde gastnaam: #{inspect(namen)}"
+
+    assert Enum.all?(namen, &(String.length(&1) <= 63))
+  end
+
   test "een gastnaam blijft binnen wat een hypervisor accepteert" do
     # Te lang of met rare tekens wordt door Proxmox geweigerd, en dat zou pas bij
     # het uitrollen blijken.

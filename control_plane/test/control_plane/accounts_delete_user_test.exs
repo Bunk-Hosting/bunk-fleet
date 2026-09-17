@@ -128,4 +128,75 @@ defmodule ControlPlane.AccountsDeleteUserTest do
       assert {:ok, :deleted} = Accounts.delete_or_anonymise_user(u)
     end
   end
+
+  test "het adres verdwijnt ook uit de VPS-lijst" do
+    # Het stond op twee plekken: in `users` en als los label op elke VPS. Alleen
+    # de eerste wissen liet "verwijderd" in het beheerscherm zien terwijl het
+    # adres er in de VPS-lijst gewoon nog bij hing.
+    {:ok, user} =
+      Accounts.register_user(%{
+        email: "label-#{System.unique_integer([:positive])}@bunk.test",
+        password: "Str0ngPassphrase!42"
+      })
+
+    code = "r-#{System.unique_integer([:positive])}"
+
+    region =
+      %Region{}
+      |> Region.changeset(%{code: code, name: "Regio"})
+      |> Repo.insert!()
+
+    vps =
+      %Vps{}
+      |> Vps.changeset(%{
+        name: "machine",
+        region_id: region.id,
+        vcpu: 1,
+        ram_mb: 1024,
+        disk_gb: 20,
+        owner_email: user.email
+      })
+      |> Ecto.Changeset.change(%{owner_id: user.id, status: :deleted})
+      |> Repo.insert!()
+
+    # Deze gebruiker heeft financiële geschiedenis, dus hij wordt geanonimiseerd
+    # en niet verwijderd -- dat is het pad waarop het label bleef staan.
+    {:ok, _} = Credits.add_entry(user.id, 500, "test_bonus", "geschiedenis")
+    {:ok, :anonymised} = Accounts.delete_or_anonymise_user(user)
+
+    bijgewerkt = Repo.get!(Vps, vps.id)
+    refute bijgewerkt.owner_email == user.email
+    assert bijgewerkt.owner_email =~ "verwijderd"
+  end
+
+  test "bij een harde verwijdering blijft er geen adres achter op een losse VPS" do
+    # Zonder geschiedenis wordt de rij écht verwijderd. De VPS'en houden dan een
+    # genilificeerde `owner_id` -- en zonder deze stap een e-mailadres dat aan
+    # niemand meer te koppelen is. Dat is slechter dan waar we begonnen.
+    {:ok, user} =
+      Accounts.register_user(%{
+        email: "hard-#{System.unique_integer([:positive])}@bunk.test",
+        password: "Str0ngPassphrase!42"
+      })
+
+    code = "r-#{System.unique_integer([:positive])}"
+    region = %Region{} |> Region.changeset(%{code: code, name: "Regio"}) |> Repo.insert!()
+
+    vps =
+      %Vps{}
+      |> Vps.changeset(%{
+        name: "machine",
+        region_id: region.id,
+        vcpu: 1,
+        ram_mb: 1024,
+        disk_gb: 20,
+        owner_email: user.email
+      })
+      |> Ecto.Changeset.change(%{owner_id: user.id, status: :deleted})
+      |> Repo.insert!()
+
+    {:ok, :deleted} = Accounts.delete_or_anonymise_user(user)
+
+    assert is_nil(Repo.get!(Vps, vps.id).owner_email)
+  end
 end
