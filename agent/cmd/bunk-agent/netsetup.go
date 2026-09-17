@@ -63,6 +63,49 @@ func uplinkFromRoutes(routeOutput string) (string, error) {
 	return "", fmt.Errorf("netsetup: no default route to NAT customer traffic onto")
 }
 
+// denyRules is what a customer may NOT send outward, as iptables argument
+// vectors. They are INSERTED at the top of FORWARD rather than appended, and the
+// reason is not style: the allow rule below is appended, so on a node that was
+// set up by an older agent it already sits in the chain. A deny appended after
+// it would never be reached — the rule would exist, look right in `iptables -L`,
+// and do nothing.
+//
+// What is blocked and why:
+//
+//   - Outbound SMTP (25, 465, 587). A VPS that sends mail directly is, in
+//     practice, a compromised VPS sending spam, and the cost lands on us: the
+//     node's address ends up on a blocklist and every other customer on it stops
+//     being able to reach anything. Customers who genuinely need to send mail use
+//     a relay; unblocking per node is a setting we can add when someone asks,
+//     which is cheaper than the reputation of an address we cannot get back.
+//   - More than 60 new connections per second from one VPS. That is far above
+//     normal use and squarely in port-scan and flood territory. Established
+//     connections are untouched, so a busy web server is unaffected.
+//
+// What this deliberately does NOT do: it does not isolate customers from each
+// other. VPSes share one bridge, so their traffic is switched at layer 2 and
+// never reaches FORWARD. That needs per-VM filtering on the hypervisor and is a
+// separate piece of work — pretending otherwise here would be worse than the gap.
+func denyRules(bridge string, subnet *net.IPNet) [][]string {
+	cidr := subnet.String()
+
+	deny := [][]string{}
+	for _, port := range []string{"25", "465", "587"} {
+		deny = append(deny, []string{
+			"-I", "FORWARD", "1", "-i", bridge, "-s", cidr,
+			"-p", "tcp", "--dport", port, "-j", "REJECT",
+		})
+	}
+
+	return append(deny, []string{
+		"-I", "FORWARD", "1", "-i", bridge, "-s", cidr,
+		"-m", "conntrack", "--ctstate", "NEW",
+		"-m", "hashlimit", "--hashlimit-mode", "srcip",
+		"--hashlimit-above", "60/sec", "--hashlimit-burst", "120",
+		"--hashlimit-name", "bunk_out", "-j", "DROP",
+	})
+}
+
 // natRules is every firewall rule this node needs for its VPS network, as
 // iptables argument vectors. Outbound is allowed and masqueraded; inbound is only
 // allowed as the return half of a connection a VPS opened, which is exactly the
@@ -80,18 +123,49 @@ func natRules(bridge, uplink string, subnet *net.IPNet) [][]string {
 	}
 }
 
-// checkArgs turns an append rule into the -C form that asks "is this already
-// there?", so applying the same rule twice is a no-op instead of a duplicate.
+// checkArgs turns an append or insert rule into the -C form that asks "is this
+// already there?", so applying the same rule twice is a no-op instead of a
+// duplicate.
+//
+// `-I CHAIN N` needs more care than `-A CHAIN`: the position number belongs to
+// the insert and not to the rule, so it has to go. Zonder dat wordt de check
+// zelf een `iptables -I` en voegt elke agentstart een regel toe -- een chain die
+// bij elke herstart groeit tot iemand hem toevallig bekijkt.
 func checkArgs(rule []string) []string {
-	out := make([]string, len(rule))
-	copy(out, rule)
-	for i, arg := range out {
-		if arg == "-A" {
-			out[i] = "-C"
-			break
+	out := make([]string, 0, len(rule))
+
+	for i := 0; i < len(rule); i++ {
+		switch rule[i] {
+		case "-A":
+			out = append(out, "-C")
+		case "-I":
+			out = append(out, "-C")
+			// De chainnaam hoort erbij; een positienummer erachter niet.
+			if i+1 < len(rule) {
+				out = append(out, rule[i+1])
+				i++
+			}
+			if i+1 < len(rule) && isPositie(rule[i+1]) {
+				i++
+			}
+		default:
+			out = append(out, rule[i])
 		}
 	}
+
 	return out
+}
+
+func isPositie(arg string) bool {
+	if arg == "" {
+		return false
+	}
+	for _, r := range arg {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // applyVpsNetwork brings up the node's customer network: the bridge holds the
@@ -161,6 +235,24 @@ func applyVpsNetwork(logger *slog.Logger, bridge string, n vpsNetwork, manage bo
 	if err != nil {
 		logger.Warn("vps network: no uplink for customer traffic", "err", err)
 		return
+	}
+
+	// Eerst wat niet mag, daarna wat wel mag. De deny-regels worden bovenaan
+	// ingevoegd, dus ze staan ook op een node die met een oudere agent is
+	// opgezet vóór de allow-regel die daar al hangt.
+	//
+	// Een deny-regel die niet geplaatst kan worden is GEEN reden om te stoppen:
+	// `hashlimit` zit niet in elke kernel. Dan draait de node zonder die ene
+	// grens verder, en dat staat in de log -- stoppen zou een node zonder enig
+	// netwerk opleveren, wat erger is dan een node zonder snelheidsgrens.
+	for _, rule := range denyRules(bridge, subnet) {
+		if _, err := runCmd(ctx, "iptables", checkArgs(rule)...); err == nil {
+			continue // already present
+		}
+		if out, err := runCmd(ctx, "iptables", rule...); err != nil {
+			logger.Warn("vps network: cannot install outbound restriction; the node runs without it",
+				"rule", strings.Join(rule, " "), "err", err, "detail", out)
+		}
 	}
 
 	for _, rule := range natRules(bridge, uplink, subnet) {

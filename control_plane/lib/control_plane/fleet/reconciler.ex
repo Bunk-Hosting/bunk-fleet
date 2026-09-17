@@ -88,7 +88,24 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   @impl true
   def handle_info(:reconcile, %{interval_ms: interval_ms} = state) do
-    # Each sub-step is isolated so a failure in one still lets the other run.
+    # De volgende tik wordt ALTIJD gezet, ook als het werk hieronder ontploft.
+    #
+    # Dit is een klok, en een klok die stilvalt neemt alles mee: metering,
+    # facturatie, back-ups, het opruimen van vastgelopen VPS'en. `send_after`
+    # stuurt naar dit proces zelf, dus een crash gooit ook het geplande bericht
+    # weg -- de supervisor start wel opnieuw op, maar bij een fout die elke tik
+    # terugkomt is dat een stille lus in plaats van werk.
+    #
+    # Elke sub-stap heeft zijn eigen `rescue` zodat een fout in de ene de andere
+    # niet meesleept; dit is het vangnet daaronder, voor de stap die er ooit
+    # zonder wordt toegevoegd. Dat is geen theorie: `roll_out_agent/0` stond hier
+    # zonder, en stond bovendien vlak vóór `schedule_tick/1`.
+    state = tik(state)
+    schedule_tick(interval_ms)
+    {:noreply, state}
+  end
+
+  defp tik(state) do
     reconcile_nodes()
     reclaim_reservations()
     fail_stuck_creates()
@@ -98,8 +115,23 @@ defmodule ControlPlane.Fleet.Reconciler do
     state = maybe_dispatch_backups(state)
     settle_subscriptions()
     roll_out_agent()
-    schedule_tick(interval_ms)
-    {:noreply, state}
+    state
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler tick faalde buiten de afgevangen stappen om: " <>
+          Exception.message(exception),
+        crash_reason: {exception, __STACKTRACE__}
+      )
+
+      state
+  catch
+    # Een uitgeputte databasepool komt niet als een exception binnen maar als een
+    # exit. Precies de fout die je bij drukte krijgt, en precies het moment
+    # waarop de klok moet blijven lopen.
+    :exit, reason ->
+      Logger.error("fleet reconciler tick stopte met een exit: #{inspect(reason)}")
+      state
   end
 
   # Meter only once per meter_interval_ms (default hourly), not every tick. Uses a
@@ -306,6 +338,12 @@ defmodule ControlPlane.Fleet.Reconciler do
       {:dispatched, n} -> Logger.info("agent-uitrol: update klaargezet voor #{n} node(s)")
       _ -> :ok
     end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler agent-uitrol faalde: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
   end
 
   defp schedule_tick(interval_ms) do

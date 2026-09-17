@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -151,6 +152,74 @@ func TestIfaceNameRejectsInjectionAttempts(t *testing.T) {
 	for _, good := range []string{"vmbr0", "eth0", "br-lan", "enp3s0", "bunk_br0"} {
 		if !ifaceName.MatchString(good) {
 			t.Errorf("ifaceName rejected %q", good)
+		}
+	}
+}
+
+// De deny-regels moeten bovenaan de chain landen, en de "bestaat hij al?"-check
+// moet een check zijn en geen tweede toevoeging.
+func TestDenyRulesGaanBovenaanEnZijnIdempotent(t *testing.T) {
+	_, subnet, err := net.ParseCIDR("10.10.4.0/22")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rules := denyRules("vmbr2", subnet)
+	if len(rules) == 0 {
+		t.Fatal("geen deny-regels")
+	}
+
+	for _, rule := range rules {
+		joined := strings.Join(rule, " ")
+
+		// Bovenaan invoegen, niet achteraan plakken: op een node die met een
+		// oudere agent is opgezet staat de ACCEPT er al, en een deny daarachter
+		// wordt nooit bereikt.
+		if rule[0] != "-I" || rule[1] != "FORWARD" || rule[2] != "1" {
+			t.Errorf("deny-regel wordt niet bovenaan FORWARD ingevoegd: %s", joined)
+		}
+
+		if !strings.Contains(joined, "10.10.4.0/22") {
+			t.Errorf("deny-regel noemt ons subnet niet, dus hij raakt ander verkeer: %s", joined)
+		}
+
+		// De check-vorm moet een check zijn. Zou hier "-I" blijven staan, dan
+		// voegt elke agentstart dezelfde regel nog een keer toe.
+		check := strings.Join(checkArgs(rule), " ")
+		if strings.Contains(check, "-I ") {
+			t.Errorf("de check is nog steeds een insert: %s", check)
+		}
+		if !strings.HasPrefix(check, "-C FORWARD ") {
+			t.Errorf("de check heeft niet de vorm '-C FORWARD ...': %s", check)
+		}
+		if strings.HasPrefix(check, "-C FORWARD 1") {
+			t.Errorf("het positienummer staat nog in de check: %s", check)
+		}
+	}
+}
+
+func TestUitgaandeSmtpWordtGeweigerd(t *testing.T) {
+	// Een VPS die zelf mail verstuurt is in de praktijk een gekaapte VPS, en de
+	// rekening is dat het adres van de node op een blocklist belandt -- waarna
+	// iedereen op die node nergens meer bij kan.
+	_, subnet, _ := net.ParseCIDR("10.10.4.0/22")
+
+	gevonden := map[string]bool{}
+	for _, rule := range denyRules("vmbr2", subnet) {
+		joined := strings.Join(rule, " ")
+		for _, poort := range []string{"25", "465", "587"} {
+			if strings.Contains(joined, "--dport "+poort+" ") || strings.HasSuffix(joined, "--dport "+poort) {
+				gevonden[poort] = true
+			}
+			if strings.Contains(joined, "--dport "+poort) && strings.Contains(joined, "REJECT") {
+				gevonden[poort] = true
+			}
+		}
+	}
+
+	for _, poort := range []string{"25", "465", "587"} {
+		if !gevonden[poort] {
+			t.Errorf("uitgaande poort %s wordt niet geweigerd", poort)
 		}
 	}
 }

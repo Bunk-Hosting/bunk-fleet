@@ -1,5 +1,20 @@
 #!/bin/bash
 set -euo pipefail
+
+# Schrijft het log van een container weg voordat hij wordt vervangen, en houdt de
+# laatste tien over. Bewust platte bestanden en geen logdienst: dit is een
+# eenmansopstelling, en een bestand dat je met `less` kunt lezen is op het
+# verkeerde moment meer waard dan een dashboard dat ook onderhouden moet worden.
+BUNK_LOG_DIR="${BUNK_LOG_DIR:-/var/log/bunk}"
+
+bewaar_log() {
+  naam="$1"
+  docker inspect "$naam" >/dev/null 2>&1 || return 0
+  mkdir -p "$BUNK_LOG_DIR" 2>/dev/null || return 0
+  docker logs --timestamps "$naam" > "$BUNK_LOG_DIR/$naam-$(date +%Y%m%d-%H%M%S).log" 2>&1 || true
+  # Opruimen: tien bestanden per container is genoeg om een dag terug te kijken.
+  ls -1t "$BUNK_LOG_DIR/$naam-"*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
+}
 # De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
 # GitHub Actions-runner ze vanuit zijn eigen checkout kan draaien; standaard de
 # map waar dit script zelf in staat, zodat een handmatige aanroep vanaf /opt
@@ -63,7 +78,11 @@ DATABASE_URL="ecto://bunkfleet:${DB_PASSWORD}@${PGNAME}/control_plane"
 
 # 3. Postgres (persistent volume)
 if ! docker ps -a --format '{{.Names}}' | grep -qx "$PGNAME"; then
+  # Postgres wordt bij een uitrol NIET vervangen en draait dus maanden door:
+  # zonder grens groeit zijn log tot de schijf vol is. Dat is de enige container
+  # hier waar dat echt kan gebeuren.
   docker run -d --name "$PGNAME" --network "$NET" --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=5 \
     -e POSTGRES_USER=bunkfleet -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB=control_plane \
     -v bf-prod-pgdata:/var/lib/postgresql/data postgres:16-alpine >/dev/null
   echo "STARTED $PGNAME"
@@ -100,8 +119,16 @@ docker run --rm --network "$NET" \
 # extended whenever a new one is introduced. ControlPlane.SecurityPosture prints
 # at boot which optional protections it found switched off, which is what catches
 # the mistake.
+# Wat de oude container heeft gezegd, bewaren voordat hij verdwijnt.
+#
+# `docker rm -f` gooit het logbestand weg, en dat is precies het log waarin
+# staat waaróm je aan het uitrollen bent. Na een mislukte uitrol stond je
+# tot nu toe met lege handen: de nieuwe container heeft niets meegemaakt en de
+# oude bestaat niet meer.
+bewaar_log "$CPNAME"
 docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
+  --log-opt max-size=50m --log-opt max-file=5 \
   -p 127.0.0.1:4000:4000 \
   -e PHX_SERVER=true \
   -e BUNK_BUILD_VERSION="$BUNK_BUILD_VERSION" \

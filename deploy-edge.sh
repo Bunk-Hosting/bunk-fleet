@@ -19,6 +19,18 @@
 # tijdens de wissel; de oude volgorde gaf tientallen seconden niets.
 set -euo pipefail
 
+# Zie deploy-prod.sh: `docker rm -f` gooit het log weg, en dat is het log waarin
+# staat waarom je aan het uitrollen was.
+BUNK_LOG_DIR="${BUNK_LOG_DIR:-/var/log/bunk}"
+
+bewaar_log() {
+  naam="$1"
+  docker inspect "$naam" >/dev/null 2>&1 || return 0
+  mkdir -p "$BUNK_LOG_DIR" 2>/dev/null || return 0
+  docker logs --timestamps "$naam" > "$BUNK_LOG_DIR/$naam-$(date +%Y%m%d-%H%M%S).log" 2>&1 || true
+  ls -1t "$BUNK_LOG_DIR/$naam-"*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
+}
+
 # Eén vaste map voor wat deze uitrol buiten de checkout nodig heeft: het slot en
 # de nginx-configuratie. Beide moeten door root (handmatige uitrol) en door de
 # Actions-runner (gebruiker gha) gedeeld worden, anders betekenen ze niets.
@@ -81,6 +93,7 @@ draait() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "tru
 docker rm -f "$NIEUW" >/dev/null 2>&1 || true
 docker run -d --name "$NIEUW" --network "$NET" --network-alias "$ALIAS" \
   --restart unless-stopped \
+  --log-opt max-size=50m --log-opt max-file=5 \
   -e BUNK_API_URL=http://bf-prod-cp:4000 \
   bunk-frontend:latest >/dev/null
 
@@ -117,8 +130,10 @@ if draait bunk-edge && [ "$MOUNT" = "$CONF" ]; then
 
   if [ "$bron" != "$in_container" ]; then
     echo "edge: de container ziet een andere edge.conf dan wij schrijven; opnieuw opzetten" >&2
+    bewaar_log bunk-edge
     docker rm -f bunk-edge >/dev/null 2>&1 || true
     docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
+      --log-opt max-size=50m --log-opt max-file=5 \
       -p 3001:80 \
       -v "$CONF":/etc/nginx/conf.d/default.conf:ro \
       nginx:1.27-alpine >/dev/null
@@ -132,8 +147,10 @@ if draait bunk-edge && [ "$MOUNT" = "$CONF" ]; then
     exit 1
   fi
 else
+  bewaar_log bunk-edge
   docker rm -f bunk-edge >/dev/null 2>&1 || true
   docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=5 \
     -p 3001:80 \
     -v "$CONF":/etc/nginx/conf.d/default.conf:ro \
     nginx:1.27-alpine >/dev/null
@@ -145,6 +162,7 @@ fi
 if draait bunk-frontend; then
   docker stop -t 10 bunk-frontend >/dev/null
 fi
+bewaar_log bunk-frontend
 docker rm -f bunk-frontend >/dev/null 2>&1 || true
 docker rename "$NIEUW" bunk-frontend
 
