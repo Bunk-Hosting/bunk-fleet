@@ -56,7 +56,9 @@ config :logger, :console,
     :admin,
     :methode,
     :pad,
-    :uitkomst
+    :uitkomst,
+    # Hoe vol de schijf zat toen erover geklaagd werd.
+    :schijf_pct
   ]
 
 # Use Jason for JSON parsing in Phoenix

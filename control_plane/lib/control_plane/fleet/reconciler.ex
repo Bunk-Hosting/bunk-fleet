@@ -37,6 +37,7 @@ defmodule ControlPlane.Fleet.Reconciler do
   alias ControlPlane.Fleet.AgentUpdate
   alias ControlPlane.Fleet.Drift
   alias ControlPlane.Provisioning
+  alias ControlPlane.Schijfruimte
   alias ControlPlane.Subscriptions
 
   @default_interval_ms 30_000
@@ -65,6 +66,11 @@ defmodule ControlPlane.Fleet.Reconciler do
   # die niets vindt.
   @default_purge_interval_ms 6 * 60 * 60 * 1000
 
+  # Eens per zes uur kijken hoe vol de schijf zit. Vaker heeft geen zin -- een
+  # schijf loopt niet in een kwartier vol -- en een melding die vaker komt dan
+  # iemand er iets aan kan doen, is een melding die niemand meer leest.
+  @default_schijf_interval_ms 6 * 60 * 60 * 1000
+
   @doc """
   Starts the reconciler.
 
@@ -87,6 +93,7 @@ defmodule ControlPlane.Fleet.Reconciler do
 
     drift_interval_ms = Keyword.get(opts, :drift_interval_ms, @default_drift_interval_ms)
     purge_interval_ms = Keyword.get(opts, :purge_interval_ms, @default_purge_interval_ms)
+    schijf_interval_ms = Keyword.get(opts, :schijf_interval_ms, @default_schijf_interval_ms)
 
     schedule_tick(interval_ms)
 
@@ -100,7 +107,9 @@ defmodule ControlPlane.Fleet.Reconciler do
        drift_interval_ms: drift_interval_ms,
        last_drift_ms: nil,
        purge_interval_ms: purge_interval_ms,
-       last_purge_ms: nil
+       last_purge_ms: nil,
+       schijf_interval_ms: schijf_interval_ms,
+       last_schijf_ms: nil
      }}
   end
 
@@ -133,6 +142,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
     state = maybe_purge_commands(state)
+    state = maybe_check_schijf(state)
     settle_subscriptions()
     roll_out_agent()
     maybe_check_drift(state)
@@ -204,6 +214,48 @@ defmodule ControlPlane.Fleet.Reconciler do
   end
 
   defp maybe_purge_commands(state), do: state
+
+  # Hoe vol de schijf zit. Loopt hij vol, dan stopt Postgres met schrijven en
+  # ligt alles plat -- en het eerste signaal zou anders een klant zijn.
+  defp maybe_check_schijf(%{schijf_interval_ms: si, last_schijf_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= si do
+      check_schijf()
+      %{state | last_schijf_ms: now}
+    else
+      state
+    end
+  end
+
+  defp maybe_check_schijf(state), do: state
+
+  defp check_schijf do
+    case Schijfruimte.te_vol?() do
+      {true, pct} ->
+        Logger.error("schijf zit op #{pct}%", schijf_pct: pct)
+
+        ControlPlane.Notifier.deliver_operational_alert(
+          "De schijf van de control plane zit op #{pct}%",
+          """
+          Het bestandssysteem waar de control plane, de database en de
+          bouwomgeving op staan zit op #{pct}% (de grens ligt op
+          #{Schijfruimte.drempel()}%).
+
+          Loopt hij helemaal vol, dan stopt Postgres met schrijven en ligt het
+          platform plat. Wat er meestal aan de hand is: oude images en
+          bouw-cache. `docker image prune` en `docker builder prune` (NOOIT
+          `docker volume prune` -- daar staan de klantgegevens in) ruimen het
+          meeste op.
+          """
+        )
+
+      false ->
+        :ok
+    end
+  rescue
+    e -> Logger.error("schijfcontrole mislukt: #{Exception.message(e)}")
+  end
 
   defp purge_commands do
     case Provisioning.purge_old_commands() do
