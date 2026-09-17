@@ -43,7 +43,8 @@ defmodule ControlPlaneWeb.VpsController do
          %Vps{} = vps <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, id) do
       json(conn, %{vps: vps_json(vps)})
     else
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
     end
   end
 
@@ -221,7 +222,9 @@ defmodule ControlPlaneWeb.VpsController do
     else
       {:error, :already_deleting} -> error(conn, :conflict, "already_deleting")
       {:error, :no_node} -> error(conn, :unprocessable_entity, "no_node")
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
+      anders -> not_found(conn, anders)
     end
   end
 
@@ -237,7 +240,8 @@ defmodule ControlPlaneWeb.VpsController do
          %Vps{} <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, uuid) do
       json(conn, %{backups: Enum.map(Backups.list_for_vps(uuid), &backup_json/1)})
     else
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
     end
   end
 
@@ -270,7 +274,9 @@ defmodule ControlPlaneWeb.VpsController do
       {:error, :already_running} -> error(conn, :conflict, "backup_already_running")
       {:error, :node_unreachable} -> error(conn, :conflict, "node_unreachable")
       {:error, :not_provisioned} -> error(conn, :conflict, "not_provisioned")
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
+      anders -> not_found(conn, anders)
     end
   end
 
@@ -291,7 +297,9 @@ defmodule ControlPlaneWeb.VpsController do
       {:error, {:invalid_status, status}} -> error(conn, :conflict, "invalid_status_#{status}")
       {:error, :backup_not_restorable} -> error(conn, :conflict, "backup_not_restorable")
       {:error, :not_provisioned} -> error(conn, :conflict, "not_provisioned")
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
+      anders -> not_found(conn, anders)
     end
   end
 
@@ -315,7 +323,8 @@ defmodule ControlPlaneWeb.VpsController do
     else
       {:error, :invalid_status} -> error(conn, :conflict, "invalid_status_deleted")
       {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "invalid_vps")
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
     end
   end
 
@@ -338,7 +347,9 @@ defmodule ControlPlaneWeb.VpsController do
     else
       {:error, {:invalid_status, status}} -> error(conn, :conflict, "invalid_status_#{status}")
       {:error, reason} -> error(conn, :unprocessable_entity, to_string(reason))
-      _ -> not_found(conn)
+      nil -> not_found(conn)
+      :error -> not_found(conn)
+      anders -> not_found(conn, anders)
     end
   end
 
@@ -558,5 +569,22 @@ defmodule ControlPlaneWeb.VpsController do
   defp region_code(%Vps{region: %{code: code}}), do: code
   defp region_code(%Vps{}), do: nil
 
+  # 404 is hier een bewuste keuze en geen verlegenheid: wie niet de eigenaar is
+  # hoort niet te kunnen zien dát iets bestaat. De twee verwachte manieren om
+  # hier te komen -- een id dat geen UUID is (`:error`) en een VPS die niet van
+  # deze klant is (`nil`) -- zijn stil.
   defp not_found(conn), do: error(conn, :not_found, "not_found")
+
+  # Alles wat híér komt is niet voorzien: een nieuwe weigeringsreden die een
+  # context erbij heeft gekregen zonder dat deze clausule is meegegroeid. Het
+  # antwoord blijft 404 (de klant hoort niets over de binnenkant), maar het mag
+  # niet stil zijn -- anders is het een knop die niets doet, en dat is het soort
+  # melding waar niemand een oorzaak bij kan vinden.
+  defp not_found(conn, onverwacht) do
+    Logger.warning(
+      "#{conn.method} #{conn.request_path}: onverwachte uitkomst #{inspect(onverwacht)}, beantwoord als 404"
+    )
+
+    not_found(conn)
+  end
 end
