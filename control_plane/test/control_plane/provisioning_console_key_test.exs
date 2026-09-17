@@ -5,8 +5,13 @@ defmodule ControlPlane.ProvisioningConsoleKeyTest do
   Dit is het stuk dat het verschil maakt. De sleutel wordt bij het uitrollen via
   cloud-init in de machine gezet en daarna nooit meer; staat de gedeelde
   platformsleutel er alsnog naast, dan is het per-VPS-sleutelpaar decoratie.
+
+  De testomgeving heeft een vaste sleutel in `config/test.exs`, dus dit pad is
+  hier standaard aan -- net als in productie. Geen enkele test verzet hier de
+  globale configuratie: dat lekt naar tests die er parallel naast draaien, en
+  precies dat liet deze suite eerder omvallen in `provisioning_test.exs`.
   """
-  use ControlPlane.DataCase, async: false
+  use ControlPlane.DataCase, async: true
 
   alias ControlPlane.Console.Keys
   alias ControlPlane.Fleet.Command
@@ -47,75 +52,62 @@ defmodule ControlPlane.ProvisioningConsoleKeyTest do
         region_id: region.id,
         vcpu: 1,
         ram_mb: 1024,
-        disk_gb: 20
+        disk_gb: 20,
+        ssh_keys: ["ssh-ed25519 VANDEKLANT klant@thuis"]
       })
 
     {vps, payload["ssh_keys"]}
   end
 
-  defp met_console(opts) do
-    oud = Application.get_env(:control_plane, :console) || []
-    Application.put_env(:control_plane, :console, Keyword.merge(oud, opts))
-    on_exit(fn -> Application.put_env(:control_plane, :console, oud) end)
+  test "de VPS krijgt een eigen sleutel, naast die van de klant zelf" do
+    region = regio_met_node()
+    {vps, sleutels} = bestel(region)
+
+    opgeslagen = Repo.get!(Vps, vps.id)
+    assert is_binary(opgeslagen.console_key_sealed)
+    assert String.starts_with?(opgeslagen.console_key_public, "ssh-rsa ")
+
+    assert sleutels == ["ssh-ed25519 VANDEKLANT klant@thuis", opgeslagen.console_key_public]
   end
 
-  describe "met een omgevingssleutel" do
-    setup do
-      met_console(
-        key_encryption_key: Base.encode64(:crypto.strong_rand_bytes(32)),
-        ssh_public_key: "ssh-rsa GEDEELDE platform@bunk"
-      )
+  test "twee VPS'en delen hun sleutel niet" do
+    # Dit is het hele punt: één sleutel voor iedereen betekende dat wie hem in
+    # handen kreeg root had op elke klant.
+    region = regio_met_node()
+    {een, _} = bestel(region)
+    {twee, _} = bestel(region)
 
-      :ok
-    end
+    a = Repo.get!(Vps, een.id)
+    b = Repo.get!(Vps, twee.id)
 
-    test "de VPS krijgt zijn eigen sleutel en niet de gedeelde" do
-      region = regio_met_node()
-      {vps, sleutels} = bestel(region)
-
-      opgeslagen = Repo.get!(Vps, vps.id)
-      assert is_binary(opgeslagen.console_key_sealed)
-      assert String.starts_with?(opgeslagen.console_key_public, "ssh-rsa ")
-
-      assert sleutels == [opgeslagen.console_key_public]
-      refute Enum.any?(sleutels, &String.contains?(&1, "GEDEELDE"))
-    end
-
-    test "twee VPS'en delen hun sleutel niet" do
-      region = regio_met_node()
-      {een, _} = bestel(region)
-      {twee, _} = bestel(region)
-
-      a = Repo.get!(Vps, een.id)
-      b = Repo.get!(Vps, twee.id)
-
-      refute a.console_key_public == b.console_key_public
-      refute a.console_key_sealed == b.console_key_sealed
-    end
-
-    test "de opgeslagen sleutel is weer te openen" do
-      region = regio_met_node()
-      {vps, _} = bestel(region)
-
-      assert {:ok, pem} = Keys.unseal(Repo.get!(Vps, vps.id).console_key_sealed)
-      assert [_ | _] = :public_key.pem_decode(pem)
-    end
+    refute a.console_key_public == b.console_key_public
+    refute a.console_key_sealed == b.console_key_sealed
   end
 
-  describe "zonder omgevingssleutel" do
-    setup do
-      met_console(key_encryption_key: nil, ssh_public_key: "ssh-rsa GEDEELDE platform@bunk")
-      :ok
-    end
+  test "de opgeslagen sleutel is weer te openen en bruikbaar voor ssh" do
+    region = regio_met_node()
+    {vps, _} = bestel(region)
 
-    test "valt een nieuwe VPS terug op de gedeelde sleutel" do
-      # Half aanzetten zou een VPS opleveren met een sleutel die niemand meer
-      # kan ontsleutelen. Dan liever de oude situatie, zichtbaar en werkend.
-      region = regio_met_node()
-      {vps, sleutels} = bestel(region)
+    assert {:ok, pem} = Keys.unseal(Repo.get!(Vps, vps.id).console_key_sealed)
+    assert [entry | _] = :public_key.pem_decode(pem)
+    assert {:RSAPrivateKey, _, _, _, _, _, _, _, _, _, _} = :public_key.pem_entry_decode(entry)
+  end
 
-      assert is_nil(Repo.get!(Vps, vps.id).console_key_sealed)
-      assert sleutels == ["ssh-rsa GEDEELDE platform@bunk"]
-    end
+  test "een verzoek kan zijn eigen publieke sleutel niet opgeven" do
+    # Dat zou de sleutel zijn die root geeft op die machine, dus hij staat
+    # bewust niet in de cast van de changeset.
+    region = regio_met_node()
+
+    # Beide schrijfwijzen, want de aanroeper accepteert atoom- en tekstsleutels.
+    # Los opgebouwd: Elixir staat de korte `key:`-vorm alleen als laatste in een
+    # map-literal toe, en door elkaar heen is het een syntaxfout.
+    smokkel =
+      %{name: "Smokkel", region_id: region.id, vcpu: 1, ram_mb: 1024, disk_gb: 20}
+      |> Map.put(:console_key_public, "ssh-rsa VANDEAANVALLER")
+      |> Map.put("console_key_public", "ssh-rsa VANDEAANVALLER")
+
+    {:ok, %{vps: vps}} = Provisioning.create_vps(smokkel)
+
+    refute Repo.get!(Vps, vps.id).console_key_public == "ssh-rsa VANDEAANVALLER"
   end
 end

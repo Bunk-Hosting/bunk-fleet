@@ -41,6 +41,11 @@ const nextConfig = {
   },
   output: "standalone",
 
+  // Geen `X-Powered-By: Next.js`. Het vertelt een aanvaller welk framework en
+  // daarmee welke bekende lekken hij als eerste kan proberen, en het levert
+  // niemand iets op. Klein, maar het is gratis.
+  poweredByHeader: false,
+
   async headers() {
     return [
       {

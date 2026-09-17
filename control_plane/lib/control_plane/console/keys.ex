@@ -71,9 +71,11 @@ defmodule ControlPlane.Console.Keys do
   Versleutelt een privésleutel voor opslag. `:error` als er geen
   omgevingssleutel is -- de aanroeper hoort dan niets op te slaan.
   """
-  @spec seal(binary()) :: {:ok, binary()} | :error
-  def seal(pem) when is_binary(pem) do
-    case omgevingssleutel() do
+  @spec seal(binary(), binary() | nil) :: {:ok, binary()} | :error
+  def seal(pem, sleutel \\ nil)
+
+  def seal(pem, sleutel) when is_binary(pem) do
+    case sleutel || omgevingssleutel() do
       nil ->
         :error
 
@@ -94,9 +96,14 @@ defmodule ControlPlane.Console.Keys do
   of geknoei met de rij: het authenticatielabel van GCM vangt dat laatste, en
   dan is er geen sleutel in plaats van een verkeerde.
   """
-  @spec unseal(binary()) :: {:ok, binary()} | :error
-  def unseal(<<nonce::binary-size(@nonce_bytes), tag::binary-size(@tag_bytes), ct::binary>>) do
-    case omgevingssleutel() do
+  @spec unseal(binary(), binary() | nil) :: {:ok, binary()} | :error
+  def unseal(verzegeld, sleutel \\ nil)
+
+  def unseal(
+        <<nonce::binary-size(@nonce_bytes), tag::binary-size(@tag_bytes), ct::binary>>,
+        gegeven
+      ) do
+    case gegeven || omgevingssleutel() do
       nil ->
         :error
 
@@ -110,12 +117,24 @@ defmodule ControlPlane.Console.Keys do
     _ -> :error
   end
 
-  def unseal(_), do: :error
+  def unseal(_verzegeld, _sleutel), do: :error
 
   # 32 bytes, base64 in de omgeving. Een sleutel van de verkeerde lengte is een
   # configuratiefout en geen reden om stilletjes iets zwakkers te doen.
   defp omgevingssleutel do
-    case (Application.get_env(:control_plane, :console) || [])[:key_encryption_key] do
+    parse_key((Application.get_env(:control_plane, :console) || [])[:key_encryption_key])
+  end
+
+  @doc """
+  Leest een omgevingswaarde als sleutel, of `nil` als hij niet deugt.
+
+  Publiek zodat een test over het formaat geen globale configuratie hoeft te
+  verzetten -- dat lekt naar tests die er parallel naast draaien, en dat is
+  precies hoe deze module ooit een andere testsuite liet omvallen.
+  """
+  @spec parse_key(term()) :: binary() | nil
+  def parse_key(waarde) do
+    case waarde do
       <<sleutel::binary-size(32)>> ->
         sleutel
 

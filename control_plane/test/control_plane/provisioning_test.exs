@@ -95,7 +95,9 @@ defmodule ControlPlane.ProvisioningTest do
                "disk_gb" => 100,
                "template_id" => 9000,
                "cloud_init" => %{"ciuser" => "bunk-console"},
-               "ssh_keys" => ["ssh-ed25519 AAAA..."],
+               # De eigen consolesleutel van deze VPS staat achter die van de
+               # klant; zie ProvisioningConsoleKeyTest voor waarom.
+               "ssh_keys" => ["ssh-ed25519 AAAA...", _console_key],
                "ip_config" => "ip=10.10.0.10/19,gw=10.10.0.1"
              } = persisted.payload
 

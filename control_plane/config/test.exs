@@ -60,6 +60,12 @@ config :control_plane, :mollie,
   api_key: "test_stub_key",
   req_options: [plug: {Req.Test, ControlPlane.Mollie}]
 
+# Per-VPS consolesleutels staan in de testsuite AAN, met een vaste sleutel. Zo
+# testen we het pad dat in productie draait, en hoeft geen enkele test de
+# globale configuratie te verzetten -- dat lekt naar tests die er parallel naast
+# draaien, en precies dat liet de suite ooit omvallen op een heel ander bestand.
+config :control_plane, :console, key_encryption_key: Base.encode64(String.duplicate("t", 32))
+
 # De lekcontrole op wachtwoorden praat met api.pwnedpasswords.com. Uit in de
 # testsuite: honderden fixtures zouden anders honderden verzoeken naar buiten
 # doen, en een test die van een dienst van een ander afhangt is geen test. De
