@@ -289,7 +289,7 @@ defmodule ControlPlane.Fleet do
       ])
       |> without_capacity_when_unknown()
 
-    attrs =
+    basis =
       totals
       |> Map.put(:last_heartbeat_at, Clock.now())
       # A draining node is still alive and still serving the VPSes it has — it is
@@ -297,7 +297,6 @@ defmodule ControlPlane.Fleet do
       # drain within thirty seconds, silently, which is how a node you are trying
       # to empty fills back up while you watch.
       |> Map.put(:status, if(node.status == :draining, do: :draining, else: :online))
-      |> derive_available(node, totals)
 
     # PERF: only a real status transition (offline/pending -> online) or the
     # first heartbeat (which seeds available_*) is UI-relevant. A routine
@@ -305,18 +304,41 @@ defmodule ControlPlane.Fleet do
     # — otherwise every node's heartbeat forces every connected dashboard to a
     # full reload (O(nodes x dashboards) per interval). Capacity changes are
     # broadcast by the scheduler, and offline transitions by the reconciler.
-    # Nu available_* wordt afgeleid kan een gewone heartbeat hem wel degelijk
-    # veranderen -- als de operator zelf iets start of stopt. Alleen dán is er
-    # ook echt iets te tonen; op een stabiele machine blijft het cijfer gelijk en
-    # blijft deze heartbeat stil.
-    transition? =
-      node.status not in [:online, :draining] or is_nil(node.available_vcpu) or
-        capacity_changed?(node, attrs)
+    # In één transactie, met de node onder slot. De afgeleide vrije ruimte wordt
+    # gelezen (de lopende reserveringen) en daarna geschreven; zonder slot kan een
+    # plaatsing daar precies tussen committen en wordt haar afboeking overschreven
+    # -- de zojuist gereserveerde ruimte staat dan weer als vrij te boek en kan
+    # een tweede keer verkocht worden. De scheduler vergrendelt dezelfde rij, dus
+    # de twee serialiseren nu in plaats van elkaar te overschrijven.
+    Repo.transaction(fn ->
+      vers = Repo.one!(from n in Node, where: n.id == ^node.id, lock: "FOR UPDATE")
+      attrs = derive_available(basis, vers, totals)
 
-    node
-    |> Node.mark_online_changeset(attrs)
-    |> Repo.update()
-    |> tap_ok(fn _node -> if transition?, do: Events.broadcast_changed(:node) end)
+      transition? =
+        vers.status not in [:online, :draining] or is_nil(vers.available_vcpu) or
+          capacity_changed?(vers, attrs)
+
+      vers
+      |> Node.mark_online_changeset(attrs)
+      |> Repo.update()
+      |> case do
+        {:ok, bijgewerkt} -> {bijgewerkt, transition?}
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> case do
+      # Het uitzenden gebeurt na de commit: een abonnee die meteen terugleest
+      # moet de nieuwe stand zien, niet de stand van binnen de transactie.
+      {:ok, {bijgewerkt, true}} ->
+        Events.broadcast_changed(:node)
+        {:ok, bijgewerkt}
+
+      {:ok, {bijgewerkt, false}} ->
+        {:ok, bijgewerkt}
+
+      {:error, reden} ->
+        {:error, reden}
+    end
   end
 
   # Een heartbeat met een capacity_error komt van een agent die leeft maar zijn

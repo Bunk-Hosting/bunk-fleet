@@ -9,6 +9,19 @@ import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
 import { adminApi, type AdminRevenue } from "@/lib/api";
 
+// Een cel die met =, +, - of @ begint wordt door Excel en LibreOffice als
+// formule uitgevoerd, niet als tekst. De klantkolom is een e-mailadres en dat
+// mag van de registratie alles zijn zonder spaties -- "=cmd|'/c calc'!A1@x.nl"
+// is een geldig adres. Zonder deze regel voert een export dus uit wat een klant
+// in zijn adres heeft gezet, op de machine van degene die de boekhouding opent.
+// Een apostrof ervoor maakt er tekst van; de aanhalingstekens eromheen zijn
+// alleen het CSV-formaat en houden een formule niet tegen.
+function cel(waarde: string): string {
+  const tekst = String(waarde);
+  const veilig = /^[=+\-@\t\r]/.test(tekst) ? `'${tekst}` : tekst;
+  return `"${veilig.replace(/"/g, '""')}"`;
+}
+
 const euro = (cents: number) =>
   (cents / 100).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
 
@@ -65,7 +78,7 @@ function OmzetInner() {
       (r.gross_cents / 100).toFixed(2).replace(".", ","),
       r.mollie_payment_id ?? "",
     ]);
-    const csv = [kop, ...regels].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n");
+    const csv = [kop, ...regels].map((r) => r.map(cel).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;

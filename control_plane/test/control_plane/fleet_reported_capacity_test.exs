@@ -175,6 +175,26 @@ defmodule ControlPlane.FleetReportedCapacityTest do
     assert bijgewerkt.available_ram_mb == 5000
   end
 
+  test "een plaatsing die tijdens de heartbeat commit wordt niet overschreven" do
+    # De reden dat de heartbeat de node onder slot leest en schrijft. Zonder dat
+    # leest hij eerst de lopende reserveringen, commit een plaatsing daar precies
+    # tussen, en schrijft de heartbeat daarna de afboeking weg -- waarna dezelfde
+    # ruimte een tweede keer verkocht kan worden.
+    #
+    # Hier wordt die volgorde nagebootst: de reservering bestaat al voordat de
+    # heartbeat schrijft, dus hij moet in de uitkomst zitten.
+    r = regio()
+    n = node(r, %{available_ram_mb: 10_819})
+    gereserveerd(n, 2048, :held)
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    refute bijgewerkt.available_ram_mb == 3651,
+           "de reservering is weggevallen: deze ruimte kan nu twee keer verkocht worden"
+
+    assert bijgewerkt.available_ram_mb == 3651 - 2048
+  end
+
   test "een agent zonder zicht op zijn hypervisor levert geen plaatsbare ruimte op" do
     r = regio()
     n = node(r, %{available_ram_mb: 10_819})
