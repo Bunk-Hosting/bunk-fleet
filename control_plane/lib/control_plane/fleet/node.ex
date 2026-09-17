@@ -152,15 +152,66 @@ defmodule ControlPlane.Fleet.Node do
 
   @doc """
   Atomically adds a reservation's vcpu/ram/disk back onto its node's available
-  capacity with a single SQL increment — no read-modify-write, so a capacity
-  release can't clobber a concurrent scheduler decrement (lost update). Shaped
-  for `Ecto.Multi.run/3`: returns `{:ok, rows_updated}`.
+  capacity in a single statement — no read-modify-write, so a capacity release
+  can't clobber a concurrent scheduler decrement (lost update). Shaped for
+  `Ecto.Multi.run/3`: returns `{:ok, rows_updated}`.
+
+  Het optellen wordt afgetopt op het totaal van de node. Sinds available_* bij
+  elke heartbeat wordt afgeleid uit wat de node vrij meldt min de lopende
+  reserveringen, is deze teruggave overbodig zodra zo'n heartbeat er al langs is
+  geweest: de vrijgegeven reservering telt dan al niet meer mee. Er nog eens bij
+  optellen zou dubbeltellen, en de check-constraint `available_within_total`
+  weigert dat terecht — met een mislukte transactie tot gevolg in plaats van een
+  fout cijfer. Aftoppen laat de teruggave zijn werk doen tussen twee heartbeats
+  door, en laat hem verder geen kwaad doen.
+
+  Een node die nog nooit heeft gemeld heeft NULL in deze kolommen en houdt die.
+  Dat staat er met een expliciete CASE bij, want LEAST in PostgreSQL negeert NULL
+  en geeft de kleinste niet-lege waarde terug -- `LEAST(NULL, 6)` is 6, niet
+  NULL. Zonder die CASE zou een node die nooit iets meldde ineens plaatsbaar
+  worden met een capaciteit die niemand heeft gemeten.
   """
   def add_capacity(repo, %{node_id: node_id, vcpu: vcpu, ram_mb: ram_mb, disk_gb: disk_gb}) do
     {count, _} =
       repo.update_all(
-        from(n in __MODULE__, where: n.id == ^node_id),
-        inc: [available_vcpu: vcpu, available_ram_mb: ram_mb, available_disk_gb: disk_gb]
+        from(n in __MODULE__,
+          where: n.id == ^node_id,
+          update: [
+            set: [
+              available_vcpu:
+                fragment(
+                  "CASE WHEN ? IS NULL THEN NULL ELSE LEAST(? + ?, COALESCE(?, ? + ?)) END",
+                  n.available_vcpu,
+                  n.available_vcpu,
+                  ^vcpu,
+                  n.total_vcpu,
+                  n.available_vcpu,
+                  ^vcpu
+                ),
+              available_ram_mb:
+                fragment(
+                  "CASE WHEN ? IS NULL THEN NULL ELSE LEAST(? + ?, COALESCE(?, ? + ?)) END",
+                  n.available_ram_mb,
+                  n.available_ram_mb,
+                  ^ram_mb,
+                  n.total_ram_mb,
+                  n.available_ram_mb,
+                  ^ram_mb
+                ),
+              available_disk_gb:
+                fragment(
+                  "CASE WHEN ? IS NULL THEN NULL ELSE LEAST(? + ?, COALESCE(?, ? + ?)) END",
+                  n.available_disk_gb,
+                  n.available_disk_gb,
+                  ^disk_gb,
+                  n.total_disk_gb,
+                  n.available_disk_gb,
+                  ^disk_gb
+                )
+            ]
+          ]
+        ),
+        []
       )
 
     {:ok, count}
