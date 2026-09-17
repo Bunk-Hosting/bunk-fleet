@@ -10,6 +10,8 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
   """
   use ControlPlaneWeb.ConnCase, async: true
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Accounts.User
   alias ControlPlane.Fleet.Node
@@ -24,7 +26,13 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
   defp user_fixture(role) do
     email = "#{role}-#{System.unique_integer([:positive])}@example.com"
     {:ok, user} = Accounts.register_user(%{email: email, password: @password})
-    user |> Ecto.Changeset.change(%{role: role}) |> Repo.update!()
+    gebruiker = user |> Ecto.Changeset.change(%{role: role}) |> Repo.update!()
+
+    # Een beheerder zonder tweede factor strandt op `RequireAdminMfa` en zou elke
+    # route hier 403 laten geven -- dan test dit bestand die ene drempel in
+    # plaats van de autorisatie erachter. Dat de drempel er is, staat in
+    # `BeheerMfaTest`.
+    if role == :admin, do: with_second_factor(gebruiker), else: gebruiker
   end
 
   defp authed(conn, %User{} = user) do

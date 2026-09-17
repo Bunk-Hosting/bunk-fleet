@@ -51,7 +51,12 @@ config :logger, :console,
     :retried,
     :started,
     :errors,
-    :count
+    :count,
+    # De beheer-audit: wie deed wat, waar, met welke uitkomst.
+    :admin,
+    :methode,
+    :pad,
+    :uitkomst
   ]
 
 # Use Jason for JSON parsing in Phoenix

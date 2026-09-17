@@ -11,6 +11,7 @@ defmodule ControlPlane.Accounts do
 
   require Logger
 
+  alias ControlPlane.Accounts.BreachedPasswords
   alias ControlPlane.Accounts.LoginThrottle
   alias ControlPlane.Accounts.Passkey
   alias ControlPlane.Accounts.PasskeyChallenges
@@ -139,13 +140,32 @@ defmodule ControlPlane.Accounts do
   address farm free wallet balance.
   """
   def register_user(attrs) do
-    case %User{} |> User.registration_changeset(attrs) |> Repo.insert() do
+    changeset = %User{} |> User.registration_changeset(attrs) |> weiger_gelekt(attrs)
+
+    case Repo.insert(changeset) do
       {:ok, user} = ok ->
         deliver_user_confirmation_instructions(user)
         ok
 
       error ->
         error
+    end
+  end
+
+  # Een wachtwoord dat al in een datalek staat is te raden, hoe lang het ook is.
+  # Alleen als de rest van de changeset klopt: een wachtwoord van vier tekens is
+  # al afgekeurd en hoeft geen verzoek naar buiten te veroorzaken.
+  defp weiger_gelekt(changeset, attrs) do
+    wachtwoord = attrs["password"] || Map.get(attrs, :password)
+
+    if changeset.valid? and is_binary(wachtwoord) and BreachedPasswords.breached?(wachtwoord) do
+      Ecto.Changeset.add_error(
+        changeset,
+        :password,
+        "komt voor in een bekend datalek en is daarmee te raden; kies een ander"
+      )
+    else
+      changeset
     end
   end
 
@@ -334,7 +354,7 @@ defmodule ControlPlane.Accounts do
   """
   def reset_user_password(%User{} = user, attrs) do
     Ecto.Multi.new()
-    |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
+    |> Ecto.Multi.update(:user, User.password_changeset(user, attrs) |> weiger_gelekt(attrs))
     |> Ecto.Multi.delete_all(
       :tokens,
       UserToken.by_user_and_contexts_query(user, ["reset_password", "session"])
@@ -362,19 +382,30 @@ defmodule ControlPlane.Accounts do
   @spec change_user_password(User.t(), String.t(), map(), binary() | nil) ::
           {:ok, User.t()} | {:error, :invalid_current_password | Ecto.Changeset.t()}
   def change_user_password(%User{} = user, huidig, attrs, behoud_token \\ nil) do
-    if User.valid_password?(user, huidig) do
-      Ecto.Multi.new()
-      |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
-      |> Ecto.Multi.delete_all(:tokens, andere_sessies(user, behoud_token))
-      |> Repo.transaction()
-      |> case do
-        {:ok, %{user: bijgewerkt}} -> {:ok, bijgewerkt}
-        {:error, :user, changeset, _changes} -> {:error, changeset}
-      end
-    else
-      # Even duur als het goede pad, zodat het antwoord niets verraadt over het
-      # wachtwoord dat er stond.
-      {:error, :invalid_current_password}
+    # Hetzelfde slot als bij inloggen, en bewust dezelfde teller: het is hetzelfde
+    # wachtwoord dat geraden wordt. Zonder dit is deze endpoint de stille achterdeur
+    # om er ongelimiteerd op te gokken met een sessie die je al hebt.
+    cond do
+      LoginThrottle.blocked?(user.email) ->
+        {:error, :invalid_current_password}
+
+      not User.valid_password?(user, huidig) ->
+        LoginThrottle.note_failure(user.email)
+        {:error, :invalid_current_password}
+
+      true ->
+        wijzig_wachtwoord(user, attrs, behoud_token)
+    end
+  end
+
+  defp wijzig_wachtwoord(%User{} = user, attrs, behoud_token) do
+    Ecto.Multi.new()
+    |> Ecto.Multi.update(:user, User.password_changeset(user, attrs) |> weiger_gelekt(attrs))
+    |> Ecto.Multi.delete_all(:tokens, andere_sessies(user, behoud_token))
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{user: bijgewerkt}} -> {:ok, bijgewerkt}
+      {:error, :user, changeset, _changes} -> {:error, changeset}
     end
   end
 
@@ -545,6 +576,22 @@ defmodule ControlPlane.Accounts do
       {:error, changeset} -> {:error, changeset}
     end
   end
+
+  @doc """
+  Of dit account meer dan een wachtwoord nodig heeft om binnen te komen.
+
+  Een passkey telt net zo goed als een authenticator-app: een passkey is aan het
+  domein gebonden en daarmee bestand tegen phishing, dus daarnaast ook nog TOTP
+  eisen zou strenger lijken en niets toevoegen.
+  """
+  @spec has_second_factor?(User.t()) :: boolean()
+  def has_second_factor?(%User{totp_confirmed_at: %DateTime{}}), do: true
+
+  def has_second_factor?(%User{id: id}) do
+    Repo.exists?(from p in Passkey, where: p.user_id == ^id)
+  end
+
+  def has_second_factor?(_), do: false
 
   @doc """
   Of deze gebruiker hardware beheert.

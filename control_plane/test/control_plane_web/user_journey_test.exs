@@ -13,6 +13,8 @@ defmodule ControlPlaneWeb.UserJourneyTest do
   """
   use ControlPlaneWeb.ConnCase, async: false
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Credits
   alias ControlPlane.Fleet.Node
@@ -235,7 +237,9 @@ defmodule ControlPlaneWeb.UserJourneyTest do
           password: @password
         })
 
-      admin = admin |> Ecto.Changeset.change(role: :admin) |> Repo.update!()
+      admin =
+        admin |> Ecto.Changeset.change(role: :admin) |> Repo.update!() |> with_second_factor()
+
       token = admin |> Accounts.generate_user_session_token() |> Base.url_encode64(padding: false)
       %{conn: conn, admin: admin, admin_token: token}
     end

@@ -10,6 +10,8 @@ defmodule ControlPlaneWeb.Admin.MetricsTest do
   """
   use ControlPlaneWeb.ConnCase, async: false
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Metrics
   alias ControlPlane.Repo
@@ -20,7 +22,10 @@ defmodule ControlPlaneWeb.Admin.MetricsTest do
   defp admin_conn(conn) do
     email = "metrics-admin-#{System.unique_integer([:positive])}@example.com"
     {:ok, user} = Accounts.register_user(%{email: email, password: @password})
-    admin = user |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!()
+
+    admin =
+      user |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!() |> with_second_factor()
+
     token = admin |> Accounts.generate_user_session_token() |> Base.url_encode64(padding: false)
 
     {put_req_header(conn, "authorization", "Bearer " <> token), admin}

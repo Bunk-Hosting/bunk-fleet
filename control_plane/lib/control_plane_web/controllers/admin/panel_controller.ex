@@ -549,12 +549,15 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     with {:ok, uid} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
          %User{} = user <- Accounts.get_user(uid) || :not_found,
          {:ok, cents} <- parse_amount(params) do
+      # Met de naam van de beheerder erbij. Er is meer dan één, en bij een regel
+      # die geld verplaatst is "een beheerder" geen antwoord op de vraag die
+      # achteraf gesteld wordt.
       {:ok, _} =
         Credits.add_entry(
           user.id,
           cents,
           "admin_adjustment",
-          "Handmatige aanpassing door beheerder"
+          "Handmatige aanpassing door #{conn.assigns.current_user.email}"
         )
 
       json(conn, %{id: user.id, balance_cents: Credits.balance_cents(user.id)})

@@ -108,6 +108,8 @@ defmodule ControlPlaneWeb.Router do
     plug :accepts, ["json"]
     plug ControlPlaneWeb.Plugs.ApiAuth
     plug ControlPlaneWeb.Plugs.RequireAdmin
+    plug ControlPlaneWeb.Plugs.RequireAdminMfa
+    plug ControlPlaneWeb.Plugs.AdminAuditLog
   end
 
   scope "/api", ControlPlaneWeb do
@@ -128,6 +130,10 @@ defmodule ControlPlaneWeb.Router do
     pipe_through :api
     get "/install.sh", WorkerInstallController, :script
     get "/agent-update.sh", WorkerInstallController, :update_bootstrap
+    # Waar een beveiligingsonderzoeker een vondst kwijt kan (RFC 9116). Open,
+    # want dat is het hele punt: het is de enige pagina die iemand zoekt vóór
+    # hij besluit waar hij anders naartoe gaat met wat hij gevonden heeft.
+    get "/.well-known/security.txt", SecurityController, :security_txt
   end
 
   # Open, unauthenticated auth endpoints are rate-limited per client IP to blunt

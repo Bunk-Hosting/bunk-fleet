@@ -8,6 +8,8 @@ defmodule ControlPlaneWeb.Admin.PanelInsightTest do
   """
   use ControlPlaneWeb.ConnCase, async: true
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Credits
   alias ControlPlane.Fleet.Command
@@ -26,7 +28,9 @@ defmodule ControlPlaneWeb.Admin.PanelInsightTest do
         password: @password
       })
 
-    if rol == :admin, do: u |> Ecto.Changeset.change(role: :admin) |> Repo.update!(), else: u
+    if rol == :admin,
+      do: u |> Ecto.Changeset.change(role: :admin) |> Repo.update!() |> with_second_factor(),
+      else: u
   end
 
   defp als(conn, u) do

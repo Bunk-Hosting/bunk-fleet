@@ -9,6 +9,8 @@ defmodule ControlPlaneWeb.Admin.PanelRegionsTest do
   """
   use ControlPlaneWeb.ConnCase, async: true
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
@@ -17,7 +19,7 @@ defmodule ControlPlaneWeb.Admin.PanelRegionsTest do
   setup %{conn: conn} do
     email = "beheer-#{System.unique_integer([:positive])}@bunk.test"
     {:ok, u} = Accounts.register_user(%{email: email, password: "Str0ngPassphrase!42"})
-    u = u |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!()
+    u = u |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!() |> with_second_factor()
     token = u |> Accounts.generate_user_session_token() |> Base.url_encode64(padding: false)
 
     %{conn: put_req_header(conn, "authorization", "Bearer " <> token)}

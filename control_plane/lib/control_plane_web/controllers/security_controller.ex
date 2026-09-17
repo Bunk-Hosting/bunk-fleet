@@ -21,6 +21,34 @@ defmodule ControlPlaneWeb.SecurityController do
   # flood on its own.
   @max_field 300
 
+  @doc """
+  `/.well-known/security.txt` volgens RFC 9116.
+
+  Wie een lek vindt moet kunnen zien waar hij het meldt, zonder te gokken tussen
+  een contactformulier en een adres op LinkedIn. Zonder dit bestand is de kans
+  groot dat een vondst ergens anders belandt dan bij ons.
+
+  De vervaldatum hoort erbij en is bewust kort: een security.txt van drie jaar
+  oud zegt niets over of dat adres nog wordt gelezen. Hij schuift automatisch
+  mee, zodat het bestand niet verloopt omdat niemand eraan dacht -- wat het
+  alternatief was voor een vaste datum in de broncode.
+  """
+  def security_txt(conn, _params) do
+    contact = Application.get_env(:control_plane, :ops_email) || "security@bunkhosting.nl"
+    vervalt = Date.utc_today() |> Date.add(180) |> Date.to_iso8601()
+
+    tekst = """
+    Contact: mailto:#{contact}
+    Expires: #{vervalt}T00:00:00.000Z
+    Preferred-Languages: nl, en
+    Canonical: https://app.bunkhosting.nl/.well-known/security.txt
+    """
+
+    conn
+    |> put_resp_content_type("text/plain")
+    |> send_resp(200, tekst)
+  end
+
   def csp_report(conn, params) do
     report = params["csp-report"] || params
 

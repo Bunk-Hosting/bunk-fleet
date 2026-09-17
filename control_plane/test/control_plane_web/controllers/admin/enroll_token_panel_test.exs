@@ -9,6 +9,8 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenPanelTest do
   """
   use ControlPlaneWeb.ConnCase, async: true
 
+  import ControlPlane.Fixtures, only: [with_second_factor: 1]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Accounts.User
   alias ControlPlane.Fleet.EnrollToken
@@ -20,7 +22,7 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenPanelTest do
   defp admin do
     email = "admin-#{System.unique_integer([:positive])}@example.com"
     {:ok, user} = Accounts.register_user(%{email: email, password: @password})
-    user |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!()
+    user |> Ecto.Changeset.change(%{role: :admin}) |> Repo.update!() |> with_second_factor()
   end
 
   defp authed(conn, %User{} = user) do

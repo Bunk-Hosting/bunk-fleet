@@ -55,6 +55,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   already_confirmed: "Je account is al bevestigd.",
   unauthorized: "Je bent niet (meer) ingelogd.",
   forbidden: "Je hebt geen toegang tot deze actie.",
+  // Let op: `mfa_required` betekent in het inlogantwoord iets anders (er moet
+  // nog een TOTP-code volgen). Deze code heeft daarom een eigen naam.
+  admin_mfa_required:
+    "Het beheerpaneel vraagt een tweede factor. Zet een authenticator-app of een passkey aan onder Beveiliging.",
   not_found: "Niet gevonden.",
   rate_limited: "Te veel pogingen. Probeer het over een minuutje opnieuw.",
   captcha_failed: "De verificatie is niet gelukt. Probeer het opnieuw.",

@@ -60,6 +60,15 @@ config :control_plane, :mollie,
   api_key: "test_stub_key",
   req_options: [plug: {Req.Test, ControlPlane.Mollie}]
 
+# De lekcontrole op wachtwoorden praat met api.pwnedpasswords.com. Uit in de
+# testsuite: honderden fixtures zouden anders honderden verzoeken naar buiten
+# doen, en een test die van een dienst van een ander afhangt is geen test. De
+# tests die het gedrag zelf bewaken zetten hem per geval aan met een Req-stub.
+config :control_plane, check_breached_passwords: false
+
+config :control_plane, :pwned_req_options,
+  plug: {Req.Test, ControlPlane.Accounts.BreachedPasswords}
+
 # The boot-time security-posture report is about production gaps; in :test every
 # protection is deliberately unset, so it would print three warnings per run.
 config :control_plane, report_security_posture: false

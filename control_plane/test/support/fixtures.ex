@@ -69,4 +69,25 @@ defmodule ControlPlane.Fixtures do
 
   @doc "The password `confirmed_user_fixture/1` uses unless the caller supplies one."
   def valid_user_password, do: @default_password
+
+  @doc """
+  Zet een tweede factor op dit account.
+
+  Het beheerpaneel eist er een (`Plugs.RequireAdminMfa`). Zonder deze regel
+  testen de beheerderstests die drempel in plaats van wat ze bedoelen te
+  testen -- ze zouden allemaal op dezelfde 403 stranden en niets meer zeggen
+  over het paneel erachter.
+
+  Een echte TOTP-inschrijving doorlopen zou hier niets toevoegen: die heeft zijn
+  eigen tests, en wat deze fixture moet vastleggen is alleen "dit account heeft
+  een tweede factor".
+  """
+  def with_second_factor(%ControlPlane.Accounts.User{} = user) do
+    user
+    |> Ecto.Changeset.change(%{
+      totp_secret: "ABCDEFGHIJKLMNOP",
+      totp_confirmed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+    |> ControlPlane.Repo.update!()
+  end
 end
