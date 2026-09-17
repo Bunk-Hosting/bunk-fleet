@@ -241,13 +241,28 @@ func applySettings(logger *slog.Logger, prov provider.Provider, offer *offerHold
 	}
 
 	if c, ok := prov.(provider.Configurable); ok {
-		c.ApplySettings(provider.Settings{
+		nieuw := provider.Settings{
 			VCPUOversubscribe: s.VCPUOversubscribe,
 			VMIDMin:           s.VMIDMin,
 			VMIDMax:           s.VMIDMax,
-		})
+		}
+		// Ook loggen als er niets aan het aanbod verandert. Zonder deze regel is
+		// "heeft die node zijn instellingen nou opgepakt?" een vraag die niemand
+		// kan beantwoorden: een VMID-bereik of een overboekingsfactor landde stil.
+		if nieuw != vorigeProviderSettings {
+			logger.Info("instellingen opgehaald uit het dashboard",
+				"vmid_min", nieuw.VMIDMin,
+				"vmid_max", nieuw.VMIDMax,
+				"vcpu_per_core", nieuw.VCPUOversubscribe)
+			vorigeProviderSettings = nieuw
+		}
+		c.ApplySettings(nieuw)
 	}
 }
+
+// Wat er de vorige keer naar de provider ging, alleen om te kunnen zien wanneer
+// er iets verandert. Wordt uitsluitend vanuit de heartbeat-lus aangeraakt.
+var vorigeProviderSettings provider.Settings
 
 func kies(vanCP, lokaal int) int {
 	if vanCP > 0 {

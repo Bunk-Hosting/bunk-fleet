@@ -15,6 +15,7 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Fleet.Vps
+
   alias ControlPlane.Repo
 
   @password "test-only-password-4f2b9c1e"
@@ -125,6 +126,66 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
     customer = authed(conn, user_fixture(:user))
 
     assert %{status: 200} = get(customer, "/api/v1/vpses")
+  end
+
+  describe "DELETE /api/v1/beheer/users/:id" do
+    test "verwijdert een account zonder administratie", %{conn: conn} do
+      admin = user_fixture(:admin)
+      # Een verse registratie heeft nog geen grootboek: de aanmeldbonus volgt pas
+      # op de bevestiging. Dan valt er niets te bewaren.
+      slachtoffer = user_fixture(:user)
+
+      resp =
+        conn
+        |> authed(admin)
+        |> delete("/api/v1/beheer/users/#{slachtoffer.id}")
+        |> json_response(200)
+
+      assert resp["result"] == "deleted"
+      assert is_nil(Repo.get(User, slachtoffer.id))
+    end
+
+    test "anonimiseert een account met een administratie", %{conn: conn} do
+      # De aanmeldbonus komt pas bij het bevestigen van het account, dus een
+      # verse registratie heeft nog niets. Hier zetten we er wel iets neer: dat
+      # is het geval waarin de facturen en het grootboek moeten blijven staan.
+      admin = user_fixture(:admin)
+      klant = user_fixture(:user)
+      {:ok, _} = ControlPlane.Credits.add_entry(klant.id, 5000, "topup", "test")
+
+      resp =
+        conn
+        |> authed(admin)
+        |> delete("/api/v1/beheer/users/#{klant.id}")
+        |> json_response(200)
+
+      assert resp["result"] == "anonymised"
+      bewaard = Repo.get!(User, klant.id)
+      refute bewaard.email == klant.email
+      assert bewaard.email =~ "@verwijderd.invalid"
+    end
+
+    test "weigert jezelf te verwijderen", %{conn: conn} do
+      admin = user_fixture(:admin)
+
+      resp =
+        conn
+        |> authed(admin)
+        |> delete("/api/v1/beheer/users/#{admin.id}")
+        |> json_response(422)
+
+      assert resp["error"] == "cannot_delete_self"
+      assert Repo.get!(User, admin.id).email == admin.email
+    end
+
+    test "een gewone gebruiker mag het niet", %{conn: conn} do
+      klant = user_fixture(:user)
+      doelwit = user_fixture(:user)
+
+      conn |> authed(klant) |> delete("/api/v1/beheer/users/#{doelwit.id}") |> json_response(403)
+
+      assert Repo.get!(User, doelwit.id).email == doelwit.email
+    end
   end
 
   test "every /beheer route in the router is covered above" do

@@ -181,3 +181,29 @@ func TestEenProviderZonderInstellingenGeeftGeenPaniek(t *testing.T) {
 
 	applySettings(logger, stubProvider{}, offer, transport.NodeSettings{VMIDMin: 2000, VMIDMax: 2999})
 }
+
+func TestEenVeranderdeInstellingWordtGelogd(t *testing.T) {
+	// Zonder logregel is niet vast te stellen of een node zijn instellingen heeft
+	// opgepakt: een VMID-bereik landde stil, en alleen een gewijzigd aanbod gaf
+	// een spoor.
+	vorigeProviderSettings = provider.Settings{}
+	var uit strings.Builder
+	logger := slog.New(slog.NewTextHandler(&uit, nil))
+	prov := &instelbareProvider{}
+	offer := &offerHolder{v: config.OfferConfig{}}
+
+	applySettings(logger, prov, offer, transport.NodeSettings{VMIDMin: 2000, VMIDMax: 2999})
+
+	if !strings.Contains(uit.String(), "2000") {
+		t.Errorf("het nieuwe bereik staat niet in de log: %q", uit.String())
+	}
+
+	// Een tweede keer dezelfde instellingen hoort stil te blijven, anders staat
+	// de log elke dertig seconden vol met hetzelfde.
+	uit.Reset()
+	applySettings(logger, prov, offer, transport.NodeSettings{VMIDMin: 2000, VMIDMax: 2999})
+
+	if uit.Len() != 0 {
+		t.Errorf("ongewijzigde instellingen werden opnieuw gelogd: %q", uit.String())
+	}
+}
