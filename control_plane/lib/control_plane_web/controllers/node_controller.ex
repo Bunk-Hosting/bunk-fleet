@@ -130,9 +130,8 @@ defmodule ControlPlaneWeb.NodeController do
       {:error, :unknown_region} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
 
-      :unknown_region ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
-
+      # Alles wat overblijft is "bestaat niet of is niet van jou", en dat verschil
+      # hoort een vreemde niet te leren kennen.
       _ ->
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
     end

@@ -3,11 +3,20 @@ name: Deploy
 # Uitrollen gebeurt hier, niet vanaf iemands laptop. Een push naar main die de
 # CI haalt gaat vanzelf naar productie; er is geen tussenstap waar een mens iets
 # moet draaien en dus ook geen stap die iemand kan overslaan.
+#
+# Het hangt aan CI en niet aan de push zelf. Eerder liepen ze naast elkaar: een
+# commit met een rode type-check stond gewoon live terwijl de CI nog rood in de
+# lijst stond. `needs:` kan hier niet -- dat werkt alleen binnen één workflow --
+# dus dit is een workflow_run op de uitkomst van CI.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   # Handmatig starten blijft mogelijk, bijvoorbeeld om een uitrol te herhalen
-  # nadat een machine terug is van onderhoud.
+  # nadat een machine terug is van onderhoud. Dat slaat de CI-eis bewust over:
+  # het is een mens die weet wat hij doet, en soms is dat precies wat nodig is
+  # als de CI zelf stuk zit.
   workflow_dispatch:
 
 # Twee uitrollen tegelijk hebben elkaar hier eerder de das omgedaan: allebei
@@ -23,9 +32,18 @@ jobs:
     # bewust: de secrets liggen daar in .env.prod en hoeven zo nooit in GitHub.
     runs-on: [self-hosted, bunk-fleet]
     timeout-minutes: 45
+    # Een workflow_run vuurt ook af als de CI faalde of is afgebroken; alleen
+    # "success" mag door.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
+      # De commit die de CI daadwerkelijk heeft gekeurd, niet de laatste stand
+      # van main: bij twee pushes vlak na elkaar zijn dat niet dezelfde.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Bouwen
         run: bash build-prod.sh
