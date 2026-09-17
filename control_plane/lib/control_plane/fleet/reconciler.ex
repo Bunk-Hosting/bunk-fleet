@@ -71,6 +71,12 @@ defmodule ControlPlane.Fleet.Reconciler do
   # iemand er iets aan kan doen, is een melding die niemand meer leest.
   @default_schijf_interval_ms 6 * 60 * 60 * 1000
 
+  # Hoogstens één melding per etmaal over de schijf. Een volle schijf is geen
+  # gebeurtenis maar een toestand: hij blijft vol tot iemand er iets aan doet, en
+  # vier keer per dag hetzelfde zeggen is hoe een melding een ding wordt dat je
+  # wegklikt.
+  @alarm_stilte_ms 24 * 60 * 60 * 1000
+
   @doc """
   Starts the reconciler.
 
@@ -109,7 +115,8 @@ defmodule ControlPlane.Fleet.Reconciler do
        purge_interval_ms: purge_interval_ms,
        last_purge_ms: nil,
        schijf_interval_ms: schijf_interval_ms,
-       last_schijf_ms: nil
+       last_schijf_ms: nil,
+       last_schijf_alarm_ms: nil
      }}
   end
 
@@ -221,8 +228,11 @@ defmodule ControlPlane.Fleet.Reconciler do
     now = System.monotonic_time(:millisecond)
 
     if is_nil(last) or now - last >= si do
-      check_schijf()
-      %{state | last_schijf_ms: now}
+      %{
+        state
+        | last_schijf_ms: now,
+          last_schijf_alarm_ms: check_schijf(state.last_schijf_alarm_ms)
+      }
     else
       state
     end
@@ -230,9 +240,11 @@ defmodule ControlPlane.Fleet.Reconciler do
 
   defp maybe_check_schijf(state), do: state
 
-  defp check_schijf do
+  defp check_schijf(laatste_alarm) do
+    now = System.monotonic_time(:millisecond)
+
     case Schijfruimte.te_vol?() do
-      {true, pct} ->
+      {true, pct} when is_nil(laatste_alarm) or now - laatste_alarm >= @alarm_stilte_ms ->
         Logger.error("schijf zit op #{pct}%", schijf_pct: pct)
 
         ControlPlane.Notifier.deliver_operational_alert(
@@ -250,11 +262,21 @@ defmodule ControlPlane.Fleet.Reconciler do
           """
         )
 
+        now
+
+      # Nog steeds te vol, maar het is al gemeld. De logregel blijft, de mail
+      # niet -- zo is in de log wel te zien dat het niet vanzelf overging.
+      {true, pct} ->
+        Logger.warning("schijf zit nog steeds op #{pct}%", schijf_pct: pct)
+        laatste_alarm
+
       false ->
-        :ok
+        laatste_alarm
     end
   rescue
-    e -> Logger.error("schijfcontrole mislukt: #{Exception.message(e)}")
+    e ->
+      Logger.error("schijfcontrole mislukt: #{Exception.message(e)}")
+      laatste_alarm
   end
 
   defp purge_commands do
