@@ -25,11 +25,6 @@ export function formatDateTime(dateString: string): string {
   });
 }
 
-// Single euro formatter; formatPrice kept as an alias for its existing callers.
-export function formatPrice(price: number | string): string {
-  return formatEuro(price);
-}
-
 export function formatEuro(value: number | string): string {
   return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
 }

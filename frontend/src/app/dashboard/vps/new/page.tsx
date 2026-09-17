@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { packagesApi, vpsApi, billingApi, regionsApi, parseApiError } from "@/lib/api";
 import type { BunkRegion } from "@/lib/api";
-import { cn, formatPrice, formatEuro, formatBalance } from "@/lib/utils";
+import { cn, formatEuro, formatBalance } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
 export default function NewVpsPage() {
@@ -161,7 +161,7 @@ export default function NewVpsPage() {
                   <p>{pkg.bandwidth_tb} TB bandbreedte</p>
                 </div>
                 <p className="mt-3 text-lg font-bold text-primary">
-                  {formatPrice(pkg.price_monthly)}/maand
+                  {formatEuro(pkg.price_monthly)}/maand
                 </p>
               </CardContent>
             </Card>
@@ -239,7 +239,7 @@ export default function NewVpsPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Kosten voor dit pakket</span>
                 <span className="font-medium">
-                  {pkg ? `${formatPrice(pkg.price_monthly)}` : "—"}
+                  {pkg ? formatEuro(pkg.price_monthly) : "—"}
                 </span>
               </div>
               <div className="flex justify-between">

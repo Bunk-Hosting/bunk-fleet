@@ -114,12 +114,17 @@ docker rm -f "$NIEUW" >/dev/null 2>&1 || true
 # 34, antwoordde /healthz een derde van de keren met 504 (nginx kapt af op 5s,
 # Ecto op 2), en was de machine acht minuten lang niet eens te bevragen. Een
 # klant hoort niets te merken van het feit dat wij aan het uitrollen zijn.
+# BUNK_API_URL wijst naar de alias en niet naar de containernaam: tijdens een
+# uitrol van het control plane bestaat die naam even niet. Zie deploy-prod.sh.
+#
+# (En nee, dat commentaar kan niet tússen de regels van het commando hieronder.
+# Een `\` gevolgd door een commentaarregel breekt het commando af op precies die
+# plek -- docker kreeg dan alleen opties en geen image, en de uitrol viel stil
+# nadat de nieuwe control plane er al stond.)
 docker run -d --name "$NIEUW" --network "$NET" --network-alias "$ALIAS" \
   --restart unless-stopped \
   --cpu-shares 4096 \
   --log-opt max-size=50m --log-opt max-file=5 \
-  # Via de alias, niet via de containernaam: tijdens een uitrol van het control
-  # plane bestaat die naam even niet. Zie deploy-prod.sh.
   -e BUNK_API_URL=http://bunk-cp-live:4000 \
   bunk-frontend:latest >/dev/null
 

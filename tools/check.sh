@@ -18,16 +18,50 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WHAT="${1:-all}"
 
-# The test database lives beside the production one on the shared docker network;
-# MIX_ENV=test keeps it in control_plane_test, never control_plane.
+# De tests krijgen hun eigen wegwerp-Postgres. Ze draaiden hiervoor tegen de
+# database van productie -- weliswaar in control_plane_test en niet in
+# control_plane, dus het ging nooit mis -- maar het is één regel configuratie
+# verwijderd van wel. En het was zichtbaar: elke gate-ronde zette tientallen
+# "duplicate key"-fouten in de log van de productiedatabase, en dat is precies
+# de log waarin je straks een échte fout moet terugvinden.
+#
+# De data staat in tmpfs: sneller, en hij laat niets achter op een schijf die
+# toch al aan de krappe kant is.
 NET="${BUNK_NET:-bunkfleet}"
-DB_HOST="${BUNK_DB_HOST:-bf-prod-pg}"
+TEST_PG="${BUNK_TEST_PG:-bf-test-pg}"
+DB_HOST="${BUNK_DB_HOST:-$TEST_PG}"
 DB_USER="${BUNK_DB_USER:-bunkfleet}"
-DB_PASSWORD="${BUNK_DB_PASSWORD:-}"
+# Geen geheim: deze database bestaat alleen zolang de gate draait, staat op een
+# intern docker-netwerk en publiceert geen poort.
+DB_PASSWORD="${BUNK_DB_PASSWORD:-testtest}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Zet de wegwerpdatabase op als hij er niet is, en laat hem daarna staan: de
+# volgende gate-ronde is dan sneller. `docker rm -f bf-test-pg` is genoeg om
+# helemaal schoon te beginnen.
+start_test_pg() {
+  [ "$DB_HOST" = "$TEST_PG" ] || return 0
+
+  if [ "$(docker inspect -f '{{.State.Running}}' "$TEST_PG" 2>/dev/null)" != "true" ]; then
+    docker rm -f "$TEST_PG" >/dev/null 2>&1 || true
+    docker run -d --name "$TEST_PG" --network "$NET" \
+      --tmpfs /var/lib/postgresql/data:rw,size=512m \
+      -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+      -e POSTGRES_DB=control_plane_test \
+      postgres:16-alpine >/dev/null || fail "kon de testdatabase niet starten"
+    echo "testdatabase $TEST_PG gestart"
+  fi
+
+  for _ in $(seq 1 30); do
+    docker exec "$TEST_PG" pg_isready -U "$DB_USER" -d control_plane_test >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  fail "de testdatabase werd niet bereikbaar"
+}
+
 check_elixir() {
+  start_test_pg
   [ -n "$DB_PASSWORD" ] || fail "BUNK_DB_PASSWORD is required for the Elixir suite"
 
   echo "=== control plane: format + compile + test ==="
