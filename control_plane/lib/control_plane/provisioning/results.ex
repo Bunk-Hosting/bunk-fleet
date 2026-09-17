@@ -36,12 +36,10 @@ defmodule ControlPlane.Provisioning.Results do
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Reservation
   alias ControlPlane.Fleet.Vps
-  alias ControlPlane.Money
   alias ControlPlane.Net
   alias ControlPlane.Provisioning.Reservations
   alias ControlPlane.Repo
   alias ControlPlane.Subscriptions
-  alias ControlPlane.Subscriptions.Subscription
   alias Ecto.Multi
 
   @doc """
@@ -602,28 +600,29 @@ defmodule ControlPlane.Provisioning.Results do
 
   defp sane_vm_id(_), do: nil
 
-  defp refund_failed_provision(repo, vps_id) do
-    case repo.one(
-           from s in Subscription,
-             where: s.vps_id == ^vps_id and s.status != :cancelled
-         ) do
-      nil ->
-        {:ok, :no_subscription}
+  # Geld terug voor een uitrol die is mislukt, plus het abonnement opzeggen zodat
+  # er nooit maandelijks wordt afgeschreven voor een machine die niet bestaat.
+  #
+  # Het bedrag komt uit de grootboekregel en niet uit de prijs van het pakket of
+  # van het abonnement. Dat is het enige getal dat zeker klopt: het is wat er
+  # daadwerkelijk is afgeschreven. Stond het pakket er inmiddels anders bij, of
+  # kreeg de klant korting, dan wijken die andere twee af -- naar boven of naar
+  # beneden, en allebei is fout.
+  #
+  # `refund_charge_for_vps/1` markeert bovendien de oorspronkelijke afschrijving
+  # als teruggeboekt. Dat deed dit pad niet, en daardoor bleef er een openstaande
+  # `vps_charge` staan die de weessweep later opnieuw zou kunnen terugboeken. Dat
+  # ging vandaag goed omdat die sweep op iets anders filtert -- geluk, geen
+  # ontwerp, en precies het soort verschil waar geld tussendoor valt.
+  #
+  # Geen afschrijving gevonden? Dan is er niets afgeschreven en hoort er niets
+  # terug. Hier de abonnementsprijs terugbetalen zou geld geven dat nooit is
+  # betaald.
+  defp refund_failed_provision(_repo, vps_id) do
+    terugbetaald = Credits.refund_charge_for_vps(vps_id)
+    {:ok, _} = Subscriptions.cancel_for_vps(vps_id)
 
-      sub ->
-        cents = Money.to_cents(sub.price_monthly)
-
-        {:ok, _} =
-          Credits.refund(
-            sub.owner_id,
-            cents,
-            "vps_refund",
-            "Terugbetaling: provisioning mislukt"
-          )
-
-        {:ok, _} = Subscriptions.cancel_for_vps(vps_id)
-        {:ok, :refunded}
-    end
+    if terugbetaald, do: {:ok, :refunded}, else: {:ok, :no_charge}
   end
 
   # Reservation lookups are intentionally non-bang (Repo.one, not Repo.one!).
