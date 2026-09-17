@@ -66,6 +66,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_matching_package: "Deze combinatie van cpu, geheugen en schijf is niet te bestellen.",
   invalid_vps: "Deze specificatie kan niet.",
   region_not_found: "Deze regio bestaat niet.",
+  region_ambiguous: "Er zijn meerdere locaties — kies waar deze node komt te staan.",
+  region_code_taken: "Die code is al van een andere locatie.",
+  invalid_region_code: "Een code mag alleen kleine letters, cijfers en koppeltekens bevatten.",
   invalid_region: "Vul een plaatsnaam in van twee tot zestig tekens.",
   unknown_region: "Deze locatie bestaat niet.",
   no_delivery_consent:
@@ -956,7 +959,7 @@ export const adminApi = {
 
   updateRegion: async (
     id: string,
-    changes: { name?: string; enabled?: boolean },
+    changes: { name?: string; code?: string; enabled?: boolean },
   ): Promise<AdminRegion> =>
     (await api.patch<{ region: AdminRegion }>(`/beheer/regions/${id}`, changes)).data.region,
 

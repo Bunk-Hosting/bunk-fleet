@@ -89,6 +89,35 @@ defmodule ControlPlaneWeb.Admin.PanelRegionsTest do
     assert resp["region"]["node_count"] == 2
   end
 
+  test "naam en code wijzigen kan in één keer", %{conn: conn} do
+    r = regio()
+
+    resp =
+      conn
+      |> patch(~p"/api/v1/beheer/regions/#{r.id}", %{"name" => "Amsterdam", "code" => "ams-7"})
+      |> json_response(200)
+
+    assert resp["region"]["name"] == "Amsterdam"
+    assert resp["region"]["code"] == "ams-7"
+  end
+
+  test "een bezette code en een onmogelijke code zeggen niet hetzelfde", %{conn: conn} do
+    # Ze vragen om iets anders van degene die het intypt: een andere code kiezen,
+    # of hem anders schrijven. Eén foutcode zou hem laten raden welke van de twee.
+    bezet = regio()
+    r = regio()
+
+    assert conn
+           |> patch(~p"/api/v1/beheer/regions/#{r.id}", %{"code" => bezet.code})
+           |> json_response(422)
+           |> Map.get("error") == "region_code_taken"
+
+    assert conn
+           |> patch(~p"/api/v1/beheer/regions/#{r.id}", %{"code" => "niet zo"})
+           |> json_response(422)
+           |> Map.get("error") == "invalid_region_code"
+  end
+
   test "een locatie die niet bestaat geeft 404, ook als de id onzin is", %{conn: conn} do
     assert conn
            |> patch(~p"/api/v1/beheer/regions/#{Ecto.UUID.generate()}", %{"name" => "X"})

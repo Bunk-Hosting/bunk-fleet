@@ -65,10 +65,12 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
-  Wijzigt de naam van een regio of zet hem aan of uit.
+  Wijzigt de naam of de code van een regio, of zet hem aan of uit.
 
-  De code blijft zoals hij is: die staat in bestelhistorie en in de
-  installatie-instructies van elke node in die regio.
+  De code mag mee. Nodes en VPS'en verwijzen naar de regio op id, dus er breekt
+  geen enkele koppeling -- wat breekt is een script van een operator waar de
+  oude code met de hand in staat. Dat is een keuze van een beheerder en geen
+  gevolg dat hij moet ontdekken, dus het scherm zegt het erbij.
   """
   @spec update_region(Ecto.UUID.t(), map()) ::
           {:ok, Region.t()} | {:error, :not_found | Ecto.Changeset.t()}
@@ -79,7 +81,7 @@ defmodule ControlPlane.Fleet do
 
       region ->
         region
-        |> Region.changeset(Map.take(attrs, ["name", "enabled", :name, :enabled]))
+        |> Region.changeset(Map.take(attrs, ~w(name code enabled) ++ [:name, :code, :enabled]))
         |> Repo.update()
     end
   end

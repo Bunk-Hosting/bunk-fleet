@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
-import { adminApi, type AdminNode } from "@/lib/api";
+import { adminApi, parseApiError, type AdminNode, type AdminRegion } from "@/lib/api";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   online: "default",
@@ -59,15 +59,37 @@ function NodesInner() {
   const [minting, setMinting] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Het token is aan één locatie gebonden, dus die keuze hoort hier te staan en
+  // niet impliciet te zijn. Zolang er precies één locatie is mag hij leeg
+  // blijven -- dan is er niets te kiezen -- maar zodra er twee zijn is "de
+  // eerste de beste" een node die ergens anders staat dan de klant koos.
+  const [regios, setRegios] = useState<AdminRegion[]>([]);
+  const [regio, setRegio] = useState("");
+
+  useEffect(() => {
+    adminApi
+      .regions()
+      .then((rs) => {
+        setRegios(rs);
+        if (rs.length === 1) setRegio(rs[0].code);
+      })
+      .catch(() => setRegios([]));
+  }, []);
+
   const addNode = async () => {
     setMinting(true);
     try {
-      const res = await adminApi.createEnrollToken();
+      const res = await adminApi.createEnrollToken(regio || undefined);
       setEnroll({ install: res.install, expires_at: res.expires_at });
-    } catch {
+    } catch (e) {
       toast({
         title: "Kon geen token aanmaken",
-        description: "Controleer of er een regio bestaat om de node in te plaatsen.",
+        description: parseApiError(
+          e,
+          regios.length === 0
+            ? "Maak eerst een locatie aan onder Beheer > Locaties."
+            : "Kies de locatie waar deze node komt te staan.",
+        ),
         variant: "destructive",
       });
     } finally {
@@ -169,7 +191,27 @@ function NodesInner() {
           <Button variant="ghost" size="sm" className="gap-2" onClick={load}>
             <RefreshCw className="h-4 w-4" /> Ververs
           </Button>
-          <Button size="sm" className="gap-2" onClick={addNode} disabled={minting}>
+          {regios.length > 1 && (
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+              value={regio}
+              onChange={(e) => setRegio(e.target.value)}
+              aria-label="Locatie voor de nieuwe node"
+            >
+              <option value="">Kies een locatie…</option>
+              {regios.map((r) => (
+                <option key={r.id} value={r.code}>
+                  {r.name} ({r.code})
+                </option>
+              ))}
+            </select>
+          )}
+          <Button
+            size="sm"
+            className="gap-2"
+            onClick={addNode}
+            disabled={minting || (regios.length > 1 && !regio)}
+          >
             {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Node toevoegen
           </Button>

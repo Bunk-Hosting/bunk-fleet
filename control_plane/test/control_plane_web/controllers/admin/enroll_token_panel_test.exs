@@ -86,7 +86,12 @@ defmodule ControlPlaneWeb.Admin.EnrollTokenPanelTest do
 
     # Raden zou een node in de verkeerde regio zetten, en dan krijgt een klant
     # hardware op een andere plek dan hij koos.
-    assert %{"error" => "region_not_found"} =
+    #
+    # En het is nadrukkelijk niet `region_not_found`: dat gaf het paneel de
+    # melding "controleer of er een regio bestaat" op het moment dat er juist
+    # een tweede bij was gekomen. Twee verschillende problemen met twee
+    # verschillende oplossingen horen niet dezelfde code te delen.
+    assert %{"error" => "region_ambiguous"} =
              conn
              |> authed(admin())
              |> post(~p"/api/v1/beheer/enroll-tokens", %{})

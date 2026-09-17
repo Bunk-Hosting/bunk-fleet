@@ -296,6 +296,9 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       {:error, :region_not_found} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: "region_not_found"})
 
+      {:error, :region_ambiguous} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "region_ambiguous"})
+
       {:error, _} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_enroll_token"})
     end
@@ -320,10 +323,15 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   # Geen regio meegegeven en er is er maar één: dan is die bedoeld. Zijn het er
   # meer, dan moet de operator kiezen — een node in de verkeerde regio plaatsen
   # stuurt klanten naar hardware die ergens anders staat dan ze kozen.
+  #
+  # "Meerdere" en "geen enkele" zijn twee verschillende problemen met twee
+  # verschillende oplossingen, en ze gaven allebei dezelfde melding: "controleer
+  # of er een regio bestaat", terwijl er net twee bij waren gekomen.
   defp resolve_region(_params) do
     case Repo.all(Region) do
       [%Region{} = only] -> {:ok, only}
-      _ -> {:error, :region_not_found}
+      [] -> {:error, :region_not_found}
+      _meerdere -> {:error, :region_ambiguous}
     end
   end
 
@@ -612,7 +620,7 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   end
 
   @doc """
-  Hernoemt een regio of zet hem aan of uit.
+  Hernoemt een regio, wijzigt zijn code, of zet hem aan of uit.
 
   Uitzetten is geen verwijderen: wat er draait blijft draaien, er komt alleen
   niets nieuws bij. Dat is wat je wilt als een locatie wordt afgebouwd.
@@ -628,10 +636,17 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     end
   end
 
-  # De code is uniek; dat is de enige fout die een mens hier in de praktijk maakt,
-  # en "region_exists" zegt meer dan "invalid".
+  # Twee dingen kunnen er met een code misgaan en ze vragen om iets anders van
+  # degene die het intypt: hij bestaat al, of hij heeft niet de vorm die in een
+  # URL past. "invalid" zou hem laten raden welke van de twee.
   defp region_error(%Ecto.Changeset{errors: errors}) do
-    if Keyword.has_key?(errors, :code), do: "region_code_taken", else: "invalid_region"
+    case Keyword.get(errors, :code) do
+      nil ->
+        "invalid_region"
+
+      {_melding, opts} ->
+        if opts[:constraint], do: "region_code_taken", else: "invalid_region_code"
+    end
   end
 
   # Het paneel voegt dit antwoord samen met de rij die het al toonde, dus een nul

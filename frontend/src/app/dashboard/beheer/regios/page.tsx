@@ -11,6 +11,64 @@ import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
 import { adminApi, parseApiError, type AdminRegion } from "@/lib/api";
 
+function RegioRij({
+  regio,
+  busy,
+  onOpslaan,
+  onSchakel,
+}: {
+  regio: AdminRegion;
+  busy: boolean;
+  onOpslaan: (naam: string, code: string) => void;
+  onSchakel: () => void;
+}) {
+  const [naam, setNaam] = useState(regio.name);
+  const [code, setCode] = useState(regio.code);
+  const gewijzigd = naam.trim() !== regio.name || code.trim().toLowerCase() !== regio.code;
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <Input
+            className="max-w-[16rem]"
+            value={naam}
+            disabled={busy}
+            onChange={(e) => setNaam(e.target.value)}
+            aria-label="Naam"
+          />
+          <Input
+            className="max-w-[10rem] font-mono"
+            value={code}
+            disabled={busy}
+            onChange={(e) => setCode(e.target.value)}
+            aria-label="Code"
+          />
+          <Button size="sm" variant="outline" disabled={busy || !gewijzigd} onClick={() => onOpslaan(naam, code)}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Opslaan"}
+          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {regio.enabled ? (
+              <Badge variant="outline">open</Badge>
+            ) : (
+              <Badge variant="secondary">gesloten</Badge>
+            )}
+            <Button variant="ghost" size="sm" disabled={busy} onClick={onSchakel}>
+              {regio.enabled ? "Sluiten" : "Openen"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {regio.node_count === 0
+            ? "geen nodes — deze locatie kan niets leveren en staat niet in het bestelscherm"
+            : `${regio.node_count} node${regio.node_count === 1 ? "" : "s"}`}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RegiosInner() {
   const { toast } = useToast();
   const [regions, setRegions] = useState<AdminRegion[] | null>(null);
@@ -49,6 +107,44 @@ function RegiosInner() {
       toast({
         title: "Niet aangemaakt",
         description: parseApiError(e, "Bestaat die code al?"),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Naam en code zijn allebei te wijzigen. Nodes en VPS'en verwijzen naar de
+  // regio op id, dus er breekt geen koppeling -- wat breekt is een script van
+  // een operator waar de oude code met de hand in staat. Vandaar de waarschuwing
+  // bij het opslaan en niet erna.
+  const opslaan = async (r: AdminRegion, naam: string, code: string) => {
+    const nieuweNaam = naam.trim();
+    const nieuweCode = code.trim().toLowerCase();
+    if (!nieuweNaam || !nieuweCode) return;
+    if (nieuweNaam === r.name && nieuweCode === r.code) return;
+
+    if (
+      nieuweCode !== r.code &&
+      !window.confirm(
+        `De code van "${r.name}" wordt ${r.code} → ${nieuweCode}.\n\n` +
+          "Bestaande nodes en VPS'en blijven werken; die verwijzen niet op code. " +
+          "Wat wél breekt is een script of instructie waar " +
+          `${r.code} met de hand in staat.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusy(r.id);
+    try {
+      const bij = await adminApi.updateRegion(r.id, { name: nieuweNaam, code: nieuweCode });
+      setRegions((huidig) => (huidig ?? []).map((x) => (x.id === r.id ? { ...x, ...bij } : x)));
+      toast({ title: "Opgeslagen", description: `${bij.name} (${bij.code})` });
+    } catch (e) {
+      toast({
+        title: "Niet opgeslagen",
+        description: parseApiError(e, "Kon de locatie niet wijzigen."),
         variant: "destructive",
       });
     } finally {
@@ -121,44 +217,13 @@ function RegiosInner() {
 
       <div className="space-y-3">
         {regions.map((r) => (
-          <Card key={r.id}>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <div className="flex items-center gap-3">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <div className="font-medium">
-                    {r.name} <span className="font-mono text-xs text-muted-foreground">{r.code}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {r.node_count === 0
-                      ? "geen nodes — deze locatie kan niets leveren en staat niet in het bestelscherm"
-                      : `${r.node_count} node${r.node_count === 1 ? "" : "s"}`}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {r.enabled ? (
-                  <Badge variant="outline">open</Badge>
-                ) : (
-                  <Badge variant="secondary">gesloten</Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy === r.id}
-                  onClick={() => zetAan(r, !r.enabled)}
-                >
-                  {busy === r.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : r.enabled ? (
-                    "Sluiten"
-                  ) : (
-                    "Openen"
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <RegioRij
+            key={r.id}
+            regio={r}
+            busy={busy === r.id}
+            onOpslaan={(naam, code) => opslaan(r, naam, code)}
+            onSchakel={() => zetAan(r, !r.enabled)}
+          />
         ))}
       </div>
 

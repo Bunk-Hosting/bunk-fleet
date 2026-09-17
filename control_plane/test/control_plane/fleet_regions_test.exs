@@ -270,16 +270,48 @@ defmodule ControlPlane.FleetRegionsTest do
       assert rijen[leeg.id] == 0
     end
 
-    test "hernoemen laat de code met rust" do
-      # De code staat in bestelhistorie en in de installatie-instructies van elke
-      # node in die regio; die veranderen zou verwijzingen breken.
+    test "naam en code zijn allebei te wijzigen" do
+      # Nodes en VPS'en verwijzen naar de regio op id, dus een andere code breekt
+      # geen koppeling. Wat hij wel breekt is een script waar de oude code met de
+      # hand in staat, en daar waarschuwt het scherm voor.
       r = regio()
 
       assert {:ok, bijgewerkt} =
-               Fleet.update_region(r.id, %{"name" => "Amsterdam", "code" => "xx"})
+               Fleet.update_region(r.id, %{"name" => "Amsterdam", "code" => "ams-1"})
 
       assert bijgewerkt.name == "Amsterdam"
-      assert bijgewerkt.code == r.code
+      assert bijgewerkt.code == "ams-1"
+    end
+
+    test "een node houdt zijn regio als de code verandert" do
+      # Dit is waarom het mag: de verwijzing loopt over het id.
+      r = regio()
+      n = fleet_node(r)
+
+      {:ok, _} = Fleet.update_region(r.id, %{"code" => "nieuw-hier"})
+
+      assert Repo.get!(Node, n.id).region_id == r.id
+    end
+
+    test "een code die al bezet is wordt geweigerd" do
+      bezet = regio()
+      r = regio()
+
+      assert {:error, changeset} = Fleet.update_region(r.id, %{"code" => bezet.code})
+      assert Keyword.has_key?(changeset.errors, :code)
+      assert Repo.get!(Region, r.id).code == r.code
+    end
+
+    test "een code met spaties of hoofdletters wordt geweigerd of rechtgetrokken" do
+      # Hoofdletters zijn een typfout en geen andere code; een spatie hoort niet
+      # in iets wat over de URL gaat.
+      r = regio()
+
+      assert {:ok, bijgewerkt} = Fleet.update_region(r.id, %{"code" => "NL-9"})
+      assert bijgewerkt.code == "nl-9"
+
+      assert {:error, changeset} = Fleet.update_region(r.id, %{"code" => "nl 9"})
+      assert Keyword.has_key?(changeset.errors, :code)
     end
 
     test "aan- en uitzetten werkt" do
