@@ -161,6 +161,8 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 		return proxmox.New(proxmox.Config{
 			BackupStorage:     cfg.Proxmox.BackupStorage,
 			VCPUOversubscribe: cfg.Proxmox.VCPUOversubscribe,
+			VMIDMin:           cfg.Proxmox.VMIDMin,
+			VMIDMax:           cfg.Proxmox.VMIDMax,
 			Host:              cfg.Proxmox.Host,
 			Node:              cfg.Proxmox.Node,
 			TokenID:           cfg.Proxmox.TokenID,

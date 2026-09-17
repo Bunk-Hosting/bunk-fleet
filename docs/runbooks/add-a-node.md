@@ -94,6 +94,23 @@ The wizard asks for the API details, how much of the machine to offer, and the
 network question from §1. It does not ask for an IP plan: the control plane
 assigns the node a `/22` out of `10.10.0.0/16` and hands it back at enrolment.
 
+On Proxmox it asks which VMIDs Bunk may use:
+
+```
+Nummers voor de VPS'en op deze node:
+  Proxmox geeft standaard het laagste vrije nummer vanaf 100, dus klant-VPS'en
+  komen tussen je eigen machines te staan. Geef een blok dat van Bunk is.
+  Laagste VMID [2000]: 
+  Hoogste VMID [2999]: 
+```
+
+Without a range the agent takes whatever `/cluster/nextid` returns, which is the
+lowest free id on the cluster — so a customer VPS lands in the middle of your own
+numbering. That is how the first node in this fleet ended up with a customer VPS
+on 105, between the operator's 100 and 104. Pick a block that is yours to give
+away; the wizard refuses a range containing the template id, because the agent
+would eventually overwrite its own source.
+
 On the Proxmox host it also asks about the template, but only when one is
 missing:
 

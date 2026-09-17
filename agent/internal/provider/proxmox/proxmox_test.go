@@ -448,3 +448,50 @@ func TestVCPUOversubscribeFallsBackToTheDefault(t *testing.T) {
 		}
 	}
 }
+
+// Proxmox geeft standaard het laagste vrije nummer vanaf 100, dus klant-VPS'en
+// komen tussen de machines van de operator te staan -- op de eerste node van
+// deze vloot kreeg een klant-VPS nummer 105, midden tussen 100 tot en met 104.
+// Met een bereik blijft Bunk in zijn eigen blok.
+func TestFirstFreeVMIDStaysInsideTheRange(t *testing.T) {
+	used := map[int]bool{100: true, 101: true, 2000: true, 2001: true, 2003: true}
+
+	got, err := firstFreeVMID(used, 2000, 2999)
+	if err != nil {
+		t.Fatalf("onverwachte fout: %v", err)
+	}
+	if got != 2002 {
+		t.Errorf("kreeg %d, wil 2002 (het laagste vrije nummer binnen het bereik)", got)
+	}
+}
+
+func TestFirstFreeVMIDIgnoresWhatIsOutsideTheRange(t *testing.T) {
+	// Een druk bezet blok van de operator mag de keuze van Bunk niet beinvloeden.
+	used := map[int]bool{}
+	for id := 100; id < 1000; id++ {
+		used[id] = true
+	}
+
+	got, err := firstFreeVMID(used, 2000, 2999)
+	if err != nil {
+		t.Fatalf("onverwachte fout: %v", err)
+	}
+	if got != 2000 {
+		t.Errorf("kreeg %d, wil 2000", got)
+	}
+}
+
+func TestFirstFreeVMIDRefusesWhenTheRangeIsFull(t *testing.T) {
+	// Buiten het bereik uitwijken zou precies doen wat het bereik moet voorkomen.
+	used := map[int]bool{2000: true, 2001: true, 2002: true}
+
+	if _, err := firstFreeVMID(used, 2000, 2002); err == nil {
+		t.Error("een vol bereik hoort een fout te geven, geen nummer erbuiten")
+	}
+}
+
+func TestFirstFreeVMIDHandlesASingleNumber(t *testing.T) {
+	if got, err := firstFreeVMID(map[int]bool{}, 2500, 2500); err != nil || got != 2500 {
+		t.Errorf("kreeg %d, %v; wil 2500, nil", got, err)
+	}
+}

@@ -25,6 +25,10 @@ type ProxmoxConfig struct {
 	// VCPUOversubscribe is how many vCPUs may be handed out per physical core;
 	// 0 means the provider's default. RAM and disk are never oversubscribed.
 	VCPUOversubscribe int
+	// VMIDMin/VMIDMax bound the ids Bunk hands to the guests it creates, so the
+	// operator keeps a block for their own machines. 0/0 = geen grens.
+	VMIDMin int
+	VMIDMax int
 	// BackupStorage is the PVE storage VPS backups are written to; empty means
 	// "local", the storage every install has.
 	BackupStorage string
@@ -181,6 +185,11 @@ func Load() (Config, error) {
 			envInt("BUNK_VCPU_OVERSUBSCRIBE", 0, &envErrs),
 			"vCPUs handed out per physical core (0 = default)")
 
+		pveVMIDMin = fs.Int("proxmox-vmid-min", envInt("BUNK_VMID_MIN", 0, &envErrs),
+			"lowest VMID Bunk may use (0 = no bound)")
+		pveVMIDMax = fs.Int("proxmox-vmid-max", envInt("BUNK_VMID_MAX", 0, &envErrs),
+			"highest VMID Bunk may use (0 = no bound)")
+
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second, &envErrs), "capacity heartbeat interval")
 
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
@@ -241,6 +250,8 @@ func Load() (Config, error) {
 			VerifySSL:         *pveVerify,
 			BackupStorage:     *pveBackupStorage,
 			VCPUOversubscribe: *pveVCPUOver,
+			VMIDMin:           *pveVMIDMin,
+			VMIDMax:           *pveVMIDMax,
 		},
 		Esxi: EsxiConfig{
 			URL:          *esxiURL,

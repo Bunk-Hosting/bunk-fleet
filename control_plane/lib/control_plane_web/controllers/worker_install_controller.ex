@@ -358,6 +358,27 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     # ander nummer hier zou een node opleveren die groen staat en niets kan.
     PX_TMPL_ID="#{template_id}"
     PX_TMPL_STORE=""
+    VMID_MIN=""
+    VMID_MAX=""
+    if [ "$HYP" = "proxmox" ]; then
+      echo
+      echo "Nummers voor de VPS'en op deze node:"
+      echo "  Proxmox geeft standaard het laagste vrije nummer vanaf 100, dus klant-VPS'en"
+      echo "  komen tussen je eigen machines te staan. Geef een blok dat van Bunk is."
+      read -r -p "  Laagste VMID [2000]: " VMID_MIN </dev/tty
+      VMID_MIN="${VMID_MIN:-2000}"
+      read -r -p "  Hoogste VMID [2999]: " VMID_MAX </dev/tty
+      VMID_MAX="${VMID_MAX:-2999}"
+      # Een bereik dat het template-nummer bevat zou de agent zijn eigen bron
+      # laten overschrijven zodra hij daar aankomt.
+      if [ "$PX_TMPL_ID" -ge "$VMID_MIN" ] 2>/dev/null && [ "$PX_TMPL_ID" -le "$VMID_MAX" ] 2>/dev/null; then
+        echo "  !! $PX_TMPL_ID is de template en valt binnen $VMID_MIN-$VMID_MAX."
+        echo "     Kies een bereik dat hem niet bevat, anders overschrijft de agent zijn eigen template."
+        read -r -p "  Laagste VMID: " VMID_MIN </dev/tty
+        read -r -p "  Hoogste VMID: " VMID_MAX </dev/tty
+      fi
+    fi
+
     if [ "$ON_PVE_HOST" = "true" ]; then
       echo
       echo "Template voor nieuwe VPS'en:"
@@ -426,6 +447,8 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     Environment=BUNK_PROXMOX_TOKEN_ID=$PXTID
     Environment=BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
     Environment=BUNK_PROXMOX_VERIFY_SSL=$VSSL
+    Environment=BUNK_VMID_MIN=${VMID_MIN:-0}
+    Environment=BUNK_VMID_MAX=${VMID_MAX:-0}
     Environment=BUNK_ESXI_URL=${ESXI_URL}
     Environment=BUNK_ESXI_USER=${ESXI_USER}
     Environment=BUNK_ESXI_PASSWORD=${ESXI_PASS}

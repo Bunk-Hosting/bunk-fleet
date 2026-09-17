@@ -53,6 +53,13 @@ type Config struct {
 	// stops selling entirely once its own guests use them up. Zero or less means
 	// the default.
 	VCPUOversubscribe int
+	// VMIDMin/VMIDMax bound the ids Bunk may hand to the guests it creates.
+	// Without them the agent takes whatever /cluster/nextid returns, which is the
+	// lowest free id on the whole cluster -- so customer VPSes land in the middle
+	// of the numbering the operator uses for their own machines. Both zero means
+	// no bound, which is the old behaviour.
+	VMIDMin int
+	VMIDMax int
 }
 
 // Client is a Proxmox VE provider implementation.
@@ -374,8 +381,21 @@ func (c *Client) waitTask(ctx context.Context, upid string) error {
 	}
 }
 
-// nextVMID asks the cluster for the next free VMID.
+// nextVMID picks the id for a new guest.
+//
+// With a configured range it takes the lowest free id inside it, so Bunk stays
+// out of the numbering the operator keeps for their own machines. Without one it
+// falls back to the cluster's own answer, which is the lowest free id anywhere --
+// fine on a machine that only does Bunk, and exactly wrong on one that does not.
 func (c *Client) nextVMID(ctx context.Context) (int, error) {
+	if c.cfg.VMIDMin > 0 && c.cfg.VMIDMax >= c.cfg.VMIDMin {
+		used, err := c.usedVMIDs(ctx)
+		if err != nil {
+			return 0, err
+		}
+		return firstFreeVMID(used, c.cfg.VMIDMin, c.cfg.VMIDMax)
+	}
+
 	var resp struct {
 		Data string `json:"data"`
 	}
@@ -387,6 +407,54 @@ func (c *Client) nextVMID(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("proxmox: unexpected nextid %q: %w", resp.Data, err)
 	}
 	return id, nil
+}
+
+// usedVMIDs lists the ids already taken, cluster-wide where the token may read
+// that and node-local otherwise. A VMID must be unique across the cluster, so
+// the cluster view is the correct one; the per-node fallback exists because a
+// token scoped to one node still has to be able to create a VM.
+func (c *Client) usedVMIDs(ctx context.Context) (map[int]bool, error) {
+	used := make(map[int]bool, 32)
+
+	var cluster guestList
+	if err := c.doJSON(ctx, http.MethodGet, "/cluster/resources?type=vm", nil, &cluster); err == nil {
+		for _, g := range cluster.Data {
+			used[g.VMID] = true
+		}
+		return used, nil
+	}
+
+	var gezien bool
+	for _, kind := range []string{"qemu", "lxc"} {
+		var gl guestList
+		path := "/nodes/" + url.PathEscape(c.cfg.Node) + "/" + kind
+		if err := c.doJSON(ctx, http.MethodGet, path, nil, &gl); err != nil {
+			continue
+		}
+		gezien = true
+		for _, g := range gl.Data {
+			used[g.VMID] = true
+		}
+	}
+
+	// Niets kunnen lezen is iets anders dan "niets in gebruik". Doorgaan met een
+	// lege verzameling zou het laagste nummer uit het bereik pakken en zo een
+	// bestaande machine kunnen overschrijven.
+	if !gezien {
+		return nil, errors.New("proxmox: could not list existing guests to pick a vmid")
+	}
+	return used, nil
+}
+
+// firstFreeVMID returns the lowest id in [min, max] that is not in use. Pure so
+// the picking can be tested without a live PVE.
+func firstFreeVMID(used map[int]bool, min, max int) (int, error) {
+	for id := min; id <= max; id++ {
+		if !used[id] {
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("proxmox: no free vmid left in the configured range %d-%d", min, max)
 }
 
 // CreateVM implements provider.Provider.
