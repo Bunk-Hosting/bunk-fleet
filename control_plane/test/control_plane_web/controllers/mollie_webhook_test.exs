@@ -70,6 +70,58 @@ defmodule ControlPlaneWeb.MollieWebhookTest do
     assert balance(user) == before + 2500
   end
 
+  test "een betaling wordt ook bijgeschreven als het betaal-id nooit is vastgelegd", %{
+    conn: conn,
+    user: user
+  } do
+    # Het gat dat overblijft nadat de volgorde is omgedraaid: de rij bestaat, de
+    # betaling bestaat, en daartussen viel het proces om -- dus het Mollie-id is
+    # nooit aan de rij gehangen. Zoeken op dat id vindt niets.
+    #
+    # Ons eigen id zit in de metadata die wij aan de betaling hebben meegegeven,
+    # en die komt langs Mollie terug. Dat is veilig om op af te gaan: het komt
+    # niet uit de webhook maar uit de betaling die we zojuist bij Mollie hebben
+    # opgehaald, en we kijken er pas naar nadat die op "paid" stond.
+    {:ok, tr} = Credits.create_topup_request(user.id, 2500)
+    assert is_nil(tr.mollie_payment_id)
+    id = "tr_#{System.unique_integer([:positive])}"
+    before = balance(user)
+
+    mollie_says(%{
+      "id" => id,
+      "status" => "paid",
+      "amount" => %{"currency" => "EUR", "value" => "25.00"},
+      "metadata" => %{"user_id" => user.id, "topup_id" => tr.id}
+    })
+
+    assert %{status: 200} = post(conn, @path, %{"id" => id})
+    assert balance(user) == before + 2500
+    assert Repo.get!(TopupRequest, tr.id).status == :paid
+
+    # En ook hier telt een herhaalde aflevering maar één keer.
+    assert %{status: 200} = post(conn, @path, %{"id" => id})
+    assert balance(user) == before + 2500
+  end
+
+  test "een verzonnen topup_id in de metadata schrijft niets bij", %{conn: conn, user: user} do
+    # De metadata is alleen te vertrouwen omdat hij van Mollie terugkomt. Zou er
+    # een id in staan dat hier niets betekent, dan hoort er geen tegoed te
+    # ontstaan -- en al helemaal geen fout die de webhook laat klappen.
+    before = balance(user)
+
+    mollie_says(%{
+      "id" => "tr_#{System.unique_integer([:positive])}",
+      "status" => "paid",
+      "amount" => %{"currency" => "EUR", "value" => "25.00"},
+      "metadata" => %{"topup_id" => "dit-is-geen-uuid"}
+    })
+
+    assert %{status: 200} =
+             post(conn, @path, %{"id" => "tr_#{System.unique_integer([:positive])}"})
+
+    assert balance(user) == before
+  end
+
   test "a forged webhook for a payment Mollie calls open credits nothing", %{
     conn: conn,
     user: user

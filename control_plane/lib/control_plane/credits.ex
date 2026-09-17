@@ -273,7 +273,18 @@ defmodule ControlPlane.Credits do
 
   ## Top-up requests (self-service wallet funding; admin confirms receipt)
 
-  @doc "Creates a pending top-up request with a unique payment reference."
+  @doc """
+  Creates a pending top-up request with a unique payment reference.
+
+  Dit is ook de eerste stap van een Mollie-opwaardering, en die volgorde is het
+  punt: eerst bij Mollie een betaling aanmaken en dan pas hier een rij
+  wegschrijven betekent dat een mislukte insert -- of een proces dat omvalt
+  tussen de twee -- een geldige betaalpagina achterlaat in de browser van de
+  klant. Hij betaalt, en de webhook vindt niets. Andersom is het ergste geval een
+  rij die nooit betaald wordt, en dat is precies wat `:pending` betekent.
+
+  Zie `attach_mollie_payment/2` voor de tweede stap.
+  """
   def create_topup_request(user_id, amount_cents) do
     %TopupRequest{}
     |> TopupRequest.changeset(%{
@@ -383,6 +394,66 @@ defmodule ControlPlane.Credits do
       status: :pending
     })
     |> Repo.insert()
+  end
+
+  @doc """
+  Haalt een opwaardering weg die nooit een betaling heeft gekregen.
+
+  Alleen voor de rij die net is aangemaakt en waarvoor het aanmaken van de
+  betaling mislukte: er bestaat dan geen betaling, dus er valt ook nooit iets
+  tegen te boeken. Guard op `:pending`, zodat dit nooit een betaalde opwaardering
+  kan raken.
+  """
+  @spec delete_topup_request(TopupRequest.t()) :: :ok
+  def delete_topup_request(%TopupRequest{status: :pending} = tr) do
+    Repo.delete(tr)
+    :ok
+  end
+
+  def delete_topup_request(%TopupRequest{}), do: :ok
+
+  @doc """
+  Hangt het Mollie-betaal-id aan een eerder vastgelegde opwaardering.
+
+  Lukt dit niet -- het proces valt om tussen het aanmaken van de betaling en deze
+  regel -- dan blijft de rij zonder id staan. De webhook kan hem dan nog altijd
+  vinden via het `topup_id` in de metadata van de betaling; zie
+  `mark_topup_paid_by_id/2`.
+  """
+  @spec attach_mollie_payment(TopupRequest.t(), binary()) ::
+          {:ok, TopupRequest.t()} | {:error, Ecto.Changeset.t()}
+  def attach_mollie_payment(%TopupRequest{} = tr, mollie_payment_id) do
+    tr
+    |> TopupRequest.changeset(%{
+      mollie_payment_id: mollie_payment_id,
+      reference: mollie_payment_id
+    })
+    |> Repo.update()
+  end
+
+  @doc """
+  Zoals `mark_topup_paid_by_mollie_id/2`, maar op onze eigen id.
+
+  Dit is het vangnet voor de rij waar nooit een Mollie-id aan gehangen is. Het
+  id komt uit de metadata die wij zelf aan de betaling hebben meegegeven, dus het
+  komt langs Mollie terug zonder dat iemand anders het kan kiezen -- en het wordt
+  pas gebruikt nadat de betaling bij Mollie is opgehaald en op "paid" stond.
+  """
+  @spec mark_topup_paid_by_id(binary(), map() | nil) ::
+          {:ok, term()} | {:error, atom()}
+  def mark_topup_paid_by_id(topup_id, paid_amount \\ nil) do
+    case Repo.get(TopupRequest, topup_id) do
+      nil ->
+        {:error, :not_found}
+
+      %TopupRequest{} = tr ->
+        if amount_matches?(tr, paid_amount),
+          do: mark_topup_paid(tr.id, "mollie"),
+          else: {:error, :amount_mismatch}
+    end
+  rescue
+    # Een id uit metadata hoeft geen geldige UUID te zijn.
+    Ecto.Query.CastError -> {:error, :not_found}
   end
 
   @doc """
