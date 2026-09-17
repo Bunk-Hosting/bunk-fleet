@@ -5,10 +5,13 @@
 # What is in it, and why each part:
 #   db.dump      pg_dump -Fc of control_plane. Customers, wallets, ledger, VPS
 #                inventory, node identities. Losing this loses who owns what.
-#   env.prod     The secrets file. It carries CONSOLE_SSH_PRIVATE_KEY, and
-#                without that there is no way back into any existing customer
-#                VPS — a database restore alone would leave every machine we
-#                already provisioned unreachable.
+#   env.prod     The secrets file. Two keys in it decide whether a restore can
+#                still reach customer machines at all:
+#                CONSOLE_SSH_PRIVATE_KEY, the shared console key that older
+#                VPSes still authorise, and CONSOLE_KEY_ENC, which decrypts the
+#                per-VPS console keys held in the database. Restoring the
+#                database WITHOUT this file leaves every machine we already
+#                provisioned unreachable.
 #   manifest     What this backup is: when, which commit, which migration the
 #                schema is at. A restore that silently targets the wrong schema
 #                version is worse than no restore.

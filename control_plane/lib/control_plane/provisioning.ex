@@ -15,6 +15,7 @@ defmodule ControlPlane.Provisioning do
   require Logger
 
   alias ControlPlane.Clock
+  alias ControlPlane.Console.Keys
   alias ControlPlane.Credits
 
   alias ControlPlane.Fleet.Command
@@ -307,6 +308,15 @@ defmodule ControlPlane.Provisioning do
   # The in-browser console connects to each VPS over SSH with the platform console
   # key, so its public key is injected into every VPS via cloud-init (next to the
   # customer's own keys). Empty list when no console key is configured.
+  # De sleutel die in de `authorized_keys` van déze VPS komt. Heeft hij een eigen
+  # sleutelpaar, dan alleen die -- de gedeelde erbij zetten zou het hele punt
+  # ongedaan maken.
+  defp console_keys_voor(%Vps{console_key_public: publiek})
+       when is_binary(publiek) and publiek != "",
+       do: [publiek]
+
+  defp console_keys_voor(_vps), do: console_public_keys()
+
   defp console_public_keys do
     case (Application.get_env(:control_plane, :console) || [])[:ssh_public_key] do
       key when is_binary(key) and key != "" -> [key]
@@ -741,6 +751,34 @@ defmodule ControlPlane.Provisioning do
       withdrawal_waiver_at: field(attrs, :withdrawal_waiver_at),
       status: :queued
     })
+    |> met_eigen_consolesleutel()
+  end
+
+  # Een eigen SSH-sleutelpaar voor de webterminal, in plaats van de gedeelde
+  # platformsleutel die in élke klant-VPS staat. Bewust via `put_change` en niet
+  # via de cast: dit is niets wat een verzoek mag meesturen -- het is de sleutel
+  # die root geeft op die machine.
+  #
+  # Is er geen omgevingssleutel om hem mee te versleutelen, dan gebeurt er niets
+  # en valt deze VPS terug op de gedeelde sleutel. Half aanzetten zou een VPS
+  # opleveren met een sleutel die niemand meer kan ontsleutelen: een console die
+  # stilletjes kapot is in plaats van een console die er niet is.
+  defp met_eigen_consolesleutel(changeset) do
+    if Keys.enabled?() do
+      {pem, publiek} = Keys.generate()
+
+      case Keys.seal(pem) do
+        {:ok, verzegeld} ->
+          changeset
+          |> Ecto.Changeset.put_change(:console_key_sealed, verzegeld)
+          |> Ecto.Changeset.put_change(:console_key_public, publiek)
+
+        :error ->
+          changeset
+      end
+    else
+      changeset
+    end
   end
 
   # The exact snake_case payload the Go agent expects for a provision command.
@@ -752,7 +790,7 @@ defmodule ControlPlane.Provisioning do
       "disk_gb" => vps.disk_gb,
       "template_id" => field(attrs, :template_id) || default_template_id(),
       "cloud_init" => field(attrs, :cloud_init) || %{},
-      "ssh_keys" => (field(attrs, :ssh_keys) || []) ++ console_public_keys(),
+      "ssh_keys" => (field(attrs, :ssh_keys) || []) ++ console_keys_voor(vps),
       "ip_config" => field(attrs, :ip_config)
     }
   end

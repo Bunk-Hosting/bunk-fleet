@@ -52,6 +52,14 @@ defmodule ControlPlane.Fleet.Vps do
     field :ip_address, :string
     field :package_id, :integer
 
+    # Het eigen SSH-sleutelpaar van deze VPS voor de webterminal: de privésleutel
+    # versleuteld met de sleutel uit de omgeving, de publieke zoals hij in de
+    # `authorized_keys` van deze machine staat. Allebei leeg voor VPS'en van vóór
+    # die wijziging; die gebruiken de gedeelde platformsleutel. Zie
+    # `ControlPlane.Console.Keys`.
+    field :console_key_sealed, :binary
+    field :console_key_public, :string
+
     # TOFU-pinned SSH host-key fingerprint (SHA256:...), recorded on the first
     # browser-console connection and verified on every later one to detect a
     # hypervisor-operator MITM of the console (see Console.HostKeys).
@@ -91,6 +99,10 @@ defmodule ControlPlane.Fleet.Vps do
       :last_metered_at,
       :withdrawal_waiver_at
     ])
+    # `console_key_sealed` en `console_key_public` staan er bewust NIET bij: die
+    # worden alleen door het platform gezet, bij het aanmaken. Ze via `cast/3`
+    # bereikbaar maken zou betekenen dat een verzoek zijn eigen publieke sleutel
+    # kan opgeven -- en dat is precies de sleutel die root geeft op die machine.
     |> validate_required([:name, :region_id, :vcpu, :ram_mb, :disk_gb])
     |> validate_length(:name, max: 100)
     # Reject control characters (newlines, etc.) so a name can't break out of the

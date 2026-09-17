@@ -95,7 +95,13 @@ if config_env() == :prod do
     console: [
       ssh_private_key: console_private_key,
       ssh_public_key: console_public_key,
-      ssh_user: System.get_env("CONSOLE_SSH_USER") || "ubuntu"
+      ssh_user: System.get_env("CONSOLE_SSH_USER") || "ubuntu",
+      # Waarmee de eigen consolesleutel van elke VPS versleuteld in de database
+      # staat: 32 bytes, base64. Staat hij er niet, dan krijgen nieuwe VPS'en
+      # geen eigen sleutel en blijft de gedeelde in gebruik -- zie
+      # `ControlPlane.Console.Keys`. Bewust in de omgeving en niet in de
+      # database: een databasedump zonder deze sleutel levert niets op.
+      key_encryption_key: System.get_env("CONSOLE_KEY_ENC")
     ]
 
   config :control_plane, :mollie, api_key: System.get_env("MOLLIE_API_KEY")

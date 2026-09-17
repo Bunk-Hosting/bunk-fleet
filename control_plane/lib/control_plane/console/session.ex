@@ -10,7 +10,10 @@ defmodule ControlPlane.Console.Session do
   use GenServer
   require Logger
 
+  alias ControlPlane.Console.Keys
   alias ControlPlane.Console.Relay
+  alias ControlPlane.Fleet.Vps
+  alias ControlPlane.Repo
 
   @max_input 65_536
   @max_dim 1000
@@ -44,7 +47,7 @@ defmodule ControlPlane.Console.Session do
   @impl true
   def handle_continue(:connect, st) do
     _ = start_ssh()
-    key = (Application.get_env(:control_plane, :console) || [])[:ssh_private_key]
+    key = sleutel_voor(st.vps_id)
 
     if is_nil(key) do
       notify_closed(st.owner, :no_console_key)
@@ -72,6 +75,45 @@ defmodule ControlPlane.Console.Session do
           {:stop, :normal, st}
       end
     end
+  end
+
+  # De sleutel waarmee deze sessie inlogt: die van de VPS zelf als hij er een
+  # heeft, anders de gedeelde platformsleutel.
+  #
+  # De terugval is er voor VPS'en van vóór de per-VPS-sleutels: in hun
+  # `authorized_keys` staat alleen de gedeelde, en die machines zijn niet
+  # opnieuw uitgerold. Een eigen sleutel proberen zou daar een console opleveren
+  # die weigert zonder uit te leggen waarom.
+  #
+  # Kan een opgeslagen sleutel niet worden ontsleuteld -- de omgevingssleutel is
+  # gewijzigd of weg -- dan valt hij NIET terug op de gedeelde, want die staat
+  # niet in de `authorized_keys` van deze VPS. Terugvallen zou de fout verruilen
+  # voor een tweede die er verder van af staat.
+  defp sleutel_voor(nil), do: gedeelde_sleutel()
+
+  defp sleutel_voor(vps_id) do
+    case Repo.get(Vps, vps_id) do
+      %{console_key_sealed: verzegeld} when is_binary(verzegeld) ->
+        case Keys.unseal(verzegeld) do
+          {:ok, pem} ->
+            pem
+
+          :error ->
+            Logger.error(
+              "consolesleutel van vps #{vps_id} is niet te ontsleutelen; " <>
+                "staat CONSOLE_KEY_ENC nog goed?"
+            )
+
+            nil
+        end
+
+      _ ->
+        gedeelde_sleutel()
+    end
+  end
+
+  defp gedeelde_sleutel do
+    (Application.get_env(:control_plane, :console) || [])[:ssh_private_key]
   end
 
   # A connection whose shell won't open is a connection nobody will ever close,

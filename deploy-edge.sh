@@ -61,7 +61,14 @@ NIEUW=bunk-frontend-nieuw
 # edge opnieuw moeten opzetten -- precies de onderbreking die hier vermeden
 # wordt. Lukt schrijven niet, dan mounten we alsnog vanaf de checkout; dat werkt,
 # het kost alleen die ene herstart.
-if install -m 0644 "$ROOT/edge.conf" "$CONF_DIR/edge.conf" 2>/dev/null; then
+# Let op: IN PLAATS schrijven, niet vervangen. De container heeft dit ene bestand
+# als bind-mount, en die wijst naar een inode. `install` en `mv` maken een nieuw
+# bestand aan; de container blijft dan naar het oude kijken en `nginx -s reload`
+# herlaadt trouw de configuratie van vóór de wijziging -- zonder een woord.
+# Precies dat is hier gebeurd: de nieuwe location stond in /etc/bunk/edge.conf en
+# niet in de container. `cat >` kapt hetzelfde bestand af en vult het opnieuw.
+if cat "$ROOT/edge.conf" > "$CONF_DIR/edge.conf" 2>/dev/null; then
+  chmod 0644 "$CONF_DIR/edge.conf" 2>/dev/null || true
   CONF="$CONF_DIR/edge.conf"
 else
   echo "kan $CONF_DIR/edge.conf niet schrijven; edge mount vanaf $ROOT" >&2
@@ -102,7 +109,20 @@ MOUNT=$(docker inspect bunk-edge \
 if draait bunk-edge && [ "$MOUNT" = "$CONF" ]; then
   # `nginx -t` eerst: een fout in de configuratie mag een draaiende edge niet
   # meeslepen. Hij blijft dan gewoon op zijn oude configuratie staan.
-  if docker exec bunk-edge nginx -t >/dev/null 2>&1; then
+  # Ziet de container wel wat wij denken te sturen? Zo niet heeft hij een oude
+  # inode te pakken en zou een reload stilzwijgend niets doen -- dan liever hem
+  # opnieuw opzetten dan doorgaan met een configuratie die we niet kennen.
+  bron=$(sha256sum "$CONF" | cut -d" " -f1)
+  in_container=$(docker exec bunk-edge sha256sum /etc/nginx/conf.d/default.conf 2>/dev/null | cut -d" " -f1)
+
+  if [ "$bron" != "$in_container" ]; then
+    echo "edge: de container ziet een andere edge.conf dan wij schrijven; opnieuw opzetten" >&2
+    docker rm -f bunk-edge >/dev/null 2>&1 || true
+    docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
+      -p 3001:80 \
+      -v "$CONF":/etc/nginx/conf.d/default.conf:ro \
+      nginx:1.27-alpine >/dev/null
+  elif docker exec bunk-edge nginx -t >/dev/null 2>&1; then
     docker exec bunk-edge nginx -s reload
     echo "edge: configuratie herladen"
   else
