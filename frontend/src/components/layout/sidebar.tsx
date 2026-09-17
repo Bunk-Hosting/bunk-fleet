@@ -19,6 +19,7 @@ import {
   CreditCard,
   Activity,
   HardDrive,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -65,6 +66,7 @@ const adminNavItems: NavItem[] = [
   { label: "Gebruikers", href: "/dashboard/beheer/users", icon: Users },
   { label: "VPS-beheer", href: "/dashboard/beheer/vps", icon: ServerCog },
   { label: "Nodes", href: "/dashboard/beheer/nodes", icon: Network },
+  { label: "Locaties", href: "/dashboard/beheer/regios", icon: MapPin },
   { label: "Omzet & btw", href: "/dashboard/beheer/omzet", icon: Receipt },
   { label: "Abonnementen", href: "/dashboard/beheer/abonnementen", icon: CreditCard },
   { label: "Activiteit", href: "/dashboard/beheer/activiteit", icon: Activity },

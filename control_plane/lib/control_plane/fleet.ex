@@ -28,6 +28,63 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  De locaties waar een node-eigenaar zijn machine heen kan zetten.
+
+  Alle ingeschakelde regio's, ook de lege. Anders zou een nieuwe locatie nooit
+  zijn eerste node kunnen krijgen -- en dat is precies hoe je een tweede
+  datacenter in gebruik neemt.
+
+  Een gesloten locatie hoort er ook bij zolang hij in `extra_ids` staat. Daar
+  gaat het om de locaties waar de eigenaar zijn nodes al heeft staan: zou de
+  huidige locatie ontbreken, dan wijst het keuzeveld in het dashboard een andere
+  aan dan waar de machine werkelijk staat.
+  """
+  @spec selectable_regions([Ecto.UUID.t()]) :: [Region.t()]
+  def selectable_regions(extra_ids \\ []) do
+    ids = Enum.reject(extra_ids, &is_nil/1)
+
+    Repo.all(from r in Region, where: r.enabled == true or r.id in ^ids, order_by: [asc: r.code])
+  end
+
+  @doc """
+  Alle regio's met hoeveel nodes erin staan, voor het beheerscherm.
+
+  Het aantal staat erbij omdat een regio zonder nodes niets kan leveren: die is
+  te verwijderen of te vullen, en dat verschil hoort zichtbaar te zijn voordat
+  iemand zich afvraagt waarom er niets in die locatie geplaatst wordt.
+  """
+  @spec list_regions_with_counts() :: [%{region: Region.t(), node_count: non_neg_integer()}]
+  def list_regions_with_counts do
+    counts =
+      Repo.all(from n in Node, group_by: n.region_id, select: {n.region_id, count(n.id)})
+      |> Map.new()
+
+    from(r in Region, order_by: [asc: r.code])
+    |> Repo.all()
+    |> Enum.map(&%{region: &1, node_count: Map.get(counts, &1.id, 0)})
+  end
+
+  @doc """
+  Wijzigt de naam van een regio of zet hem aan of uit.
+
+  De code blijft zoals hij is: die staat in bestelhistorie en in de
+  installatie-instructies van elke node in die regio.
+  """
+  @spec update_region(Ecto.UUID.t(), map()) ::
+          {:ok, Region.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def update_region(region_id, attrs) do
+    case Repo.get(Region, region_id) do
+      nil ->
+        {:error, :not_found}
+
+      region ->
+        region
+        |> Region.changeset(Map.take(attrs, ["name", "enabled", :name, :enabled]))
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Fetches a single region by id, raising `Ecto.NoResultsError` if none exists.
   """
   def get_region!(id), do: Repo.get!(Region, id)
@@ -81,6 +138,48 @@ defmodule ControlPlane.Fleet do
   @spec list_nodes_owned_by(User.t()) :: [Node.t()]
   def list_nodes_owned_by(%User{id: id}) do
     Repo.all(from n in Node, where: n.owner_id == ^id, order_by: [desc: n.inserted_at])
+  end
+
+  @doc """
+  Verplaatst een node naar een andere regio, mits `user` de eigenaar is.
+
+  De VPS'en erop gaan mee. Een regio beschrijft waar de machine fysiek staat, en
+  een VPS kan niet ergens anders staan dan de machine waarop hij draait — laat je
+  ze achter in de oude regio, dan liegt het label bij elke klant die het opvraagt.
+
+  De eigenaar bepaalt dit en niet een beheerder: alleen hij weet waar zijn
+  hardware daadwerkelijk staat.
+  """
+  @spec move_node_to_region(Ecto.UUID.t(), User.t(), Ecto.UUID.t()) ::
+          {:ok, Node.t()}
+          | {:error, :not_found | :forbidden | :unknown_region | Ecto.Changeset.t()}
+  def move_node_to_region(node_id, %User{} = user, region_id) do
+    with {:ok, node} <- fetch_node(node_id),
+         true <- node_owner?(node, user) or {:error, :forbidden},
+         :ok <- known_region(region_id) do
+      Repo.transaction(fn -> verhuis(node, region_id) end)
+      |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+    else
+      {:error, reden} -> {:error, reden}
+    end
+  end
+
+  # Een verwijderde VPS draait nergens meer en houdt de regio waar hij ooit
+  # stond; zijn geschiedenis hoort te blijven kloppen.
+  defp verhuis(node, region_id) do
+    from(v in Vps, where: v.node_id == ^node.id and v.status != :deleted)
+    |> Repo.update_all(set: [region_id: region_id])
+
+    case node |> Node.changeset(%{region_id: region_id}) |> Repo.update() do
+      {:ok, bijgewerkt} -> bijgewerkt
+      {:error, changeset} -> Repo.rollback(changeset)
+    end
+  end
+
+  defp known_region(region_id) do
+    if Repo.exists?(from r in Region, where: r.id == ^region_id),
+      do: :ok,
+      else: {:error, :unknown_region}
   end
 
   @doc """
@@ -582,8 +681,22 @@ defmodule ControlPlane.Fleet do
     )
     |> Repo.all()
     |> case do
-      [] -> {:error, :no_capacity}
-      nodes -> {:ok, Enum.max_by(nodes, &Node.headroom_score(&1, request)).region_id}
+      [] ->
+        {:error, :no_capacity}
+
+      nodes ->
+        # Een uitgeschakelde regio is geen kandidaat: automatisch plaatsen mag
+        # niet uitkomen op een locatie die bewust is gesloten.
+        actief =
+          Repo.all(from r in Region, where: r.enabled == true, select: r.id) |> MapSet.new()
+
+        case Enum.filter(nodes, &MapSet.member?(actief, &1.region_id)) do
+          [] ->
+            {:error, :no_capacity}
+
+          kandidaten ->
+            {:ok, Enum.max_by(kandidaten, &Node.headroom_score(&1, request)).region_id}
+        end
     end
   end
 
@@ -600,7 +713,13 @@ defmodule ControlPlane.Fleet do
       |> where([n], n.available_vcpu > 0 and n.available_ram_mb > 0 and n.available_disk_gb > 0)
       |> select([n], n.region_id)
 
-    from(r in Region, where: r.id in subquery(node_ids), order_by: [asc: r.code])
+    # `enabled` hoort hier thuis en niet alleen in het beheerscherm: een regio die
+    # wordt afgebouwd moet stoppen met nieuwe VPS'en aannemen terwijl wat er
+    # draait blijft draaien -- hetzelfde idee als een node die draint.
+    from(r in Region,
+      where: r.id in subquery(node_ids) and r.enabled == true,
+      order_by: [asc: r.code]
+    )
     |> Repo.all()
   end
 

@@ -686,13 +686,26 @@ export interface MyNode {
   capacity_error: string | null;
   drain_reason: string | null;
   last_heartbeat_at: string | null;
+  /** De locatie waar deze machine staat; bepaalt waar klanten hem kunnen kiezen. */
+  region_id: string | null;
   settings: NodeSettings;
+}
+
+/** Een locatie zoals de eigenaar van een node hem kan kiezen. */
+export interface NodeRegion extends BunkRegion {
+  /** Een gesloten locatie staat er alleen bij als er al een eigen node in staat. */
+  enabled: boolean;
 }
 
 export const nodeApi = {
   /** De nodes die de ingelogde gebruiker beheert. */
-  mine: async (): Promise<MyNode[]> =>
-    (await api.get<{ nodes: MyNode[] }>("/nodes")).data.nodes,
+  /**
+   * De eigen nodes plus de locaties waar ze heen kunnen. Die lijst zit hierin en
+   * niet in regionsApi: dat geeft alleen locaties waar nu iets te plaatsen valt,
+   * terwijl een eigenaar juist naar een nieuwe, lege locatie moet kunnen.
+   */
+  mine: async (): Promise<{ nodes: MyNode[]; regions: NodeRegion[] }> =>
+    (await api.get<{ nodes: MyNode[]; regions: NodeRegion[] }>("/nodes")).data,
 
   /**
    * Wijzigt de instellingen van een node. Alleen de eigenaar mag dit; een node
@@ -708,7 +721,25 @@ export const nodeApi = {
    */
   assignOwner: async (id: string, ownerEmail: string | null): Promise<MyNode> =>
     (await api.post<{ node: MyNode }>(`/nodes/${id}/owner`, { owner_email: ownerEmail })).data.node,
+
+  /**
+   * Verplaatst de node naar een andere locatie. De VPS'en erop gaan mee: een
+   * regio beschrijft waar de machine fysiek staat, en een VPS kan niet ergens
+   * anders staan dan de machine waarop hij draait.
+   */
+  moveRegion: async (id: string, regionId: string): Promise<MyNode> =>
+    (await api.post<{ node: MyNode }>(`/nodes/${id}/region`, { region_id: regionId })).data.node,
 };
+
+/** Een locatie waar klanten hun VPS kunnen laten draaien. */
+export interface AdminRegion {
+  id: string;
+  code: string;
+  name: string;
+  /** Uit betekent: wat er draait blijft draaien, er komt niets nieuws bij. */
+  enabled: boolean;
+  node_count: number;
+}
 
 export interface AdminNode {
   id: string;
@@ -907,6 +938,18 @@ export const adminApi = {
   vpsStart: (id: string) => api.post(`/beheer/vpses/${id}/start`),
   vpsStop: (id: string) => api.post(`/beheer/vpses/${id}/stop`),
   vpsDelete: (id: string) => api.delete(`/beheer/vpses/${id}`),
+  regions: async (): Promise<AdminRegion[]> =>
+    (await api.get<{ regions: AdminRegion[] }>("/beheer/regions")).data.regions,
+
+  createRegion: async (code: string, name: string): Promise<AdminRegion> =>
+    (await api.post<{ region: AdminRegion }>("/beheer/regions", { code, name })).data.region,
+
+  updateRegion: async (
+    id: string,
+    changes: { name?: string; enabled?: boolean },
+  ): Promise<AdminRegion> =>
+    (await api.patch<{ region: AdminRegion }>(`/beheer/regions/${id}`, changes)).data.region,
+
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
 

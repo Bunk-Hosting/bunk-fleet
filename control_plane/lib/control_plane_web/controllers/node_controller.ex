@@ -13,11 +13,23 @@ defmodule ControlPlaneWeb.NodeController do
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
 
-  @doc "De nodes van de ingelogde gebruiker."
+  @doc """
+  De nodes van de ingelogde gebruiker, met de locaties waar hij ze heen kan zetten.
+
+  De locatielijst hoort hierbij en niet bij het klant-endpoint `/regions`: dat
+  geeft alleen locaties waar op dit moment iets te plaatsen valt. Een eigenaar
+  moet zijn node juist naar een lege, nieuwe locatie kunnen verhuizen -- zo vul
+  je een tweede datacenter.
+  """
   def index(conn, _params) do
     nodes = Fleet.list_nodes_owned_by(conn.assigns.current_user)
 
-    json(conn, %{nodes: Enum.map(nodes, &node_json/1)})
+    regions = Fleet.selectable_regions(Enum.map(nodes, & &1.region_id))
+
+    json(conn, %{
+      nodes: Enum.map(nodes, &node_json/1),
+      regions: Enum.map(regions, &%{id: &1.id, code: &1.code, name: &1.name, enabled: &1.enabled})
+    })
   end
 
   @doc """
@@ -104,6 +116,32 @@ defmodule ControlPlaneWeb.NodeController do
 
   defp parse_owner(_raw), do: {:error, :invalid_owner}
 
+  @doc """
+  Verplaatst de node naar een andere regio. De VPS'en erop gaan mee.
+
+  Alleen de eigenaar: die weet als enige waar zijn hardware fysiek staat.
+  """
+  def move_region(conn, %{"id" => id, "region_id" => region_id}) do
+    with {:ok, node_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         {:ok, target} <- Ecto.UUID.cast(region_id) |> ok_or(:unknown_region),
+         {:ok, node} <- Fleet.move_node_to_region(node_id, conn.assigns.current_user, target) do
+      json(conn, %{node: node_json(node)})
+    else
+      {:error, :unknown_region} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
+
+      :unknown_region ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
+
+      _ ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
+  def move_region(conn, _params) do
+    conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
+  end
+
   defp node_json(%Node{} = n) do
     %{
       id: n.id,
@@ -123,6 +161,7 @@ defmodule ControlPlaneWeb.NodeController do
       capacity_error: n.capacity_error,
       drain_reason: n.drain_reason,
       last_heartbeat_at: n.last_heartbeat_at && DateTime.to_iso8601(n.last_heartbeat_at),
+      region_id: n.region_id,
       settings: Map.take(n, Node.settings_fields())
     }
   end

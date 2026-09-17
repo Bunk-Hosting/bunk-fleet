@@ -244,6 +244,7 @@ defmodule ControlPlaneWeb.Router do
     get "/nodes", NodeController, :index
     patch "/nodes/:id/settings", NodeController, :update_settings
     post "/nodes/:id/owner", NodeController, :assign_owner
+    post "/nodes/:id/region", NodeController, :move_region
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
@@ -292,6 +293,9 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/start", PanelController, :vps_start
     post "/vpses/:id/stop", PanelController, :vps_stop
     delete "/vpses/:id", PanelController, :vps_delete
+    get "/regions", PanelController, :regions
+    post "/regions", PanelController, :create_region
+    patch "/regions/:id", PanelController, :update_region
     get "/nodes", PanelController, :nodes
     # Een node toevoegen hoort hier en niet alleen onder /admin/v1: dat pad wordt
     # door Cloudflare's WAF geblokkeerd voor het de origin bereikt, waardoor het

@@ -76,6 +76,13 @@ The response carries the plaintext token — returned once — and an `install`
 field: the exact command for §3, with the token already in it. Send it over
 something that is not a group chat.
 
+The dashboard does the same two things without curl: **Beheer → Locaties**
+creates and renames regions and closes one that is being wound down (closed
+means "nothing new lands here"; what runs there keeps running), and the node's
+owner can move it to another location later from **Mijn nodes** — the VPSes on
+it move with the machine. Only the owner can, because only the owner knows
+where the hardware actually stands.
+
 ---
 
 ## 3. Install, on the Proxmox host itself

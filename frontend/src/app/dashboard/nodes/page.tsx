@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { nodeApi, parseApiError, type MyNode, type NodeSettings } from "@/lib/api";
+import { nodeApi, parseApiError, type MyNode, type NodeRegion, type NodeSettings } from "@/lib/api";
 
 // Wat de agent doet als een veld leeg blijft. Dat staat er expliciet bij, want
 // "leeg" betekent hier niet nul maar "houd wat er op de machine staat".
@@ -67,12 +67,50 @@ function Veld({
   );
 }
 
-function NodeKaart({ node, onSaved }: { node: MyNode; onSaved: (n: MyNode) => void }) {
+function NodeKaart({
+  node,
+  regions,
+  onSaved,
+}: {
+  node: MyNode;
+  regions: NodeRegion[];
+  onSaved: (n: MyNode) => void;
+}) {
   const { toast } = useToast();
   const [form, setForm] = useState<Formulier>(() => naarFormulier(node.settings));
   const [saving, setSaving] = useState(false);
 
   const zet = (veld: keyof NodeSettings) => (v: string) => setForm((f) => ({ ...f, [veld]: v }));
+
+  // De VPS'en gaan mee naar de nieuwe locatie. Een regio beschrijft waar de
+  // machine fysiek staat, en een VPS kan niet ergens anders staan dan de machine
+  // waarop hij draait -- laat je ze achter, dan liegt het label bij elke klant
+  // die het opvraagt. Vandaar de bevestiging met het aantal erbij.
+  const verplaats = async (regionId: string) => {
+    if (!regionId || regionId === node.region_id) return;
+    const naar = regions.find((r) => r.id === regionId);
+    const bevestigd = window.confirm(
+      `${node.name} verplaatsen naar ${naar?.name ?? "die locatie"}?\n\n` +
+        "De VPS'en die op deze machine draaien verhuizen mee: hun locatie verandert " +
+        "met de machine, want ze staan er fysiek op.",
+    );
+    if (!bevestigd) return;
+
+    setSaving(true);
+    try {
+      const bijgewerkt = await nodeApi.moveRegion(node.id, regionId);
+      onSaved(bijgewerkt);
+      toast({ title: "Verplaatst", description: `Deze node staat nu in ${naar?.name ?? "de nieuwe locatie"}.` });
+    } catch (err) {
+      toast({
+        title: "Niet verplaatst",
+        description: parseApiError(err, "Bestaat die locatie, en ben jij de eigenaar?"),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Overdragen kan alleen de eigenaar zelf. Dat is bewust geen beheerdersactie:
   // zodra een node een eigenaar heeft, gaat alleen die erover. De keerzijde staat
@@ -161,6 +199,26 @@ function NodeKaart({ node, onSaved }: { node: MyNode; onSaved: (n: MyNode) => vo
         )}
 
         <div>
+          <h3 className="text-sm font-medium">Locatie</h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Waar deze machine fysiek staat. Klanten kiezen hierop bij het bestellen.
+          </p>
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            value={node.region_id ?? ""}
+            disabled={saving || regions.length === 0}
+            onChange={(e) => verplaats(e.target.value)}
+          >
+            {node.region_id === null && <option value="">— onbekend —</option>}
+            {regions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.code}){r.enabled ? "" : " — gesloten"}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <h3 className="text-sm font-medium">Wat er naar de pool gaat</h3>
           <p className="mb-3 text-xs text-muted-foreground">
             Hoeveel van deze machine aan klanten mag worden verkocht. Draait er niets anders op,
@@ -215,11 +273,15 @@ function NodeKaart({ node, onSaved }: { node: MyNode; onSaved: (n: MyNode) => vo
 export default function MijnNodesPagina() {
   const { toast } = useToast();
   const [nodes, setNodes] = useState<MyNode[] | null>(null);
+  const [regions, setRegions] = useState<NodeRegion[]>([]);
 
   const laden = useCallback(() => {
     nodeApi
       .mine()
-      .then(setNodes)
+      .then(({ nodes, regions }) => {
+        setNodes(nodes);
+        setRegions(regions);
+      })
       .catch(() => {
         setNodes([]);
         toast({ title: "Fout", description: "Kon je nodes niet laden.", variant: "destructive" });
@@ -263,6 +325,7 @@ export default function MijnNodesPagina() {
           <NodeKaart
             key={n.id}
             node={n}
+            regions={regions}
             onSaved={(bijgewerkt) =>
               setNodes((huidig) => (huidig ?? []).map((x) => (x.id === bijgewerkt.id ? bijgewerkt : x)))
             }

@@ -587,6 +587,67 @@ defmodule ControlPlaneWeb.Admin.PanelController do
 
   # --- Nodes ---------------------------------------------------------------
 
+  @doc """
+  De regio's van de vloot: de locaties waar een klant tussen kan kiezen.
+
+  Met het aantal nodes erbij, want een regio zonder nodes kan niets leveren en
+  verschijnt niet in het bestelscherm. Dat verschil hoort zichtbaar te zijn
+  voordat iemand zich afvraagt waarom er daar niets geplaatst wordt.
+  """
+  def regions(conn, _params) do
+    json(conn, %{regions: Enum.map(Fleet.list_regions_with_counts(), &region_row/1)})
+  end
+
+  @doc "Maakt een nieuwe locatie aan."
+  def create_region(conn, params) do
+    case Fleet.create_region(%{code: params["code"], name: params["name"]}) do
+      {:ok, region} ->
+        conn
+        |> put_status(:created)
+        |> json(%{region: region_row(%{region: region, node_count: 0})})
+
+      {:error, changeset} ->
+        error(conn, :unprocessable_entity, region_error(changeset))
+    end
+  end
+
+  @doc """
+  Hernoemt een regio of zet hem aan of uit.
+
+  Uitzetten is geen verwijderen: wat er draait blijft draaien, er komt alleen
+  niets nieuws bij. Dat is wat je wilt als een locatie wordt afgebouwd.
+  """
+  def update_region(conn, %{"id" => id} = params) do
+    with {:ok, region_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         {:ok, region} <- Fleet.update_region(region_id, params) do
+      json(conn, %{region: region_row(met_telling(region))})
+    else
+      :not_found -> error(conn, :not_found, "not_found")
+      {:error, :not_found} -> error(conn, :not_found, "not_found")
+      {:error, changeset} -> error(conn, :unprocessable_entity, region_error(changeset))
+    end
+  end
+
+  # De code is uniek; dat is de enige fout die een mens hier in de praktijk maakt,
+  # en "region_exists" zegt meer dan "invalid".
+  defp region_error(%Ecto.Changeset{errors: errors}) do
+    if Keyword.has_key?(errors, :code), do: "region_code_taken", else: "invalid_region"
+  end
+
+  # Het paneel voegt dit antwoord samen met de rij die het al toonde, dus een nul
+  # die "niet opgevraagd" betekent zou het aantal nodes ter plekke wissen.
+  defp met_telling(region) do
+    Enum.find(
+      Fleet.list_regions_with_counts(),
+      %{region: region, node_count: 0},
+      &(&1.region.id == region.id)
+    )
+  end
+
+  defp region_row(%{region: r, node_count: n}) do
+    %{id: r.id, code: r.code, name: r.name, enabled: r.enabled, node_count: n}
+  end
+
   def nodes(conn, _params) do
     json(conn, %{nodes: Enum.map(Fleet.list_nodes(), &node_json/1)})
   end
