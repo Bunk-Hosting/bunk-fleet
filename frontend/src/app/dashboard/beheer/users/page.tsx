@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Plus } from "lucide-react";
+import { Loader2, Search, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,48 @@ function UsersInner() {
       toast({ title: "Rol gewijzigd", description: `${u.email} → ${role}` });
     } catch (e) {
       toast({ title: "Mislukt", description: parseApiError(e, "Kon rol niet wijzigen."), variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Verwijderen doet twee verschillende dingen, en dat hoort vooraf te staan in
+  // plaats van achteraf te blijken. Een account waar geld aan te pas is gekomen
+  // wordt geanonimiseerd: de persoonsgegevens gaan eruit, de facturen en het
+  // grootboek blijven staan omdat die administratie zeven jaar bewaard moet
+  // blijven en de btw-aangifte erop rust.
+  async function removeUser(u: AdminUser) {
+    const bevestigd = window.confirm(
+      `Account ${u.email} verwijderen?\n\n` +
+        "Heeft deze gebruiker ooit betaald, dan blijven de facturen en het grootboek staan " +
+        "en worden alleen de persoonsgegevens gewist. Zonder betaalgeschiedenis wordt het " +
+        "account echt verwijderd.\n\nDraait er nog een VPS, dan lukt het niet: ruim die eerst op.",
+    );
+    if (!bevestigd) return;
+
+    setBusy(u.id);
+    try {
+      const uitkomst = await adminApi.deleteUser(u.id);
+      if (uitkomst === "deleted") {
+        setUsers((prev) => prev.filter((x) => x.id !== u.id));
+      } else {
+        // Het account blijft bestaan met een vervangend adres; opnieuw laden
+        // toont dat in plaats van de oude gegevens te laten staan.
+        load();
+      }
+      toast({
+        title: uitkomst === "deleted" ? "Account verwijderd" : "Account geanonimiseerd",
+        description:
+          uitkomst === "deleted"
+            ? "Er was geen administratie om te bewaren."
+            : "De persoonsgegevens zijn gewist; de facturen en het grootboek blijven staan.",
+      });
+    } catch (e) {
+      toast({
+        title: "Niet verwijderd",
+        description: parseApiError(e, "Controleer of er nog een VPS van deze gebruiker draait."),
+        variant: "destructive",
+      });
     } finally {
       setBusy(null);
     }
@@ -142,10 +184,22 @@ function UsersInner() {
                       {u.two_factor ? <Badge variant="default">aan</Badge> : <Badge variant="secondary">uit</Badge>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="outline" size="sm" disabled={busy === u.id} onClick={() => addCredit(u)}>
-                        {busy === u.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="mr-1 h-4 w-4" />}
-                        Tegoed
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" disabled={busy === u.id} onClick={() => addCredit(u)}>
+                          {busy === u.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="mr-1 h-4 w-4" />}
+                          Tegoed
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          title="Account verwijderen"
+                          disabled={busy === u.id}
+                          onClick={() => removeUser(u)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

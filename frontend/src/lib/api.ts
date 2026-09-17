@@ -874,6 +874,14 @@ export const adminApi = {
     (await api.get<AdminMetrics>("/beheer/metrics")).data,
   users: async (): Promise<AdminUser[]> =>
     (await api.get<{ users: AdminUser[] }>("/beheer/users")).data.users,
+  /**
+   * Verwijdert een account, of anonimiseert het als er een administratie aan
+   * hangt. Het antwoord zegt welke van de twee het is geworden; "verwijderd"
+   * melden bij iets wat blijft bestaan zou onwaar zijn.
+   */
+  deleteUser: async (id: string): Promise<"deleted" | "anonymised"> =>
+    (await api.delete<{ result: "deleted" | "anonymised" }>(`/beheer/users/${id}`)).data.result,
+
   setRole: (id: string, role: "user" | "admin") =>
     api.patch<{ id: string; role: string }>(`/beheer/users/${id}`, { role }),
   addCredit: (id: string, amountCents: number) =>

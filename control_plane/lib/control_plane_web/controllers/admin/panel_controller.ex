@@ -500,6 +500,32 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     end
   end
 
+  @doc """
+  Verwijdert een account, of anonimiseert het als er een administratie aan hangt.
+
+  Het antwoord zegt wélke van de twee het is geworden, zodat het scherm dat kan
+  tonen in plaats van "verwijderd" te melden bij iets wat blijft bestaan.
+  """
+  def delete_user(conn, %{"id" => id}) do
+    with {:ok, uid} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         %User{} = user <- Accounts.get_user(uid) || :not_found,
+         :ok <- niet_jezelf(conn, user),
+         {:ok, uitkomst} <- Accounts.delete_or_anonymise_user(user) do
+      json(conn, %{result: uitkomst})
+    else
+      :not_found -> error(conn, :not_found, "not_found")
+      {:error, :self} -> error(conn, :unprocessable_entity, "cannot_delete_self")
+      {:error, :has_vpses} -> error(conn, :conflict, "user_has_vpses")
+      {:error, _reason} -> error(conn, :unprocessable_entity, "delete_failed")
+    end
+  end
+
+  # Jezelf verwijderen sluit je buiten je eigen paneel, en bij de laatste
+  # beheerder sluit het iedereen buiten. Dezelfde reden als bij het degraderen.
+  defp niet_jezelf(conn, %User{} = user) do
+    if user.id == conn.assigns.current_user.id, do: {:error, :self}, else: :ok
+  end
+
   # Never let an admin strip their OWN admin role: the last admin demoting
   # themselves locks the whole panel, and nothing in the panel can undo it.
   defp keeps_own_admin(conn, %User{} = user, role) do

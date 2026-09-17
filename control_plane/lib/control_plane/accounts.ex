@@ -18,6 +18,9 @@ defmodule ControlPlane.Accounts do
   alias ControlPlane.Accounts.UserToken
   alias ControlPlane.Clock
   alias ControlPlane.Credits
+  alias ControlPlane.Credits.LedgerEntry
+  alias ControlPlane.Credits.TopupRequest
+  alias ControlPlane.Fleet.Vps
   alias ControlPlane.Metrics
   alias ControlPlane.Notifier
   alias ControlPlane.RateLimiter
@@ -408,6 +411,92 @@ defmodule ControlPlane.Accounts do
     {token, user_token} = UserToken.build_session_token(user)
     Repo.insert!(user_token)
     token
+  end
+
+  @doc """
+  Verwijdert een account, of anonimiseert het als er een administratie aan hangt.
+
+  Drie uitkomsten, en het verschil is niet cosmetisch.
+
+  `{:error, :has_vpses}` zolang er nog een levende VPS van deze gebruiker is.
+  De sleutelregel op `vpses.owner_id` is `nilify`, dus zonder deze weigering
+  blijft er een draaiende machine over zonder eigenaar: hij eet capaciteit,
+  niemand betaalt ervoor, en niemand kan er via het dashboard nog bij. Eerst
+  opruimen, dan pas het account.
+
+  `{:ok, :anonymised}` zodra er geld aan te pas is gekomen. De sleutelregels op
+  `topup_requests` en `ledger_entries` zijn `delete_all`, dus echt verwijderen
+  neemt de facturen en het grootboek mee -- precies de administratie waarop de
+  btw-aangifte rust en die zeven jaar bewaard moet blijven. De omzet over een
+  afgesloten kwartaal zou met terugwerkende kracht veranderen. In plaats daarvan
+  gaan de persoonsgegevens eruit en blijven de bedragen staan. Dat is wat de AVG
+  met het recht op vergetelheid bedoelt én wat de Belastingdienst wil.
+
+  `{:ok, :deleted}` als er nooit iets financieels is geweest. Dan valt er niets
+  te bewaren en is echt verwijderen het eerlijkste antwoord.
+  """
+  @spec delete_or_anonymise_user(User.t()) ::
+          {:ok, :deleted | :anonymised} | {:error, :has_vpses | Ecto.Changeset.t()}
+  def delete_or_anonymise_user(%User{} = user) do
+    cond do
+      has_live_vpses?(user) -> {:error, :has_vpses}
+      has_financial_history?(user) -> anonymise_user(user)
+      true -> hard_delete_user(user)
+    end
+  end
+
+  @doc "Of er nog een levende VPS van deze gebruiker is."
+  @spec has_live_vpses?(User.t()) :: boolean()
+  def has_live_vpses?(%User{id: id}) do
+    Repo.exists?(
+      from v in Vps,
+        where: v.owner_id == ^id and v.status not in [:deleted, :failed]
+    )
+  end
+
+  @doc "Of er iets aan deze gebruiker hangt dat bewaard moet blijven."
+  @spec has_financial_history?(User.t()) :: boolean()
+  def has_financial_history?(%User{id: id}) do
+    Repo.exists?(from t in TopupRequest, where: t.user_id == ^id) or
+      Repo.exists?(from l in LedgerEntry, where: l.user_id == ^id)
+  end
+
+  defp anonymise_user(%User{id: id} = user) do
+    # Het adres moet uniek blijven en herkenbaar als verwijderd. De id erin maakt
+    # hem uniek zonder dat er iets van de persoon in achterblijft.
+    vervangend = "verwijderd-#{String.replace(id, "-", "")}@verwijderd.invalid"
+
+    user
+    |> Ecto.Changeset.change(%{
+      email: vervangend,
+      name: nil,
+      # Een wachtwoordhash die nergens bij hoort: inloggen kan niet meer, en er
+      # blijft geen bruikbaar geheim staan.
+      hashed_password: Pbkdf2.hash_pwd_salt(Base.encode64(:crypto.strong_rand_bytes(32))),
+      totp_secret: nil,
+      totp_confirmed_at: nil,
+      confirmed_at: nil,
+      role: :user
+    })
+    |> Repo.update()
+    |> case do
+      {:ok, _} ->
+        # Sessies en passkeys gaan mee: een geanonimiseerd account hoort nergens
+        # meer binnen te kunnen.
+        Repo.delete_all(from t in UserToken, where: t.user_id == ^id)
+        Repo.delete_all(from p in Passkey, where: p.user_id == ^id)
+        {:ok, :anonymised}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  defp hard_delete_user(%User{} = user) do
+    case Repo.delete(user) do
+      {:ok, _} -> {:ok, :deleted}
+      {:error, changeset} -> {:error, changeset}
+    end
   end
 
   @doc """

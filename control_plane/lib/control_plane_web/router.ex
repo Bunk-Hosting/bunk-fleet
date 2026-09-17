@@ -286,6 +286,7 @@ defmodule ControlPlaneWeb.Router do
     get "/commands", PanelController, :commands
     patch "/users/:id", PanelController, :update_user
     post "/users/:id/credit", PanelController, :credit_user
+    delete "/users/:id", PanelController, :delete_user
     get "/vpses", PanelController, :vpses
     post "/vpses/:id/start", PanelController, :vps_start
     post "/vpses/:id/stop", PanelController, :vps_stop
