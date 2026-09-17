@@ -90,8 +90,28 @@ Run it **on the Proxmox host**, not on a helper VM, unless the operator is
 managing the network themselves. Only from the host can the agent put the
 gateway on the bridge and NAT customer traffic out of the node's own uplink.
 
-The wizard asks for the API details, how much of the machine to offer, and the
-network question from §1. It does not ask for an IP plan: the control plane
+The wizard first asks who will manage this node:
+
+```
+Beheerder van deze node:
+  Alleen dit account kan straks de instellingen van deze node wijzigen
+  in het dashboard. Gebruik het e-mailadres waarmee je op Bunk inlogt.
+  E-mailadres: 
+```
+
+That address is the key to the node, not an administrative detail. Only that
+account can change its settings afterwards, and only that account can hand the
+node to someone else — an admin cannot, once a node has an owner. An admin can
+assign an owner to a node that has none, which is what happens when the address
+is left blank or names an account that does not exist yet. `--owner <email>`
+answers it non-interactively.
+
+The token wins over the typed address when it already carries an owner: whoever
+holds a token should not be able to decide who owns the node by typing a
+different address.
+
+The wizard then asks for the API details, how much of the machine to offer, and
+the network question from §1. It does not ask for an IP plan: the control plane
 assigns the node a `/22` out of `10.10.0.0/16` and hands it back at enrolment.
 
 On Proxmox it asks which VMIDs Bunk may use:
@@ -130,6 +150,31 @@ choice if you keep a golden image of your own -- give it VMID 9000.
 The step is best-effort. If it fails the installer says why and carries on
 installing the agent, and it removes the half-built VM rather than leaving a
 broken 9000 behind for the next run to mistake for a finished template.
+
+---
+
+## 3b. Afterwards: settings live in the dashboard
+
+Everything the wizard asked about capacity and numbering can be changed later
+from **Mijn nodes** in the dashboard, by the owner and nobody else. A change is
+picked up on the node's next heartbeat — within half a minute — and the agent
+logs what it applied:
+
+```
+instellingen opgehaald uit het dashboard vmid_min=2000 vmid_max=2999 vcpu_per_core=3
+```
+
+What can be set there: how much of the machine goes to the pool, the VMID block,
+how many vCPUs are handed out per physical core, and the pattern guests are named
+by. An empty field means "leave it as the machine has it" — not zero.
+
+The name pattern must contain `{id}`; the control plane refuses to save one that
+does not. The agent recognises an already-created machine by its name, and a
+pattern without a unique part lets one customer's VPS adopt another's. The other
+placeholders are `{naam}`, `{klant}` and `{node}`.
+
+The hypervisor credentials are not in the dashboard. They stay on the machine, in
+the agent's service file.
 
 ---
 
@@ -246,6 +291,13 @@ firewall in between. The message in the panel is the agent's own error. Nothing
 new is placed on that node until it clears, which it does by itself on the first
 heartbeat that can measure again. Before this existed such a node simply went
 offline, which looked exactly like a machine that was switched off.
+
+**Nobody can change a node's settings.** Check who owns it — the dashboard shows
+it on the node card in the admin panel. Only the owner can change settings, and
+only the owner can hand the node over; an admin can do neither once a node has an
+owner. That is deliberate, and it has a sharp edge: if an owner becomes
+unreachable, nobody can transfer that node. An admin can only assign an owner to
+a node that has none.
 
 **VPS gets an address but no connectivity.** Ask who owns the gateway. With
 `BUNK_MANAGE_NETWORK=1`, `ip addr show vmbr2` on the node should carry the

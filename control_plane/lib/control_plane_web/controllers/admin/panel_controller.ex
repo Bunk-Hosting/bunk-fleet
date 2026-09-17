@@ -669,7 +669,11 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       id: n.id,
       name: n.name,
       status: n.status,
-      owner_email: n.owner_email,
+      # Kostenplaats, niet de beheerder: dit label landt in de verbruiksregels en
+      # zegt welk team of persoon binnen Bunk de hardware betaalt. Wie de node
+      # beheert staat hieronder als `owner` -- twee e-mailachtige eigenaarsvelden
+      # met dezelfde naam is vragen om verwarring.
+      cost_centre: n.owner_email,
       region: region_code(n),
       total_vcpu: n.total_vcpu,
       total_ram_mb: n.total_ram_mb,

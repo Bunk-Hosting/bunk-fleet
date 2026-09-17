@@ -714,7 +714,8 @@ export interface AdminNode {
   id: string;
   name: string;
   status: string;
-  owner_email: string | null;
+  /** De kostenplaats die in de verbruiksregels landt — niet wie de node beheert. */
+  cost_centre: string | null;
   region: string | null;
   // Null tot de eerste geslaagde heartbeat: een node die nog nooit heeft gemeld
   // heeft geen capaciteit van nul, hij heeft er geen. Het verschil hoort in het

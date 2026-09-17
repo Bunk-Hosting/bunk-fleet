@@ -231,7 +231,7 @@ function NodesInner() {
                     <HardDrive className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium">{n.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      {n.region ?? "—"} · {n.owner_email ?? "geen kostenplaats"}
+                      {n.region ?? "—"} · {n.cost_centre ?? "geen kostenplaats"}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {n.owner ? `beheerd door ${n.owner}` : "geen eigenaar"}
