@@ -27,6 +27,7 @@ defmodule ControlPlaneWeb.VpsController do
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Idempotency
   alias ControlPlane.Provisioning
+  alias ControlPlane.Repo
 
   def index(conn, _params) do
     vpses =
@@ -488,8 +489,37 @@ defmodule ControlPlaneWeb.VpsController do
       # to say "console only" instead of printing an address that goes nowhere.
       public_host: public_host(vps),
       ssh_port: ssh_port(vps),
-      port_forwards: port_forwards_json(vps)
+      port_forwards: port_forwards_json(vps),
+      # De prijs hoort van de server te komen. De frontend leidde hem af uit de
+      # specificaties door een pakket in de catalogus te zoeken, en verzon bij
+      # geen match een pakket van EUR 0,00 -- waarna de klant las dat zijn
+      # machine gratis was zodra een pakket uit het aanbod ging. Wat iemand
+      # betaalt is een feit van de server, en `package_id` staat op de rij.
+      package: package_json(vps)
     }
+  end
+
+  defp package_json(%Vps{package_id: nil}), do: nil
+
+  defp package_json(%Vps{package_id: id}) do
+    case Repo.get(Package, id) do
+      nil ->
+        # Het pakket is uit de catalogus gehaald. Dat is iets anders dan gratis:
+        # `null` laat het scherm "onbekend" tonen in plaats van een bedrag dat
+        # niet klopt.
+        nil
+
+      pkg ->
+        %{
+          id: pkg.id,
+          name: pkg.name,
+          cpu_cores: pkg.cpu_cores,
+          ram_gb: pkg.ram_gb,
+          disk_gb: pkg.disk_gb,
+          bandwidth_tb: pkg.bandwidth_tb,
+          price_monthly: pkg.price_monthly
+        }
+    end
   end
 
   defp public_host(%Vps{node: %Node{public_host: host}}), do: host

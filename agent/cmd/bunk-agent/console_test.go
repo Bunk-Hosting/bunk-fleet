@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/config"
 )
@@ -92,5 +94,57 @@ func TestAssignedSubnetIsNilWhenNothingIsKnown(t *testing.T) {
 	bad := persistedState{VpsGateway: "nonsense", VpsCidrPrefix: 22}
 	if got := assignedSubnet(bad, config.VpsNetworkConfig{}); got != nil {
 		t.Fatalf("assignedSubnet(malformed) = %v, want nil", got)
+	}
+}
+
+// De sessielimiet moet iets betekenen. io.Copy kijkt nergens naar en blokkeert
+// tot de verbinding eronder dichtgaat, dus zonder een select op de context liep
+// de limiet af zonder gevolg en bleef een sessie openstaan zolang de
+// TCP-verbinding bleef staan. Een dichtgeklapte laptop stuurt geen FIN: dat is
+// de normale manier waarop een sessie blijft hangen.
+func TestPipeStoptOpDeContext(t *testing.T) {
+	a1, _ := net.Pipe()
+	b1, _ := net.Pipe()
+	defer a1.Close()
+	defer b1.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	klaar := make(chan bool, 1)
+	go func() { klaar <- pipe(ctx, a1, b1) }()
+
+	select {
+	case doorTijd := <-klaar:
+		if !doorTijd {
+			t.Error("pipe stopte, maar meldde niet dat het door de tijdslimiet kwam")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipe bleef hangen terwijl de context al lang verlopen was")
+	}
+}
+
+func TestPipeStoptAlsEenKantSluit(t *testing.T) {
+	// Het gewone geval: de browser gaat weg, de sessie hoort meteen te eindigen
+	// en niet pas na vier uur.
+	a1, a2 := net.Pipe()
+	b1, _ := net.Pipe()
+	defer b1.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	klaar := make(chan bool, 1)
+	go func() { klaar <- pipe(ctx, a1, b1) }()
+
+	a2.Close()
+
+	select {
+	case doorTijd := <-klaar:
+		if doorTijd {
+			t.Error("pipe meldde een tijdslimiet terwijl een kant gewoon sloot")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipe merkte niet dat een kant sloot")
 	}
 }

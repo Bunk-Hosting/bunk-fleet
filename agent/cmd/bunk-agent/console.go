@@ -113,8 +113,13 @@ func handleConsoleConnect(ctx context.Context, logger *slog.Logger, cp *transpor
 		defer relay.Close()
 
 		logger.Info("console session open", "vps", req.VpsID, "target", target)
-		pipe(relay, vps)
-		logger.Info("console session closed", "vps", req.VpsID)
+
+		if pipe(ctx, relay, vps) {
+			logger.Warn("console session hit the time limit and was closed",
+				"vps", req.VpsID, "limit", consoleSessionTimeout.String())
+		} else {
+			logger.Info("console session closed", "vps", req.VpsID)
+		}
 	}()
 }
 
@@ -163,12 +168,30 @@ func hangUp(ctx context.Context, logger *slog.Logger, cp *transport.Client, toke
 
 // pipe copies in both directions and returns once either side closes, so a
 // browser that goes away drops the SSH connection with it rather than leaving
-// a half-open session on the customer's machine.
-func pipe(a, b net.Conn) {
+// a half-open session on the customer's machine. Returns true when it stopped
+// because ctx expired rather than because a side closed.
+//
+// Het wachten op ctx is geen extra zorgvuldigheid maar de reden dat de limiet
+// van vier uur iets betekent. `io.Copy` kijkt nergens naar: hij blokkeert op een
+// read tot de verbinding eronder dichtgaat. Zonder deze select liep de context
+// af, gebeurde er niets, en bleef een sessie openstaan zolang de TCP-verbinding
+// bleef staan -- een dichtgeklapte laptop stuurt geen FIN, dus dat is de
+// normale manier waarop een sessie blijft hangen, niet de uitzonderlijke.
+//
+// Onderbreken kan alleen door de verbindingen te sluiten, en dat doet de
+// aanroeper met zijn `defer`s zodra dit terugkeert. De kopieergoroutines lopen
+// daarop stuk en eindigen.
+func pipe(ctx context.Context, a, b net.Conn) bool {
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(a, b); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(b, a); done <- struct{}{} }()
-	<-done
+
+	select {
+	case <-done:
+		return false
+	case <-ctx.Done():
+		return true
+	}
 }
 
 // assignedSubnet is the network this node's VPSes live on, as a mask the console

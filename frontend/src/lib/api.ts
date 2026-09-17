@@ -212,14 +212,22 @@ function packageForSpecs(vcpu: number, ramMb: number, diskGb: number): VpsPackag
     (p) => p.cpu_cores === vcpu && p.ram_gb * 1024 === ramMb && p.disk_gb === diskGb,
   );
   if (match) return match;
+
+  // Geen match in de catalogus. Dit is de terugval voor een antwoord zonder
+  // `package` (een oudere server); normaal stuurt de server het pakket mee.
+  //
+  // De prijs is hier bewust leeg en niet "0.00". Een VPS waarvan het pakket uit
+  // het aanbod is gehaald is niet gratis, en dat op het scherm zetten is geen
+  // nette terugval maar een onwaarheid over iemands rekening. Het scherm toont
+  // hierop "onbekend".
   return {
     id: 0,
-    name: "Custom",
+    name: "Onbekend pakket",
     cpu_cores: vcpu,
     ram_gb: Math.round(ramMb / 1024),
     disk_gb: diskGb,
     bandwidth_tb: 1,
-    price_monthly: "0.00",
+    price_monthly: "",
     description: "",
   };
 }
@@ -237,13 +245,32 @@ interface BunkVps {
   public_host?: string | null;
   ssh_port?: number | null;
   inserted_at: string;
+  /**
+   * Het pakket zoals de SERVER het kent, via `package_id` op de rij. `null`
+   * wanneer het pakket uit de catalogus is gehaald — dat is iets anders dan
+   * gratis, en het scherm hoort dan "onbekend" te tonen.
+   */
+  package?: {
+    id: number;
+    name: string;
+    cpu_cores: number;
+    ram_gb: number;
+    disk_gb: number;
+    bandwidth_tb: number;
+    price_monthly: string;
+  } | null;
 }
 
 function transformVps(v: BunkVps): Vps {
   return {
     id: v.id,
     label: v.name,
-    package: packageForSpecs(v.vcpu, v.ram_mb, v.disk_gb),
+    // `description` hoort bij VpsPackage maar niet bij wat de server hier stuurt:
+    // de omschrijving is verkooptekst uit de catalogus en zegt niets over deze
+    // machine.
+    package: v.package
+      ? { ...v.package, description: "" }
+      : packageForSpecs(v.vcpu, v.ram_mb, v.disk_gb),
     os: "ubuntu-22.04",
     status: vpsStatusFromApi(v.status),
     ip_address: v.ip_address,
@@ -1114,10 +1141,15 @@ export const billingApi = {
     const active = res.data.results.filter(
       (v) => v.status === "ACTIVE" || v.status === "STOPPED"
     );
-    const monthly = active.reduce(
-      (sum, v) => sum + parseFloat(v.package?.price_monthly ?? "0"),
-      0
-    );
+    // Een onbekende prijs telt niet mee in plaats van als nul: het verschil is
+    // hier vooral dat `parseFloat("")` NaN geeft, en dan verdwijnt het hele
+    // maandbedrag in plaats van één regel. Onbekend komt alleen voor als een
+    // pakket uit de catalogus is verwijderd terwijl er nog een VPS op draait;
+    // wat er werkelijk is afgeschreven staat in het grootboek, niet hier.
+    const monthly = active.reduce((sum, v) => {
+      const prijs = parseFloat(v.package?.price_monthly ?? "");
+      return Number.isFinite(prijs) ? sum + prijs : sum;
+    }, 0);
     const now = new Date();
     const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     return {
