@@ -159,6 +159,18 @@ jobs:
       - name: Type check
         run: mix dialyzer --format github
 
+  # De uitrolscripts zijn productiecode. Shellcheck staat op de runners van
+  # GitHub voorgeinstalleerd, dus dit kost niets en het vangt precies de fout
+  # waarmee ooit een uitrol halverwege afbrak: een commentaarregel middenin een
+  # commando met regelvervolgen, syntactisch volstrekt geldig (SC1143).
+  shell:
+    name: Shellscripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck
+        run: shellcheck -S warning *.sh tools/*.sh provisioning/*/*.sh
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

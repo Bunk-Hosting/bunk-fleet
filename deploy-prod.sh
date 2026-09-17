@@ -92,7 +92,14 @@ if ! grep -q '^CONSOLE_SSH_PRIVATE_KEY=' "$ENV_FILE"; then
   echo "GENERATED console SSH key"
 fi
 
-set -a; . "$ENV_FILE"; set +a
+# Alles wat hier binnenkomt wordt geexporteerd, zodat de -e-lijst hieronder de
+# waarden kan doorgeven zonder ze te herhalen.
+set -a
+# Het pad is per machine anders, dus shellcheck kan het bestand niet volgen en
+# hoeft dat ook niet.
+# shellcheck source=/dev/null
+. "$ENV_FILE"
+set +a
 DATABASE_URL="ecto://bunkfleet:${DB_PASSWORD}@${PGNAME}/control_plane"
 
 # 3. Postgres (persistent volume)
@@ -111,7 +118,7 @@ else
   echo "PG already present"
 fi
 pg_ok=0
-for i in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 2; done
+for _ in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 2; done
 [ "$pg_ok" = 1 ] || { echo "FATAL: Postgres never became ready"; docker logs --tail 30 "$PGNAME"; exit 1; }
 
 # 3b. Trage queries laten zich zien. Stond op -1, dus er werd niets gelogd en op
@@ -272,6 +279,15 @@ bewaar_log "$CPNAME"
 docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 docker rename "$NIEUW_CP" "$CPNAME"
 echo "SWAPPED $CPNAME"
+
+# nginx meteen opnieuw laten kijken. Hij onthoudt een opgezocht adres voor de
+# duur van `valid=` in edge.conf, en tot die tijd wijst hij naar de container die
+# er net niet meer is. Een herlading is genadig -- lopende verzoeken maken hun
+# antwoord af -- en scheelt precies dat venster. Mag mislukken: draait de edge
+# niet, dan is er ook niets te herladen.
+docker exec bunk-edge nginx -s reload >/dev/null 2>&1 \
+  && echo "edge opnieuw laten kijken na de wissel" \
+  || true
 
 echo "=== container status ==="
 docker ps --filter name=bf-prod --format '{{.Names}}  {{.Status}}  {{.Ports}}'

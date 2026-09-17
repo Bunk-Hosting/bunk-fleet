@@ -1,3 +1,6 @@
+# shellcheck shell=sh
+# Dit bestand wordt gesourced vanuit /etc/profile.d en heeft daarom geen
+# shebang; de regel hierboven vertelt shellcheck met welke shell hij rekent.
 # Toont het welkomstscherm precies één keer per gebruiker.
 #
 # In profile.d en niet in update-motd.d: die laatste draait als root en heeft

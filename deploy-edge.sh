@@ -212,7 +212,7 @@ docker rm -f bunk-frontend >/dev/null 2>&1 || true
 docker rename "$NIEUW" bunk-frontend
 
 echo "edge: $(docker inspect -f '{{.State.Status}}' bunk-edge)  frontend: $(docker inspect -f '{{.State.Status}}' bunk-frontend)"
-for i in $(seq 1 15); do
+for _ in $(seq 1 15); do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/login 2>/dev/null || echo 000)
   [ "$code" = "200" ] && { echo "EDGE_OK (/login -> 200)"; exit 0; }
   sleep 2

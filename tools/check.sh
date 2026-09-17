@@ -13,6 +13,7 @@
 #   bash tools/check.sh            # everything
 #   bash tools/check.sh elixir     # control plane only
 #   bash tools/check.sh go         # agent only
+#   bash tools/check.sh shell      # de uitrolscripts only
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,6 +59,17 @@ start_test_pg() {
     sleep 1
   done
   fail "de testdatabase werd niet bereikbaar"
+}
+
+# De uitrolscripts zijn productiecode: ze vervangen containers en draaien
+# migraties. `bash -n` vangt daar bijna niets van, want de fout die hier ooit een
+# uitrol halverwege afbrak -- een commentaarregel middenin een commando met
+# regelvervolgen -- is syntactisch volstrekt geldig. Shellcheck heeft daar een
+# eigen regel voor (SC1143), en een paar honderd andere.
+check_shell() {
+  echo "=== shellscripts: shellcheck ==="
+  docker run --rm -v "$ROOT":/mnt -w /mnt koalaman/shellcheck-alpine:stable \
+    sh -c 'shellcheck -S warning *.sh tools/*.sh provisioning/*/*.sh'
 }
 
 check_elixir() {
@@ -123,10 +135,11 @@ check_go() {
 }
 
 case "$WHAT" in
-  all)    check_elixir; check_go ;;
+  all)    check_shell; check_elixir; check_go ;;
   elixir) check_elixir ;;
   go)     check_go ;;
-  *)      fail "unknown target '$WHAT' (expected: all | elixir | go)" ;;
+  shell)  check_shell ;;
+  *)      fail "unknown target '$WHAT' (expected: all | elixir | go | shell)" ;;
 esac
 
 echo "=== ALLES GROEN ==="
