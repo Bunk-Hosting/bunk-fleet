@@ -66,6 +66,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_matching_package: "Deze combinatie van cpu, geheugen en schijf is niet te bestellen.",
   invalid_vps: "Deze specificatie kan niet.",
   region_not_found: "Deze regio bestaat niet.",
+  invalid_region: "Vul een plaatsnaam in van twee tot zestig tekens.",
+  unknown_region: "Deze locatie bestaat niet.",
   no_delivery_consent:
     "Bevestig dat je VPS meteen aangemaakt mag worden voordat je bestelt.",
 
@@ -688,6 +690,8 @@ export interface MyNode {
   last_heartbeat_at: string | null;
   /** De locatie waar deze machine staat; bepaalt waar klanten hem kunnen kiezen. */
   region_id: string | null;
+  /** Diezelfde locatie met naam en al, zodat het scherm hem niet hoeft op te zoeken. */
+  region: BunkRegion | null;
   settings: NodeSettings;
 }
 
@@ -723,12 +727,18 @@ export const nodeApi = {
     (await api.post<{ node: MyNode }>(`/nodes/${id}/owner`, { owner_email: ownerEmail })).data.node,
 
   /**
-   * Verplaatst de node naar een andere locatie. De VPS'en erop gaan mee: een
-   * regio beschrijft waar de machine fysiek staat, en een VPS kan niet ergens
-   * anders staan dan de machine waarop hij draait.
+   * Verplaatst de node naar de locatie met deze naam, en maakt die aan als hij
+   * nog niet bestaat. De VPS'en erop gaan mee: een regio beschrijft waar de
+   * machine fysiek staat, en een VPS kan niet ergens anders staan dan de machine
+   * waarop hij draait.
+   *
+   * Een naam en geen id, zodat een eigenaar niet hoeft te wachten tot iemand
+   * anders zijn plaats heeft aangemaakt. Bestaat hij al -- op naam of op code,
+   * hoofdletters maken niet uit -- dan gaat de node daarin.
    */
-  moveRegion: async (id: string, regionId: string): Promise<MyNode> =>
-    (await api.post<{ node: MyNode }>(`/nodes/${id}/region`, { region_id: regionId })).data.node,
+  moveRegion: async (id: string, regionName: string): Promise<MyNode> =>
+    (await api.post<{ node: MyNode }>(`/nodes/${id}/region`, { region_name: regionName })).data
+      .node,
 };
 
 /** Een locatie waar klanten hun VPS kunnen laten draaien. */

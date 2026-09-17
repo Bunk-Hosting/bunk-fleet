@@ -78,6 +78,7 @@ function NodeKaart({
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState<Formulier>(() => naarFormulier(node.settings));
+  const [locatie, setLocatie] = useState(node.region?.name ?? "");
   const [saving, setSaving] = useState(false);
 
   const zet = (veld: keyof NodeSettings) => (v: string) => setForm((f) => ({ ...f, [veld]: v }));
@@ -85,12 +86,20 @@ function NodeKaart({
   // De VPS'en gaan mee naar de nieuwe locatie. Een regio beschrijft waar de
   // machine fysiek staat, en een VPS kan niet ergens anders staan dan de machine
   // waarop hij draait -- laat je ze achter, dan liegt het label bij elke klant
-  // die het opvraagt. Vandaar de bevestiging met het aantal erbij.
-  const verplaats = async (regionId: string) => {
-    if (!regionId || regionId === node.region_id) return;
-    const naar = regions.find((r) => r.id === regionId);
+  // die het opvraagt. Vandaar de bevestiging.
+  //
+  // Vrije tekst, geen keuzelijst: bestaat de plaats nog niet, dan maakt het
+  // control plane hem aan. Wachten tot een beheerder jouw stad heeft toegevoegd
+  // is geen instelling maar een blokkade. De bestaande locaties staan als
+  // suggestie in de datalist, zodat "Eindhoven" niet naast "eindhoven" belandt.
+  const verplaats = async () => {
+    const gewenst = locatie.trim();
+    if (!gewenst || gewenst.toLowerCase() === (node.region?.name ?? "").toLowerCase()) return;
+
+    const bestaat = regions.some((r) => r.name.toLowerCase() === gewenst.toLowerCase());
     const bevestigd = window.confirm(
-      `${node.name} verplaatsen naar ${naar?.name ?? "die locatie"}?\n\n` +
+      `${node.name} verplaatsen naar ${gewenst}?\n\n` +
+        (bestaat ? "" : `"${gewenst}" bestaat nog niet en wordt aangemaakt.\n\n`) +
         "De VPS'en die op deze machine draaien verhuizen mee: hun locatie verandert " +
         "met de machine, want ze staan er fysiek op.",
     );
@@ -98,13 +107,17 @@ function NodeKaart({
 
     setSaving(true);
     try {
-      const bijgewerkt = await nodeApi.moveRegion(node.id, regionId);
+      const bijgewerkt = await nodeApi.moveRegion(node.id, gewenst);
       onSaved(bijgewerkt);
-      toast({ title: "Verplaatst", description: `Deze node staat nu in ${naar?.name ?? "de nieuwe locatie"}.` });
+      setLocatie(bijgewerkt.region?.name ?? gewenst);
+      toast({
+        title: "Verplaatst",
+        description: `Deze node staat nu in ${bijgewerkt.region?.name ?? gewenst}.`,
+      });
     } catch (err) {
       toast({
         title: "Niet verplaatst",
-        description: parseApiError(err, "Bestaat die locatie, en ben jij de eigenaar?"),
+        description: parseApiError(err, "Vul een plaatsnaam van minstens twee tekens in."),
         variant: "destructive",
       });
     } finally {
@@ -201,21 +214,32 @@ function NodeKaart({
         <div>
           <h3 className="text-sm font-medium">Locatie</h3>
           <p className="mb-3 text-xs text-muted-foreground">
-            Waar deze machine fysiek staat. Klanten kiezen hierop bij het bestellen.
+            Waar deze machine fysiek staat. Klanten kiezen hierop bij het bestellen. Typ een
+            plaats die er nog niet is en hij wordt aangemaakt.
           </p>
-          <select
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            value={node.region_id ?? ""}
-            disabled={saving || regions.length === 0}
-            onChange={(e) => verplaats(e.target.value)}
-          >
-            {node.region_id === null && <option value="">— onbekend —</option>}
-            {regions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.code}){r.enabled ? "" : " — gesloten"}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              list={`locaties-${node.id}`}
+              className="max-w-xs"
+              placeholder="Eindhoven"
+              value={locatie}
+              disabled={saving}
+              onChange={(e) => setLocatie(e.target.value)}
+            />
+            <datalist id={`locaties-${node.id}`}>
+              {regions.map((r) => (
+                <option key={r.id} value={r.name} />
+              ))}
+            </datalist>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={saving || !locatie.trim() || locatie.trim() === (node.region?.name ?? "")}
+              onClick={verplaats}
+            >
+              Verplaatsen
+            </Button>
+          </div>
         </div>
 
         <div>

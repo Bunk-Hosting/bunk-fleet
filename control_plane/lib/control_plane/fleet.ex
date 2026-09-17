@@ -137,7 +137,12 @@ defmodule ControlPlane.Fleet do
   @doc "De nodes die `user` beheert, nieuwste eerst."
   @spec list_nodes_owned_by(User.t()) :: [Node.t()]
   def list_nodes_owned_by(%User{id: id}) do
-    Repo.all(from n in Node, where: n.owner_id == ^id, order_by: [desc: n.inserted_at])
+    Repo.all(
+      from n in Node,
+        where: n.owner_id == ^id,
+        order_by: [desc: n.inserted_at],
+        preload: [:region]
+    )
   end
 
   @doc """
@@ -159,10 +164,111 @@ defmodule ControlPlane.Fleet do
          :ok <- known_region(region_id) do
       Repo.transaction(fn -> verhuis(node, region_id) end)
       |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+      |> met_regio()
     else
       {:error, reden} -> {:error, reden}
     end
   end
+
+  @doc """
+  Verplaatst de node naar de locatie met deze naam, en maakt die aan als hij nog
+  niet bestaat.
+
+  Een node-eigenaar hoeft niet te wachten tot een beheerder zijn plaats heeft
+  aangemaakt: hij typt waar de machine staat. De eigenaarscontrole gaat er
+  bewust vóór -- zou hij erna komen, dan kon een vreemde met een willekeurig
+  node-id locaties aanmaken die hij nooit mag gebruiken en die wel in het
+  beheerscherm verschijnen.
+  """
+  @spec move_node_to_named_region(Ecto.UUID.t(), User.t(), String.t()) ::
+          {:ok, Node.t()}
+          | {:error, :not_found | :forbidden | :invalid_region | Ecto.Changeset.t()}
+  def move_node_to_named_region(node_id, %User{} = user, naam) do
+    with {:ok, node} <- fetch_node(node_id),
+         true <- node_owner?(node, user) or {:error, :forbidden},
+         {:ok, region} <- ensure_region(naam) do
+      move_node_to_region(node.id, user, region.id)
+    else
+      {:error, reden} -> {:error, reden}
+    end
+  end
+
+  @doc """
+  De locatie met deze naam, aangemaakt als hij nog niet bestaat.
+
+  Bestaat hij al -- op naam of op code, hoofdletters maken niet uit -- dan wordt
+  díé teruggegeven. Twee rijen "Eindhoven" zouden dezelfde plek zijn met een
+  ander id, en dan splitst de capaciteit van één datacenter zich over twee
+  keuzes in het bestelscherm.
+  """
+  @spec ensure_region(String.t()) ::
+          {:ok, Region.t()} | {:error, :invalid_region | Ecto.Changeset.t()}
+  def ensure_region(naam) when is_binary(naam) do
+    schoon = naam |> String.trim() |> String.replace(~r/\s+/u, " ")
+
+    cond do
+      String.length(schoon) < 2 -> {:error, :invalid_region}
+      String.length(schoon) > 60 -> {:error, :invalid_region}
+      true -> bestaande_regio(schoon) || nieuwe_regio(schoon)
+    end
+  end
+
+  def ensure_region(_), do: {:error, :invalid_region}
+
+  defp bestaande_regio(naam) do
+    gezocht = String.downcase(naam)
+
+    query =
+      from r in Region,
+        where: fragment("lower(?)", r.name) == ^gezocht or r.code == ^gezocht,
+        order_by: [asc: r.inserted_at],
+        limit: 1
+
+    case Repo.one(query) do
+      nil -> nil
+      region -> {:ok, region}
+    end
+  end
+
+  defp nieuwe_regio(naam) do
+    %Region{}
+    |> Region.changeset(%{code: vrije_code(naam), name: naam})
+    |> Repo.insert()
+    |> case do
+      {:ok, region} -> {:ok, region}
+      # Twee eigenaren die tegelijk dezelfde plaats intypen: de tweede vindt hem
+      # nu gewoon, in plaats van een foutmelding te krijgen over een code die hij
+      # nooit zelf heeft gekozen.
+      {:error, changeset} -> bestaande_regio(naam) || {:error, changeset}
+    end
+  end
+
+  # De code wordt van de naam afgeleid. Hij moet kort en blijvend zijn, dus geen
+  # accenten, spaties of hoofdletters -- en bij een botsing een nummer erachter,
+  # want twee verschillende plaatsen kunnen tot dezelfde code leiden.
+  defp vrije_code(naam) do
+    basis =
+      naam
+      |> String.downcase()
+      |> :unicode.characters_to_nfd_binary()
+      |> String.replace(~r/[\x{0300}-\x{036f}]/u, "")
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.trim("-")
+      |> String.slice(0, 24)
+
+    basis = if basis == "", do: "regio", else: basis
+
+    Enum.find_value(1..50, "#{basis}-#{System.unique_integer([:positive])}", fn n ->
+      kandidaat = if n == 1, do: basis, else: "#{basis}-#{n}"
+      if Repo.exists?(from r in Region, where: r.code == ^kandidaat), do: nil, else: kandidaat
+    end)
+  end
+
+  # De regio erbij, zodat wie de node terugkrijgt meteen ziet waar hij staat --
+  # ook als die locatie zojuist is aangemaakt en dus in geen enkele lijst stond
+  # die de browser al had.
+  defp met_regio({:ok, node}), do: {:ok, Repo.preload(node, :region)}
+  defp met_regio(anders), do: anders
 
   # Een verwijderde VPS draait nergens meer en houdt de regio waar hij ooit
   # stond; zijn geschiedenis hoort te blijven kloppen.
@@ -197,6 +303,7 @@ defmodule ControlPlane.Fleet do
       |> Node.settings_changeset(attrs, package_template_ids())
       |> Repo.update()
       |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+      |> met_regio()
     else
       {:error, reden} -> {:error, reden}
     end
@@ -226,6 +333,7 @@ defmodule ControlPlane.Fleet do
       |> Node.changeset(%{owner_id: owner_id})
       |> Repo.update()
       |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+      |> met_regio()
     end
   end
 

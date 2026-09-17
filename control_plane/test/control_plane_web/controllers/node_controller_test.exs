@@ -10,6 +10,8 @@ defmodule ControlPlaneWeb.NodeControllerTest do
   """
   use ControlPlaneWeb.ConnCase, async: true
 
+  import Ecto.Query, only: [from: 2]
+
   alias ControlPlane.Accounts
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
@@ -124,6 +126,70 @@ defmodule ControlPlaneWeb.NodeControllerTest do
 
       assert conn
              |> patch(~p"/api/v1/nodes/#{n.id}/settings", %{"offer_ram_mb" => 1})
+             |> json_response(401)
+    end
+  end
+
+  describe "POST /api/v1/nodes/:id/region" do
+    test "de eigenaar typt een plaats die nog niet bestaat", %{conn: conn} do
+      ik = gebruiker()
+      n = fleet_node(ik)
+
+      resp =
+        conn
+        |> ingelogd(ik)
+        |> post(~p"/api/v1/nodes/#{n.id}/region", %{"region_name" => "Eindhoven"})
+        |> json_response(200)
+
+      assert resp["node"]["region"]["name"] == "Eindhoven"
+      assert resp["node"]["region"]["code"] == "eindhoven"
+      assert Repo.get!(Node, n.id).region_id == resp["node"]["region"]["id"]
+    end
+
+    test "een vreemde krijgt 404 en maakt geen locatie aan", %{conn: conn} do
+      n = fleet_node(gebruiker())
+
+      conn
+      |> ingelogd(gebruiker())
+      |> post(~p"/api/v1/nodes/#{n.id}/region", %{"region_name" => "Rotterdam"})
+      |> json_response(404)
+
+      assert Repo.aggregate(from(r in Region, where: r.name == "Rotterdam"), :count) == 0
+    end
+
+    test "een lege naam geeft 422", %{conn: conn} do
+      ik = gebruiker()
+      n = fleet_node(ik)
+
+      resp =
+        conn
+        |> ingelogd(ik)
+        |> post(~p"/api/v1/nodes/#{n.id}/region", %{"region_name" => " "})
+        |> json_response(422)
+
+      assert resp["error"] == "invalid_region"
+    end
+
+    test "een bestaande locatie mag ook op id", %{conn: conn} do
+      # Het dashboard stuurt de naam, maar het id blijft werken: dat wijst er
+      # precies een aan, zonder te kunnen verschuiven door een hernoeming.
+      ik = gebruiker()
+      n = fleet_node(ik)
+      doel = %Region{} |> Region.changeset(%{code: "ams-9", name: "Amsterdam"}) |> Repo.insert!()
+
+      conn
+      |> ingelogd(ik)
+      |> post(~p"/api/v1/nodes/#{n.id}/region", %{"region_id" => doel.id})
+      |> json_response(200)
+
+      assert Repo.get!(Node, n.id).region_id == doel.id
+    end
+
+    test "zonder sessie: 401", %{conn: conn} do
+      n = fleet_node(gebruiker())
+
+      assert conn
+             |> post(~p"/api/v1/nodes/#{n.id}/region", %{"region_name" => "Eindhoven"})
              |> json_response(401)
     end
   end

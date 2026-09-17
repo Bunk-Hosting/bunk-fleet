@@ -165,6 +165,96 @@ defmodule ControlPlane.FleetRegionsTest do
     end
   end
 
+  describe "een locatie op naam" do
+    setup do
+      {:ok, u} =
+        ControlPlane.Accounts.register_user(%{
+          email: "typer-#{System.unique_integer([:positive])}@bunk.test",
+          password: "Str0ngPassphrase!42"
+        })
+
+      r = regio()
+      n = fleet_node(r)
+      n = Repo.update!(Ecto.Changeset.change(n, owner_id: u.id))
+
+      %{user: u, node: n, van: r}
+    end
+
+    test "een plaats die nog niet bestaat wordt aangemaakt", %{user: u, node: n} do
+      # Dit is de kern: wachten tot een beheerder jouw stad heeft toegevoegd is
+      # geen instelling maar een blokkade.
+      assert {:ok, bijgewerkt} = Fleet.move_node_to_named_region(n.id, u, "Eindhoven")
+
+      nieuw = Repo.get!(Region, bijgewerkt.region_id)
+      assert nieuw.name == "Eindhoven"
+      assert nieuw.code == "eindhoven"
+      assert nieuw.enabled
+    end
+
+    test "dezelfde plaats twee keer levert één locatie op", %{user: u, node: n} do
+      # Twee rijen "Eindhoven" zouden dezelfde plek zijn met een ander id, en dan
+      # splitst de capaciteit van één datacenter zich over twee keuzes.
+      {:ok, eerst} = Fleet.move_node_to_named_region(n.id, u, "Eindhoven")
+      {:ok, weer} = Fleet.move_node_to_named_region(n.id, u, "  eindhoven ")
+
+      assert weer.region_id == eerst.region_id
+      assert Repo.aggregate(from(r in Region, where: r.name == "Eindhoven"), :count) == 1
+    end
+
+    test "de code van een bestaande locatie intypen vindt die locatie", %{user: u, node: n} do
+      # De code staat in de installatie-instructies van elke node in die regio,
+      # dus dat is wat een operator voor zich heeft als hij dit invult.
+      {:ok, eerst} = Fleet.move_node_to_named_region(n.id, u, "Den Haag")
+      {:ok, weer} = Fleet.move_node_to_named_region(n.id, u, "den-haag")
+
+      assert weer.region_id == eerst.region_id
+    end
+
+    test "twee namen die tot dezelfde code leiden krijgen er een nummer bij", %{user: u, node: n} do
+      # Verschillende namen, en geen van beide is de code van de ander: dit zijn
+      # twee locaties, dus de tweede mag de eerste niet overnemen.
+      {:ok, een} = Fleet.move_node_to_named_region(n.id, u, "Sankt Pölten")
+      {:ok, twee} = Fleet.move_node_to_named_region(n.id, u, "Sankt Polten")
+
+      refute een.region_id == twee.region_id
+      assert Repo.get!(Region, een.region_id).code == "sankt-polten"
+      assert Repo.get!(Region, twee.region_id).code == "sankt-polten-2"
+    end
+
+    test "een bestaande locatie wordt hergebruikt, niet gekopieerd", %{user: u, node: n} do
+      bestaand = regio(%{name: "Amsterdam"})
+
+      assert {:ok, bijgewerkt} = Fleet.move_node_to_named_region(n.id, u, "AMSTERDAM")
+      assert bijgewerkt.region_id == bestaand.id
+    end
+
+    test "een naam die te kort is verandert niets", %{user: u, node: n, van: van} do
+      assert {:error, :invalid_region} = Fleet.move_node_to_named_region(n.id, u, " x ")
+      assert Repo.get!(Node, n.id).region_id == van.id
+    end
+
+    test "een ander dan de eigenaar maakt niets aan", %{node: n} do
+      # De eigenaarscontrole gaat vóór het aanmaken. Zou hij erna komen, dan kon
+      # een vreemde met een willekeurig node-id locaties strooien die hij nooit
+      # mag gebruiken en die wel in het beheerscherm verschijnen.
+      {:ok, vreemde} =
+        ControlPlane.Accounts.register_user(%{
+          email: "vreemde-#{System.unique_integer([:positive])}@bunk.test",
+          password: "Str0ngPassphrase!42"
+        })
+
+      assert {:error, :forbidden} = Fleet.move_node_to_named_region(n.id, vreemde, "Rotterdam")
+      assert Repo.aggregate(from(r in Region, where: r.name == "Rotterdam"), :count) == 0
+    end
+
+    test "een node die niet bestaat maakt niets aan", %{user: u} do
+      assert {:error, :not_found} =
+               Fleet.move_node_to_named_region(Ecto.UUID.generate(), u, "Utrecht")
+
+      assert Repo.aggregate(from(r in Region, where: r.name == "Utrecht"), :count) == 0
+    end
+  end
+
   describe "beheer" do
     test "toont per regio hoeveel nodes erin staan" do
       # Een regio zonder nodes kan niets leveren en verschijnt niet in het

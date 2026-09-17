@@ -12,6 +12,7 @@ defmodule ControlPlaneWeb.NodeController do
   alias ControlPlane.Accounts
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Region
 
   @doc """
   De nodes van de ingelogde gebruiker, met de locaties waar hij ze heen kan zetten.
@@ -120,7 +121,30 @@ defmodule ControlPlaneWeb.NodeController do
   Verplaatst de node naar een andere regio. De VPS'en erop gaan mee.
 
   Alleen de eigenaar: die weet als enige waar zijn hardware fysiek staat.
+
+  Twee manieren om te zeggen wáárheen. `region_name` is vrije tekst -- de
+  eigenaar typt de plaats en die wordt aangemaakt als hij nog niet bestaat --
+  en `region_id` wijst er precies een aan. Het dashboard gebruikt de naam, want
+  wachten tot een beheerder je stad heeft aangemaakt is geen instelling maar een
+  blokkade.
   """
+  def move_region(conn, %{"id" => id, "region_name" => naam}) when is_binary(naam) do
+    with {:ok, node_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         {:ok, node} <-
+           Fleet.move_node_to_named_region(node_id, conn.assigns.current_user, naam) do
+      json(conn, %{node: node_json(node)})
+    else
+      {:error, :invalid_region} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_region"})
+
+      {:error, %Ecto.Changeset{}} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_region"})
+
+      _ ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
   def move_region(conn, %{"id" => id, "region_id" => region_id}) do
     with {:ok, node_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
          {:ok, target} <- Ecto.UUID.cast(region_id) |> ok_or(:unknown_region),
@@ -140,6 +164,12 @@ defmodule ControlPlaneWeb.NodeController do
   def move_region(conn, _params) do
     conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_region"})
   end
+
+  # De regio staat erbij met naam en al: het dashboard toont waar de machine
+  # staat zonder hem in een aparte lijst te hoeven opzoeken -- en een zojuist
+  # aangemaakte locatie stáát in geen enkele lijst die de browser al had.
+  defp region_json(%Region{} = r), do: %{id: r.id, code: r.code, name: r.name}
+  defp region_json(_niet_geladen), do: nil
 
   defp node_json(%Node{} = n) do
     %{
@@ -161,6 +191,7 @@ defmodule ControlPlaneWeb.NodeController do
       drain_reason: n.drain_reason,
       last_heartbeat_at: n.last_heartbeat_at && DateTime.to_iso8601(n.last_heartbeat_at),
       region_id: n.region_id,
+      region: region_json(n.region),
       settings: Map.take(n, Node.settings_fields())
     }
   end
