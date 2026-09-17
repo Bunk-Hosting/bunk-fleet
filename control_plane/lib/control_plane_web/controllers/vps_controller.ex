@@ -209,6 +209,15 @@ defmodule ControlPlaneWeb.VpsController do
   @doc "Stops an owned, running VPS. 404 if not owned."
   def stop(conn, params), do: power(conn, params, &Provisioning.stop_vps/1)
 
+  @doc """
+  Herstart een eigen, draaiende VPS. 404 als hij niet van jou is.
+
+  Van binnenuit: het besturingssysteem wordt gevraagd af te sluiten en komt weer
+  op. Wie de stekker eruit wil trekken doet stop en daarna start -- dat is een
+  andere handeling en hoort er ook als een andere handeling uit te zien.
+  """
+  def reboot(conn, params), do: power(conn, params, &Provisioning.reboot_vps/1)
+
   defp power(conn, %{"id" => id}, transition) do
     with {:ok, id} <- valid_id(id),
          %Vps{} <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, id),

@@ -584,6 +584,22 @@ defmodule ControlPlane.Provisioning do
   @spec resume_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
   def resume_vps(vps_id), do: dispatch_power(vps_id, :resume, [:paused])
 
+  @doc """
+  Herstart een draaiende VPS: het besturingssysteem wordt gevraagd af te sluiten
+  en komt weer op.
+
+  Alleen vanuit `:active`. Een gestopte machine "herstarten" zou betekenen dat
+  de aanvrager denkt dat hij draait, en er dan stilletjes iets anders van maken
+  verbergt dat.
+
+  De status blijft `:active`. Er is geen moment waarop de VPS uit staat in de
+  zin die het paneel bedoelt -- hij is niet uitgezet -- en een tussenstand
+  verzinnen zou elke andere actie erop blokkeren zolang de agent niet
+  terugmeldt.
+  """
+  @spec reboot_vps(binary()) :: {:ok, dispatch()} | {:error, refusal()}
+  def reboot_vps(vps_id), do: dispatch_power(vps_id, :reboot, [:active])
+
   defp dispatch_power(vps_id, kind, allowed) do
     case Repo.get(Vps, vps_id) do
       nil ->

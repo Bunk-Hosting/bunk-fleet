@@ -26,6 +26,12 @@ defmodule ControlPlane.Fleet.Command do
         :stop,
         :pause,
         :resume,
+        # Herstarten van binnenuit: het besturingssysteem wordt gevraagd af te
+        # sluiten en komt weer op. Bewust geen reset -- dat is de stekker eruit
+        # trekken bij een klant, en dat blijft een expliciete stop gevolgd door
+        # een start. De VPS blijft :active, ook tijdens het herstarten: hij is
+        # niet uitgezet en er valt niets anders over te zeggen.
+        :reboot,
         # Disk backups. Unlike the verbs above these change nothing about the
         # VPS itself — they act on archives beside it — so they finalise into
         # `vps_backups` rather than into the VPS's status.

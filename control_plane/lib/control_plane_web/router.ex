@@ -251,6 +251,7 @@ defmodule ControlPlaneWeb.Router do
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
     post "/vpses/:id/start", VpsController, :start
     post "/vpses/:id/stop", VpsController, :stop
+    post "/vpses/:id/reboot", VpsController, :reboot
     post "/vpses/:id/console-ticket", ConsoleController, :create_ticket
     get "/vpses/:id/backups", VpsController, :backups
     post "/vpses/:id/backups", VpsController, :backup_now

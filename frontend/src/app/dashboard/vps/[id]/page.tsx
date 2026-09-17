@@ -13,6 +13,7 @@ import {
   Terminal,
   Play,
   Square,
+  RotateCw,
   Trash2,
   Eye,
   EyeOff,
@@ -66,6 +67,7 @@ export default function VpsDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [rebootDialogOpen, setRebootDialogOpen] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pollUntil, setPollUntil] = useState<number | null>(null);
@@ -225,6 +227,31 @@ export default function VpsDetailPage() {
     }
   };
 
+  // Herstarten vraagt het besturingssysteem netjes af te sluiten en weer op te
+  // komen. De VPS blijft ondertussen ACTIVE: hij is niet uitgezet, en een
+  // verzonnen tussenstand zou elke andere knop blokkeren tot de agent terugmeldt.
+  const handleReboot = async () => {
+    setActionLoading(true);
+    try {
+      await vpsApi.reboot(id);
+      toast({
+        title: "Verzoek ingediend",
+        description: "De VPS wordt herstart; dat duurt meestal een halve minuut.",
+      });
+      setRebootDialogOpen(false);
+      setPollUntil(Date.now() + POST_ACTION_POLL_MS);
+      await fetchVps();
+    } catch (e) {
+      toast({
+        title: "Fout",
+        description: parseApiError(e, "Kon de VPS niet herstarten."),
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleStop = async () => {
     setActionLoading(true);
     try {
@@ -342,6 +369,23 @@ export default function VpsDetailPage() {
             description="Weet je zeker dat je deze VPS wilt starten?"
             confirmLabel="Starten"
             onConfirm={handleStart}
+            loading={actionLoading}
+          />
+
+          {/* Herstart */}
+          <ConfirmDialog
+            open={rebootDialogOpen}
+            onOpenChange={setRebootDialogOpen}
+            trigger={
+              <Button variant="outline" disabled={vps.status !== "ACTIVE" || actionLoading}>
+                <RotateCw className="mr-2 h-4 w-4" />
+                Herstarten
+              </Button>
+            }
+            title="VPS herstarten"
+            description="Het besturingssysteem wordt gevraagd af te sluiten en komt daarna weer op. Openstaande verbindingen vallen weg."
+            confirmLabel="Herstarten"
+            onConfirm={handleReboot}
             loading={actionLoading}
           />
 

@@ -714,6 +714,25 @@ func (c *Client) PowerOn(ctx context.Context, id string) error {
 	return c.powerOp(ctx, vmid, "start")
 }
 
+// Reboot implements provider.Provider: Proxmox's own reboot, which is a clean
+// shutdown followed by a start. It needs a guest that answers ACPI (the template
+// ships with the qemu guest agent enabled), and it is not a reset -- a guest that
+// ignores the request keeps running rather than losing its disk cache.
+func (c *Client) Reboot(ctx context.Context, id string) error {
+	vmid, err := parseVMID(id)
+	if err != nil {
+		return err
+	}
+	status, _, err := c.currentState(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if status != "running" {
+		return fmt.Errorf("proxmox: vm %d is %s, not running: cannot reboot", vmid, status)
+	}
+	return c.powerOp(ctx, vmid, "reboot")
+}
+
 // PowerOff implements provider.Provider; idempotent if already stopped.
 func (c *Client) PowerOff(ctx context.Context, id string) error {
 	vmid, err := parseVMID(id)

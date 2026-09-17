@@ -426,7 +426,8 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 	case transport.CmdBackup, transport.CmdDeleteBackup, transport.CmdRestoreBackup:
 		handleBackupCommand(ctx, logger, prov, cp, memos, cmd)
 
-	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume:
+	case transport.CmdStart, transport.CmdStop, transport.CmdPause, transport.CmdResume,
+		transport.CmdReboot:
 		handlePower(c)
 
 	case transport.CmdUpdate:
@@ -597,6 +598,8 @@ func handlePower(c command) {
 		err = c.prov.Suspend(c.ctx, vmID)
 	case transport.CmdResume:
 		err = c.prov.Resume(c.ctx, vmID)
+	case transport.CmdReboot:
+		err = c.prov.Reboot(c.ctx, vmID)
 	}
 	if err != nil {
 		c.failed("power command failed", vmID, err)

@@ -223,11 +223,13 @@ defmodule ControlPlane.Provisioning.Results do
   # Only a live VPS is transitioned (a delete that raced in must never be
   # resurrected); capacity is untouched because power state != capacity.
   defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :done, _result)
-       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+       when kind in [:start, :stop, :pause, :resume, :reboot] and not is_nil(vps_id) do
     target =
       case kind do
         :start -> :active
         :resume -> :active
+        # Een herstart eindigt waar hij begon: de machine draait weer.
+        :reboot -> :active
         :stop -> :stopped
         :pause -> :paused
       end
@@ -238,7 +240,7 @@ defmodule ControlPlane.Provisioning.Results do
   # Power command failed: leave the VPS as-is; the error is recorded on the
   # command by the caller. Log for visibility.
   defp finalize_vps(multi, %Command{kind: kind, vps_id: vps_id}, :failed, result)
-       when kind in [:start, :stop, :pause, :resume] and not is_nil(vps_id) do
+       when kind in [:start, :stop, :pause, :resume, :reboot] and not is_nil(vps_id) do
     Logger.error("#{kind} command failed for vps #{vps_id}: #{inspect(result["error"])}")
     multi
   end

@@ -38,6 +38,7 @@ func (stubProvider) StatusVM(context.Context, string) (provider.VMStatus, error)
 func (stubProvider) FindByName(context.Context, string) (provider.VMStatus, bool, error) {
 	panic("not used by a heartbeat")
 }
+func (stubProvider) Reboot(context.Context, string) error   { panic("not used by a heartbeat") }
 func (stubProvider) PowerOn(context.Context, string) error  { panic("not used by a heartbeat") }
 func (stubProvider) PowerOff(context.Context, string) error { panic("not used by a heartbeat") }
 func (stubProvider) Suspend(context.Context, string) error  { panic("not used by a heartbeat") }

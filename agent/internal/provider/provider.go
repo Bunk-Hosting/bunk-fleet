@@ -92,6 +92,16 @@ type Provider interface {
 	// PowerOff stops a running guest. Idempotent: a no-op if already stopped.
 	PowerOff(ctx context.Context, id string) error
 
+	// Reboot restarts a running guest from the inside: the operating system is
+	// asked to shut down and comes back up. Deliberately NOT a hard reset --
+	// that is pulling the power on a customer's disk, and the explicit way to
+	// get it is PowerOff followed by PowerOn.
+	//
+	// Fails rather than starts a guest that is not running: "reboot" on a
+	// stopped machine means the caller thinks it is running, and quietly doing
+	// something else hides that.
+	Reboot(ctx context.Context, id string) error
+
 	// Suspend pauses (suspend-to-RAM) a running guest. Idempotent if already paused.
 	Suspend(ctx context.Context, id string) error
 

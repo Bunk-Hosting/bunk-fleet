@@ -631,6 +631,12 @@ export const vpsApi = {
   delete: (id: string) => api.delete(`/vpses/${id}`),
   start: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/start`),
   stop: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/stop`),
+  /**
+   * Herstart van binnenuit: het besturingssysteem wordt gevraagd af te sluiten
+   * en komt weer op. Wie de stekker eruit wil trekken doet stop en daarna
+   * start -- dat is een andere handeling en ziet er ook anders uit.
+   */
+  reboot: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/reboot`),
   // Mint a single-use console ticket (the WS handshake can't carry the bearer).
   consoleTicket: async (id: string): Promise<{ ticket: string }> => {
     const res = await api.post<{ ticket: string }>(`/vpses/${id}/console-ticket`);

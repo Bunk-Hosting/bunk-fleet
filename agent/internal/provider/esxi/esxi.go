@@ -375,6 +375,32 @@ func (c *Client) PowerOff(ctx context.Context, id string) error { return c.power
 func (c *Client) Suspend(ctx context.Context, id string) error  { return c.power(ctx, id, "suspend") }
 func (c *Client) Resume(ctx context.Context, id string) error   { return c.power(ctx, id, "on") }
 
+// Reboot implements provider.Provider: the guest OS is asked to restart, through
+// VMware Tools. Without Tools there is no way to ask politely, and the
+// alternative -- vm.Reset -- is pulling the power on a customer's disk; that
+// stays an explicit stop followed by a start rather than something that happens
+// silently behind the word "reboot".
+func (c *Client) Reboot(ctx context.Context, id string) error {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	vm := vmByID(gc, id)
+	state, err := vm.PowerState(ctx)
+	if err != nil {
+		return fmt.Errorf("esxi: power state: %w", err)
+	}
+	if state != types.VirtualMachinePowerStatePoweredOn {
+		return fmt.Errorf("esxi: guest is %s, not powered on: cannot reboot", state)
+	}
+	if err := vm.RebootGuest(ctx); err != nil {
+		return fmt.Errorf("esxi: reboot guest (are VMware Tools running?): %w", err)
+	}
+	return nil
+}
+
 func (c *Client) power(ctx context.Context, id, op string) error {
 	gc, err := c.connect(ctx)
 	if err != nil {

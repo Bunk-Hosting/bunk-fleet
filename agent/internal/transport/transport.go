@@ -42,6 +42,11 @@ const (
 	CmdPause CommandKind = "pause"
 	// CmdResume un-suspends a paused VM. Payload carries the target id.
 	CmdResume CommandKind = "resume"
+
+	// CmdReboot restarts a running VM from the inside: the guest OS is asked to
+	// shut down and comes back up. Not a reset -- that is pulling the power on a
+	// customer's disk, and stays an explicit stop followed by a start.
+	CmdReboot CommandKind = "reboot"
 	// CmdBackup archives a guest's disk to the node's own storage. Payload carries
 	// the target id; the result carries the archive's handle and size.
 	CmdBackup CommandKind = "backup"
