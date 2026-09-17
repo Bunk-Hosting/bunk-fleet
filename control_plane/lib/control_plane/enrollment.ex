@@ -14,6 +14,7 @@ defmodule ControlPlane.Enrollment do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Accounts.User
   alias ControlPlane.Clock
   alias ControlPlane.Fleet.EnrollToken
   alias ControlPlane.Fleet.Node
@@ -69,7 +70,7 @@ defmodule ControlPlane.Enrollment do
     Repo.transaction(fn ->
       with %EnrollToken{} = token <- fetch_valid_token(token_plaintext),
            {:ok, vps_network} <- resolve_vps_network(net),
-           {:ok, node} <- create_node(token, hypervisor, agent_token, vps_network),
+           {:ok, node} <- create_node(token, hypervisor, agent_token, vps_network, attrs),
            {:ok, _token} <- consume_token(token) do
         %{node: node, agent_token: agent_token}
       else
@@ -167,7 +168,7 @@ defmodule ControlPlane.Enrollment do
     Repo.one(query)
   end
 
-  defp create_node(%EnrollToken{} = token, hypervisor, agent_token, net) do
+  defp create_node(%EnrollToken{} = token, hypervisor, agent_token, net, attrs) do
     %Node{}
     |> Node.changeset(%{
       name: "node-" <> short_id(),
@@ -178,13 +179,13 @@ defmodule ControlPlane.Enrollment do
       agent_token_hash: hash(agent_token),
       # Cost-centre attribution: which person/team inside Bunk this node belongs
       # to. Optional — metering falls back to the node name when it's nil.
-      owner_email: token.owner_email,
+      owner_email: claimed_owner_email(attrs) || token.owner_email,
       # Wie deze node beheert. Het token weet dat al -- het is gemunt door een
       # ingelogde gebruiker -- maar dat werd hier niet overgenomen, waardoor er
       # nergens vaststond wie de instellingen van een node mag wijzigen. Een
       # token dat door een beheerder zonder eigenaar is gemunt levert een node
       # zonder eigenaar op; die wijst een beheerder daarna toe.
-      owner_id: token.owner_id,
+      owner_id: token.owner_id || claimed_owner_id(attrs),
       # The node's VPS network: its own if the agent declared one, else the block
       # the control plane carved for it (see resolve_vps_network/1).
       vps_gateway: net.vps_gateway,
@@ -193,6 +194,35 @@ defmodule ControlPlane.Enrollment do
       vps_range_end: net.vps_range_end
     })
     |> Repo.insert()
+  end
+
+  # Het e-mailadres dat de installer heeft gevraagd. Het token wint als het al
+  # een eigenaar draagt: dat token is gemunt door een ingelogde gebruiker, en
+  # wie het token in handen heeft hoort dat niet te kunnen overrulen door een
+  # ander adres op te geven. Voor een token dat een beheerder zonder eigenaar
+  # heeft gemunt -- het normale geval als je iemand anders een node laat
+  # neerzetten -- vult dit adres de leegte.
+  defp claimed_owner_email(attrs) do
+    case attrs[:owner_email] do
+      email when is_binary(email) ->
+        case String.trim(email) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  # Een adres zonder account levert geen eigenaar op. Het adres zelf wordt wel
+  # bewaard, zodat een beheerder in het paneel ziet wie het zou moeten zijn en
+  # de node kan toewijzen zodra dat account bestaat.
+  defp claimed_owner_id(attrs) do
+    case claimed_owner_email(attrs) do
+      nil -> nil
+      email -> Repo.one(from u in User, where: u.email == ^email, select: u.id)
+    end
   end
 
   defp consume_token(%EnrollToken{} = token) do

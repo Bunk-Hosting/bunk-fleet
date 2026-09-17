@@ -76,6 +76,10 @@ type EnrollRequest struct {
 	VpsCidrPrefix int    `json:"vps_cidr_prefix,omitempty"`
 	VpsRangeStart string `json:"vps_range_start,omitempty"`
 	VpsRangeEnd   string `json:"vps_range_end,omitempty"`
+	// OwnerEmail names the person who will manage this node from the dashboard.
+	// The control plane resolves it to an account; only that account may change
+	// this node's settings. Empty leaves ownership to whoever minted the token.
+	OwnerEmail string `json:"owner_email,omitempty"`
 }
 
 // VpsNetwork is the IP-range part of a worker's VPS network, sent at enrollment.
@@ -235,7 +239,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 // with -ldflags "-X github.com/Bunk-Hosting/bunk-fleet/agent/internal/transport.Version=<v>".
 var Version = "dev"
 
-func (c *Client) Enroll(ctx context.Context, token, hypervisor string, net VpsNetwork) (EnrollResponse, error) {
+func (c *Client) Enroll(ctx context.Context, token, hypervisor, ownerEmail string, net VpsNetwork) (EnrollResponse, error) {
 	if token == "" {
 		return EnrollResponse{}, errors.New("transport: empty enrollment token")
 	}
@@ -251,6 +255,7 @@ func (c *Client) Enroll(ctx context.Context, token, hypervisor string, net VpsNe
 		VpsCidrPrefix: net.CidrPrefix,
 		VpsRangeStart: net.RangeStart,
 		VpsRangeEnd:   net.RangeEnd,
+		OwnerEmail:    ownerEmail,
 	}
 	if err := c.post(ctx, "/v1/enroll", req, &out); err != nil {
 		return EnrollResponse{}, err

@@ -80,7 +80,7 @@ func TestEnrollStoresTheCredentialsItReceives(t *testing.T) {
 	})
 	c := cap.client()
 
-	got, err := c.Enroll(context.Background(), "one-time-token", "proxmox", VpsNetwork{
+	got, err := c.Enroll(context.Background(), "one-time-token", "proxmox", "beheerder@bunk.test", VpsNetwork{
 		Gateway: "10.10.0.1", CidrPrefix: 22, RangeStart: "10.10.0.20", RangeEnd: "10.10.3.250",
 	})
 	if err != nil {
@@ -120,7 +120,7 @@ func TestEnrollDefaultsTheHypervisor(t *testing.T) {
 		_, _ = w.Write([]byte(`{"node_id":"n","agent_token":"t"}`))
 	})
 
-	if _, err := cap.client().Enroll(context.Background(), "tok", "", VpsNetwork{}); err != nil {
+	if _, err := cap.client().Enroll(context.Background(), "tok", "", "", VpsNetwork{}); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 
@@ -134,7 +134,7 @@ func TestEnrollDefaultsTheHypervisor(t *testing.T) {
 func TestEnrollRefusesAnEmptyToken(t *testing.T) {
 	cap := newCapture(t, func(http.ResponseWriter, *http.Request) {})
 
-	if _, err := cap.client().Enroll(context.Background(), "", "proxmox", VpsNetwork{}); err == nil {
+	if _, err := cap.client().Enroll(context.Background(), "", "proxmox", "", VpsNetwork{}); err == nil {
 		t.Fatal("Enroll accepted an empty token")
 	}
 	if cap.count() != 0 {
@@ -151,7 +151,7 @@ func TestEnrollRejectsAHalfAnswer(t *testing.T) {
 		})
 		c := cap.client()
 
-		if _, err := c.Enroll(context.Background(), "tok", "proxmox", VpsNetwork{}); err == nil {
+		if _, err := c.Enroll(context.Background(), "tok", "proxmox", "", VpsNetwork{}); err == nil {
 			t.Errorf("Enroll accepted %s", body)
 		}
 		if c.NodeID() != "" {
@@ -166,7 +166,7 @@ func TestEnrollSurfacesARejection(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"token expired"}`))
 	})
 
-	_, err := cap.client().Enroll(context.Background(), "stale", "proxmox", VpsNetwork{})
+	_, err := cap.client().Enroll(context.Background(), "stale", "proxmox", "", VpsNetwork{})
 	if err == nil || !strings.Contains(err.Error(), "token expired") {
 		t.Fatalf("error = %v, want the control plane's reason", err)
 	}

@@ -75,6 +75,9 @@ type Config struct {
 	ControlPlaneURL string
 	// EnrollToken is the one-time enrollment token (optional once enrolled).
 	EnrollToken string
+	// OwnerEmail names the account that will manage this node from the
+	// dashboard. Only sent at enrolment.
+	OwnerEmail string
 	// Hypervisor selects the local backend; currently only "proxmox".
 	Hypervisor string
 	// Proxmox holds backend-specific settings.
@@ -166,6 +169,7 @@ func Load() (Config, error) {
 	var (
 		controlPlaneURL = fs.String("control-plane-url", envOr("BUNK_CONTROL_PLANE_URL", ""), "control plane base URL")
 		enrollToken     = fs.String("enroll-token", envOr("BUNK_ENROLL_TOKEN", ""), "one-time enrollment token")
+		ownerEmail      = fs.String("owner-email", envOr("BUNK_OWNER_EMAIL", ""), "account that manages this node from the dashboard")
 		hypervisor      = fs.String("hypervisor", envOr("BUNK_HYPERVISOR", "proxmox"), "local hypervisor backend (proxmox)")
 
 		pveHost   = fs.String("proxmox-host", envOr("BUNK_PROXMOX_HOST", ""), "Proxmox VE API base URL (https://host:8006)")
@@ -229,6 +233,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		ControlPlaneURL:   *controlPlaneURL,
 		EnrollToken:       *enrollToken,
+		OwnerEmail:        *ownerEmail,
 		Hypervisor:        *hypervisor,
 		HeartbeatInterval: *heartbeat,
 		StateDir:          *stateDir,

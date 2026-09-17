@@ -73,7 +73,7 @@ func run(logger *slog.Logger) error {
 		applyVpsNetwork(logger, cfg.VpsNetwork.Bridge, networkFromState(st), cfg.ManageNetwork)
 	} else if cfg.EnrollToken != "" {
 		enrollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, cfg.Hypervisor, transport.VpsNetwork{
+		resp, err := cp.Enroll(enrollCtx, cfg.EnrollToken, cfg.Hypervisor, cfg.OwnerEmail, transport.VpsNetwork{
 			Gateway:    cfg.VpsNetwork.Gateway,
 			CidrPrefix: cfg.VpsNetwork.CidrPrefix,
 			RangeStart: cfg.VpsNetwork.RangeStart,

@@ -11,6 +11,10 @@ defmodule ControlPlaneWeb.EnrollController do
     attrs = %{
       hypervisor: Map.get(params, "hypervisor", "proxmox"),
       agent_version: Map.get(params, "agent_version"),
+      # Wie deze node gaat beheren. De installer vraagt erom, zodat degene die
+      # de machine neerzet zichzelf als beheerder opgeeft in plaats van dat het
+      # afhangt van wie het token toevallig heeft gemunt.
+      owner_email: Map.get(params, "owner_email"),
       vps_network: %{
         gateway: params["vps_gateway"],
         cidr_prefix: params["vps_cidr_prefix"],

@@ -107,10 +107,13 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     CP="#{cp}"
     TOKEN=""
     HYP=""
+    OWNER=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --token) TOKEN="$2"; shift 2;;
         --token=*) TOKEN="${1#*=}"; shift;;
+        --owner) OWNER="$2"; shift 2;;
+        --owner=*) OWNER="${1#*=}"; shift;;
         --hypervisor) HYP="$2"; shift 2;;
         --hypervisor=*) HYP="${1#*=}"; shift;;
         *) shift;;
@@ -256,6 +259,21 @@ defmodule ControlPlaneWeb.WorkerInstallController do
 
     [ -z "$TOKEN" ] && read -r -p "Enroll-token (uit de portal): " TOKEN </dev/tty
     [ -z "$TOKEN" ] && { echo "Een enroll-token is verplicht."; exit 1; }
+
+    # Wie deze node gaat beheren. Alleen dat account mag de instellingen ervan
+    # wijzigen in het dashboard, dus dit is geen administratief veld maar de
+    # sleutel tot het beheer van deze machine.
+    echo
+    echo "Beheerder van deze node:"
+    echo "  Alleen dit account kan straks de instellingen van deze node wijzigen"
+    echo "  in het dashboard. Gebruik het e-mailadres waarmee je op Bunk inlogt."
+    [ -z "$OWNER" ] && read -r -p "  E-mailadres: " OWNER </dev/tty
+    case "$OWNER" in
+      "") echo "  (leeg gelaten -- de node komt op naam van wie het token maakte)";;
+      *@*) : ;;
+      *) echo "  !! '$OWNER' ziet er niet uit als een e-mailadres; het wordt wel doorgegeven."
+         echo "     Klopt het niet, dan wijst een beheerder de node later toe.";;
+    esac
 
     [ -z "$HYP" ] && read -r -p "Hypervisor (proxmox/esxi) [proxmox]: " HYP </dev/tty
     HYP="${HYP:-proxmox}"
@@ -441,6 +459,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     [Service]
     Environment=BUNK_CONTROL_PLANE_URL=$CP
     Environment=BUNK_ENROLL_TOKEN=$TOKEN
+    Environment=BUNK_OWNER_EMAIL=$OWNER
     Environment=BUNK_HYPERVISOR=$HYP
     Environment=BUNK_PROXMOX_HOST=$PXHOST
     Environment=BUNK_PROXMOX_NODE=$PXNODE
