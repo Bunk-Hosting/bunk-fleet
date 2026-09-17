@@ -8,6 +8,7 @@ defmodule ControlPlane.Fleet.Node do
   import Ecto.Changeset
   import Ecto.Query
 
+  alias ControlPlane.Accounts.User
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Net
 
@@ -68,6 +69,8 @@ defmodule ControlPlane.Fleet.Node do
     field :enroll_token_hash, :string
     field :agent_token_hash, :string
     field :public_key, :string
+    # De kostenplaats: welk e-mailadres aan deze node hangt. Losstaand van
+    # `owner`, dat zegt wie hem beheert.
     field :owner_email, :string
 
     # Per-node VPS network (optional; nil = use the global default range). Bridge
@@ -87,6 +90,12 @@ defmodule ControlPlane.Fleet.Node do
     field :public_port_end, :integer
 
     belongs_to :region, Region
+
+    # Wie deze node beheert. Alleen de eigenaar mag de instellingen ervan
+    # wijzigen; een beheerder wijst het eigenaarschap toe of draagt het over.
+    # nil = nog niemand, bijvoorbeeld bij een node die met een beheerderstoken is
+    # ingeschreven.
+    belongs_to :owner, User, foreign_key: :owner_id
 
     timestamps(type: :utc_datetime)
   end
@@ -116,6 +125,7 @@ defmodule ControlPlane.Fleet.Node do
       :agent_token_hash,
       :public_key,
       :owner_email,
+      :owner_id,
       :vps_gateway,
       :vps_cidr_prefix,
       :vps_range_start,

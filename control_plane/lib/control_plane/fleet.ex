@@ -5,6 +5,7 @@ defmodule ControlPlane.Fleet do
   """
   import Ecto.Query, warn: false
 
+  alias ControlPlane.Accounts.User
   alias ControlPlane.Clock
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Node
@@ -57,7 +58,7 @@ defmodule ControlPlane.Fleet do
       from n in Node,
         order_by: [desc: n.inserted_at],
         limit: ^Keyword.get(opts, :limit, 500),
-        preload: [:region]
+        preload: [:region, :owner]
     )
   end
 
@@ -75,6 +76,55 @@ defmodule ControlPlane.Fleet do
   def drain_node(node_id, reason \\ nil) do
     set_node_status(node_id, :draining, [:online, :offline, :pending], reason)
   end
+
+  @doc """
+  Draagt een node over aan een gebruiker, of maakt hem eigenaarloos met `nil`.
+
+  Dit is bewust een beheerdersactie en geen eigenaarsactie: de eigenaar beheert
+  de instellingen van zijn node, maar wie die eigenaar ís hoort niet door hemzelf
+  te kunnen worden veranderd. Het is ook het enige noodluik dat er is — raakt een
+  eigenaar onbereikbaar, dan draag je de node over in plaats van om hem heen te
+  werken.
+  """
+  @spec assign_node_owner(Ecto.UUID.t(), Ecto.UUID.t() | nil) ::
+          {:ok, Node.t()} | {:error, :not_found | :unknown_user | Ecto.Changeset.t()}
+  def assign_node_owner(node_id, owner_id) do
+    with {:ok, node} <- fetch_node(node_id),
+         :ok <- known_user(owner_id) do
+      node
+      |> Node.changeset(%{owner_id: owner_id})
+      |> Repo.update()
+      |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+    end
+  end
+
+  defp fetch_node(node_id) do
+    case Repo.get(Node, node_id) do
+      nil -> {:error, :not_found}
+      node -> {:ok, node}
+    end
+  end
+
+  defp known_user(nil), do: :ok
+
+  defp known_user(owner_id) do
+    if Repo.exists?(from u in User, where: u.id == ^owner_id),
+      do: :ok,
+      else: {:error, :unknown_user}
+  end
+
+  @doc """
+  Of `user` de instellingen van `node` mag wijzigen.
+
+  Alleen de eigenaar. Een beheerder die eraan moet zijn, draagt de node eerst aan
+  zichzelf over — dat laat een spoor na, en een noodluik dat niemand ziet is geen
+  noodluik.
+  """
+  @spec node_owner?(Node.t(), User.t() | nil) :: boolean()
+  def node_owner?(%Node{owner_id: owner_id}, %User{id: id}) when not is_nil(owner_id),
+    do: owner_id == id
+
+  def node_owner?(_node, _user), do: false
 
   @doc """
   Reopens a drained node to new VPSes.

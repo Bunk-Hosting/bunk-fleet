@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
-import { adminApi, type AdminNode } from "@/lib/api";
+import { adminApi, type AdminNode, type AdminUser } from "@/lib/api";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   online: "default",
@@ -50,6 +50,10 @@ function NodesInner() {
   const [loading, setLoading] = useState(true);
 
   const [removing, setRemoving] = useState<string | null>(null);
+  // De gebruikerslijst is er om een eigenaar te kunnen kiezen. Hij faalt stil:
+  // zonder lijst blijft de rest van het scherm gewoon werken.
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [assigning, setAssigning] = useState<string | null>(null);
   const [draining, setDraining] = useState<string | null>(null);
 
   // Het enroll-token komt maar één keer terug van de server; er staat alleen een
@@ -92,6 +96,27 @@ function NodesInner() {
       .then(setNodes)
       .catch(() => toast({ title: "Fout", description: "Kon nodes niet laden.", variant: "destructive" }))
       .finally(() => setLoading(false));
+
+  // Een node overdragen is een beheerdersactie, geen eigenaarsactie: de eigenaar
+  // beheert de instellingen van zijn node, maar wie die eigenaar is hoort hij
+  // niet zelf te kunnen veranderen.
+  const setOwner = async (n: AdminNode, ownerId: string | null) => {
+    setAssigning(n.id);
+    try {
+      const bijgewerkt = await adminApi.assignNodeOwner(n.id, ownerId);
+      setNodes((huidig) => huidig.map((x) => (x.id === n.id ? bijgewerkt : x)));
+      toast({
+        title: ownerId ? "Node overgedragen" : "Eigenaar verwijderd",
+        description: ownerId
+          ? `${bijgewerkt.name} is nu van ${bijgewerkt.owner}.`
+          : `${bijgewerkt.name} heeft geen eigenaar meer; niemand kan de instellingen wijzigen.`,
+      });
+    } catch {
+      toast({ title: "Overdragen mislukt", variant: "destructive" });
+    } finally {
+      setAssigning(null);
+    }
+  };
 
   const toggleDrain = async (n: AdminNode) => {
     const closing = n.status !== "draining";
@@ -147,6 +172,9 @@ function NodesInner() {
 
   useEffect(() => {
     load();
+    // De gebruikerslijst is er alleen om een eigenaar te kunnen kiezen. Mislukt
+    // hij, dan blijft de rest van het scherm werken en ontbreekt alleen de keuze.
+    adminApi.users().then(setUsers).catch(() => setUsers([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -232,6 +260,9 @@ function NodesInner() {
                     <span className="font-medium">{n.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {n.region ?? "—"} · {n.owner_email ?? "geen kostenplaats"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {n.owner ? `beheerd door ${n.owner}` : "geen eigenaar"}
                     </span>
                     {/* Draait deze node de huidige agent? Zonder dit is dat alleen
                         te achterhalen door in de binary te zoeken. */}
@@ -330,6 +361,26 @@ function NodesInner() {
                     gerekend.
                   </p>
                 )}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Eigenaar</span>
+                  <select
+                    className="h-8 rounded-md border bg-background px-2 text-xs"
+                    value={n.owner_id ?? ""}
+                    disabled={assigning === n.id}
+                    onChange={(e) => setOwner(n, e.target.value || null)}
+                  >
+                    <option value="">— geen eigenaar —</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.email}
+                      </option>
+                    ))}
+                  </select>
+                  {assigning === n.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                  <span className="text-muted-foreground">
+                    Alleen de eigenaar mag de instellingen van deze node wijzigen.
+                  </span>
+                </div>
                 {n.last_heartbeat_at && (
                   <p className="text-xs text-muted-foreground">
                     Laatste heartbeat: {new Date(n.last_heartbeat_at).toLocaleString("nl-NL")}

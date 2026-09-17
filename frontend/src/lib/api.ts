@@ -678,6 +678,10 @@ export interface AdminNode {
    * een mislukte bestelling. Leeg bij een node die met de hand is gesloten.
    */
   drain_reason: string | null;
+  /** Wie deze node beheert. Alleen de eigenaar mag de instellingen wijzigen. */
+  owner_id: string | null;
+  /** Het e-mailadres van die eigenaar, of null als er nog geen is. */
+  owner: string | null;
 }
 
 /**
@@ -831,6 +835,15 @@ export const adminApi = {
   vpsDelete: (id: string) => api.delete(`/beheer/vpses/${id}`),
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
+
+  /**
+   * Draagt een node over aan een gebruiker, of maakt hem eigenaarloos met null.
+   * Een beheerdersactie: de eigenaar beheert de instellingen van zijn node, maar
+   * wie die eigenaar is hoort hij niet zelf te kunnen veranderen.
+   */
+  assignNodeOwner: async (nodeId: string, ownerId: string | null): Promise<AdminNode> =>
+    (await api.post<{ node: AdminNode }>(`/beheer/nodes/${nodeId}/owner`, { owner_id: ownerId }))
+      .data.node,
   nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
   userDetail: async (id: string): Promise<AdminUserDetail> =>
     (await api.get<AdminUserDetail>(`/beheer/users/${id}`)).data,

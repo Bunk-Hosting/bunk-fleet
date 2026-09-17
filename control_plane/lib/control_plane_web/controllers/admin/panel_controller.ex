@@ -563,6 +563,40 @@ defmodule ControlPlaneWeb.Admin.PanelController do
   end
 
   @doc """
+  Draagt een node over aan een gebruiker, of maakt hem eigenaarloos.
+
+  Een beheerdersactie: de eigenaar beheert de instellingen van zijn node, maar
+  wie die eigenaar is hoort hij niet zelf te kunnen veranderen.
+  """
+  def assign_node_owner(conn, %{"id" => id} = params) do
+    with {:ok, node_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         {:ok, owner_id} <- parse_owner(params["owner_id"]),
+         {:ok, node} <- Fleet.assign_node_owner(node_id, owner_id) do
+      json(conn, %{node: node_json(Repo.preload(node, [:region, :owner]))})
+    else
+      :not_found -> error(conn, :not_found, "not_found")
+      {:error, :not_found} -> error(conn, :not_found, "not_found")
+      {:error, :unknown_user} -> error(conn, :unprocessable_entity, "unknown_user")
+      {:error, :invalid_owner} -> error(conn, :unprocessable_entity, "invalid_owner")
+      {:error, _reason} -> error(conn, :unprocessable_entity, "invalid_node")
+    end
+  end
+
+  # nil en "" betekenen allebei "haal de eigenaar eraf"; alles wat geen geldig
+  # id is wordt geweigerd in plaats van stil als "geen eigenaar" gelezen.
+  defp parse_owner(nil), do: {:ok, nil}
+  defp parse_owner(""), do: {:ok, nil}
+
+  defp parse_owner(raw) when is_binary(raw) do
+    case Ecto.UUID.cast(raw) do
+      {:ok, id} -> {:ok, id}
+      :error -> {:error, :invalid_owner}
+    end
+  end
+
+  defp parse_owner(_raw), do: {:error, :invalid_owner}
+
+  @doc """
   Closes a node to new VPSes, or reopens it.
 
   The thing you reach for before maintenance, or when a machine is misbehaving:
@@ -657,12 +691,17 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       last_heartbeat_at: n.last_heartbeat_at && DateTime.to_iso8601(n.last_heartbeat_at),
       agent_version: n.agent_version,
       capacity_error: n.capacity_error,
-      drain_reason: n.drain_reason
+      drain_reason: n.drain_reason,
+      owner_id: n.owner_id,
+      owner: owner_label(n)
     }
   end
 
   defp node_name(%Vps{node: %Node{name: name}}), do: name
   defp node_name(_), do: nil
+
+  defp owner_label(%Node{owner: %User{email: email}}), do: email
+  defp owner_label(_node), do: nil
 
   defp region_code(%{region: %{code: code}}), do: code
   defp region_code(_), do: nil

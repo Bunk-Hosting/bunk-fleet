@@ -179,6 +179,12 @@ defmodule ControlPlane.Enrollment do
       # Cost-centre attribution: which person/team inside Bunk this node belongs
       # to. Optional — metering falls back to the node name when it's nil.
       owner_email: token.owner_email,
+      # Wie deze node beheert. Het token weet dat al -- het is gemunt door een
+      # ingelogde gebruiker -- maar dat werd hier niet overgenomen, waardoor er
+      # nergens vaststond wie de instellingen van een node mag wijzigen. Een
+      # token dat door een beheerder zonder eigenaar is gemunt levert een node
+      # zonder eigenaar op; die wijst een beheerder daarna toe.
+      owner_id: token.owner_id,
       # The node's VPS network: its own if the agent declared one, else the block
       # the control plane carved for it (see resolve_vps_network/1).
       vps_gateway: net.vps_gateway,

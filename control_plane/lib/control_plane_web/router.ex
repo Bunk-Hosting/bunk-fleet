@@ -289,6 +289,7 @@ defmodule ControlPlaneWeb.Router do
     # door Cloudflare's WAF geblokkeerd voor het de origin bereikt, waardoor het
     # vanuit de browser onbereikbaar is. Zie de opmerking boven deze scope.
     post "/enroll-tokens", PanelController, :create_enroll_token
+    post "/nodes/:id/owner", PanelController, :assign_node_owner
     post "/nodes/:id/drain", PanelController, :drain_node
     post "/nodes/:id/resume", PanelController, :resume_node
     delete "/nodes/:id", PanelController, :delete_node
