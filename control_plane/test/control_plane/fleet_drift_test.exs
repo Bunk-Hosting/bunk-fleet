@@ -31,6 +31,10 @@ defmodule ControlPlane.FleetDriftTest do
     |> Repo.insert!()
   end
 
+  defp met_bereik(node, min, max) do
+    node |> Ecto.Changeset.change(%{vmid_min: min, vmid_max: max}) |> Repo.update!()
+  end
+
   defp vps_op(node, vm_id, status \\ :active) do
     %Vps{}
     |> Vps.changeset(%{
@@ -69,13 +73,38 @@ defmodule ControlPlane.FleetDriftTest do
       assert bijgewerkt.provider_vm_id == "2002"
     end
 
-    test "een gast die wij niet kennen wordt gemeld" do
+    test "een vreemde gast binnen ons VMID-bereik wordt gemeld" do
+      node = node_met_status() |> met_bereik(2000, 2999)
+      vps_op(node, "2001")
+
+      %{onbekend: onbekend} = Drift.compare(node.id, ["2001", "2050", "9000", "115"])
+
+      # 2050 zit in ons bereik en hoort van ons te zijn: dat is een gast die wij
+      # ooit hebben aangemaakt en kwijt zijn geraakt.
+      assert onbekend == ["2050"]
+    end
+
+    test "de eigen machines van de operator worden niet gemeld" do
+      # De eerste draai op productie meldde 21 "onbekende" gasten, allemaal
+      # legitiem van de eigenaar: zijn router, zijn eigen VM's, de template. Elk
+      # half uur opnieuw. Een waarschuwing die altijd afgaat leest niemand meer.
+      node = node_met_status() |> met_bereik(2000, 2999)
+      vps_op(node, "2001")
+
+      %{onbekend: onbekend} =
+        Drift.compare(node.id, ["2001", "100", "101", "105", "9000", "300"])
+
+      assert onbekend == []
+    end
+
+    test "zonder ingesteld bereik zwijgen we over vreemde gasten" do
+      # Er is dan geen grond om iets van de operator "vreemd" te noemen.
       node = node_met_status()
       vps_op(node, "2001")
 
       %{onbekend: onbekend} = Drift.compare(node.id, ["2001", "9000", "115"])
 
-      assert Enum.sort(onbekend) == ["115", "9000"]
+      assert onbekend == []
     end
 
     test "een verwijderde VPS telt niet mee als verdwenen" do

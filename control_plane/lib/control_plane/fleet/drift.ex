@@ -93,11 +93,46 @@ defmodule ControlPlane.Fleet.Drift do
     verdwenen = Enum.reject(volgens_ons, &MapSet.member?(op_de_node, &1.vm_id))
 
     van_ons = MapSet.new(volgens_ons, & &1.vm_id)
-    onbekend = Enum.reject(guests, &MapSet.member?(van_ons, &1))
+
+    onbekend =
+      guests
+      |> Enum.reject(&MapSet.member?(van_ons, &1))
+      |> binnen_ons_bereik(node_id)
 
     meld(node_id, verdwenen, onbekend)
 
     %{verdwenen: verdwenen, onbekend: onbekend}
+  end
+
+  # Alleen gasten binnen het VMID-bereik dat deze node voor Bunk heeft
+  # gereserveerd. Daarbuiten zijn ze per definitie van de operator zelf -- zijn
+  # router, zijn eigen machines, de template -- en die melden is geen signaal
+  # maar ruis.
+  #
+  # Dat is niet theoretisch: de eerste draai meldde 21 "onbekende" gasten op een
+  # node, en alle 21 waren legitiem van de eigenaar. Elk half uur opnieuw. Een
+  # waarschuwing die altijd afgaat is er een die niemand leest, en dan mist hij
+  # ook de ene keer dat het wél iets betekent.
+  #
+  # Geen bereik ingesteld? Dan is er geen grond om iets van de operator "vreemd"
+  # te noemen, en zwijgen we over deze richting.
+  defp binnen_ons_bereik(ids, node_id) do
+    case Repo.one(from n in Node, where: n.id == ^node_id, select: {n.vmid_min, n.vmid_max}) do
+      {min, max} when is_integer(min) and is_integer(max) ->
+        Enum.filter(ids, &in_bereik?(&1, min, max))
+
+      _ ->
+        []
+    end
+  end
+
+  defp in_bereik?(id, min, max) do
+    case Integer.parse(id) do
+      {nummer, ""} -> nummer >= min and nummer <= max
+      # Een id dat geen nummer is komt van een andere hypervisor (ESXi gebruikt
+      # managed-object ids). Daar zegt een VMID-bereik niets over.
+      _ -> false
+    end
   end
 
   defp meld(_node_id, [], []), do: :ok
