@@ -633,6 +633,11 @@ export interface AdminUser {
   inserted_at: string;
   vps_count: number;
   balance_cents: number;
+  /**
+   * Gezet wanneer dit account is verwijderd maar de administratie moest blijven
+   * staan. De rij bestaat dan nog; de persoon erachter niet meer.
+   */
+  anonymised_at: string | null;
 }
 export interface AdminVps {
   id: string;

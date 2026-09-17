@@ -476,7 +476,8 @@ defmodule ControlPlane.Accounts do
       totp_secret: nil,
       totp_confirmed_at: nil,
       confirmed_at: nil,
-      role: :user
+      role: :user,
+      anonymised_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
     |> Repo.update()
     |> case do

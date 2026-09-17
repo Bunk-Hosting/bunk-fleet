@@ -27,6 +27,7 @@ function UsersInner() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [toonVerwijderd, setToonVerwijderd] = useState(false);
 
   const load = () =>
     adminApi
@@ -116,9 +117,20 @@ function UsersInner() {
     }
   }
 
-  const filtered = users.filter(
-    (u) => u.email.toLowerCase().includes(q.toLowerCase()) || u.name.toLowerCase().includes(q.toLowerCase())
-  );
+  // Een verwijderd account blijft bestaan als er een administratie aan hangt: de
+  // persoonsgegevens gaan eruit, de facturen en het grootboek blijven staan. Het
+  // hoort dus niet tussen de gewone gebruikers te staan -- wie op verwijderen
+  // klikt en het ding daarna nog in de lijst ziet, concludeert terecht dat het
+  // niet gelukt is.
+  const filtered = users
+    .filter((u) => toonVerwijderd || !u.anonymised_at)
+    .filter(
+      (u) =>
+        u.email.toLowerCase().includes(q.toLowerCase()) ||
+        u.name.toLowerCase().includes(q.toLowerCase()),
+    );
+
+  const aantalVerwijderd = users.filter((u) => u.anonymised_at).length;
 
   if (loading) {
     return (
@@ -132,12 +144,26 @@ function UsersInner() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Gebruikers</h1>
-        <p className="text-muted-foreground">{users.length} accounts — rol wijzigen en tegoed aanpassen.</p>
+        <p className="text-muted-foreground">
+          {users.length - aantalVerwijderd} accounts — rol wijzigen en tegoed aanpassen.
+        </p>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Zoek op e-mail of naam" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Zoek op e-mail of naam" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+        </div>
+        {aantalVerwijderd > 0 && (
+          // Verwijderde accounts staan er nog omdat hun administratie bewaard
+          // moet blijven. Ze staan standaard niet in de lijst, maar ze verbergen
+          // zonder te zeggen dat ze er zijn zou een ander soort onwaarheid zijn.
+          <Button variant="ghost" size="sm" onClick={() => setToonVerwijderd((v) => !v)}>
+            {toonVerwijderd
+              ? `Verberg ${aantalVerwijderd} verwijderd${aantalVerwijderd === 1 ? "" : "e"}`
+              : `Toon ${aantalVerwijderd} verwijderd${aantalVerwijderd === 1 ? "" : "e"}`}
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -164,8 +190,14 @@ function UsersInner() {
                         href={`/dashboard/beheer/users/${u.id}`}
                         className="block hover:underline"
                       >
-                        <div className="font-medium">{u.name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{u.email}</div>
+                        <div className="font-medium">
+                          {u.anonymised_at ? "Verwijderde gebruiker" : u.name || "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {u.anonymised_at
+                            ? `verwijderd op ${new Date(u.anonymised_at).toLocaleDateString("nl-NL")} — administratie bewaard`
+                            : u.email}
+                        </div>
                       </Link>
                     </td>
                     <td className="px-4 py-3">

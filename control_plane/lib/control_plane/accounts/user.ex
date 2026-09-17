@@ -22,6 +22,10 @@ defmodule ControlPlane.Accounts.User do
     field :role, Ecto.Enum, values: [:user, :admin], default: :user
     field :name, :string
     field :confirmed_at, :utc_datetime
+
+    # Gezet wanneer dit account is verwijderd maar de administratie eraan moest
+    # blijven hangen. De rij bestaat dan nog; de persoon erachter niet meer.
+    field :anonymised_at, :utc_datetime
     field :totp_secret, :binary, redact: true
     field :totp_confirmed_at, :utc_datetime
     field :totp_last_used_at, :utc_datetime

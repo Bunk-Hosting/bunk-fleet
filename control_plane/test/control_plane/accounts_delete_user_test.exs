@@ -48,6 +48,13 @@ defmodule ControlPlane.AccountsDeleteUserTest do
       assert {:ok, :deleted} = Accounts.delete_or_anonymise_user(u)
       assert is_nil(Repo.get(User, u.id))
     end
+
+    test "een gewoon account is niet als verwijderd gemarkeerd" do
+      # De keerzijde: zonder deze test zou "alles als verwijderd tonen" ook slagen.
+      u = gebruiker("gewoon@bunk.test")
+
+      assert is_nil(Repo.get!(User, u.id).anonymised_at)
+    end
   end
 
   describe "een account met een administratie" do
@@ -64,6 +71,11 @@ defmodule ControlPlane.AccountsDeleteUserTest do
 
       # Dit is waar het om gaat: de administratie is intact.
       assert Repo.aggregate(from(l in LedgerEntry, where: l.user_id == ^u.id), :count) == 1
+
+      # En het is als verwijderd herkenbaar, niet alleen aan de vorm van het
+      # adres: het scherm moet zo'n rij kunnen tonen als wat hij is, want anders
+      # lijkt verwijderen mislukt.
+      refute is_nil(bewaard.anonymised_at)
     end
 
     test "kan daarna niet meer inloggen" do

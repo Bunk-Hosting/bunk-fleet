@@ -478,7 +478,10 @@ defmodule ControlPlaneWeb.Admin.PanelController do
             two_factor: not is_nil(u.totp_confirmed_at),
             inserted_at: DateTime.to_iso8601(u.inserted_at),
             vps_count: Map.get(vps_counts, u.id, 0),
-            balance_cents: to_int(Map.get(balances, u.id, 0))
+            balance_cents: to_int(Map.get(balances, u.id, 0)),
+            # Een verwijderd account waarvan de administratie moest blijven
+            # staan. De rij bestaat nog; de persoon erachter niet meer.
+            anonymised_at: u.anonymised_at && DateTime.to_iso8601(u.anonymised_at)
           }
         end)
     })
