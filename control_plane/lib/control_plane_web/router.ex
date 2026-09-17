@@ -248,7 +248,7 @@ defmodule ControlPlaneWeb.Router do
     post "/nodes/:id/region", NodeController, :move_region
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
-    resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
+    resources "/vpses", VpsController, only: [:index, :show, :create, :update, :delete]
     post "/vpses/:id/start", VpsController, :start
     post "/vpses/:id/stop", VpsController, :stop
     post "/vpses/:id/reboot", VpsController, :reboot

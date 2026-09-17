@@ -549,6 +549,31 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Hernoemt een VPS.
+
+  Alleen het label dat de klant ziet. De naam waaronder de gast op de
+  hypervisor staat verandert niet: daar herkent de agent zijn machine aan, en
+  die naam is bij het uitrollen vastgelegd. Zou hij meeveranderen, dan raakte de
+  agent zijn eigen VM kwijt -- of erger, vond hij die van iemand anders.
+
+  Een verwijderde VPS wordt niet hernoemd. Die draait nergens meer; zijn naam
+  staat nog in verbruiksregels en facturen, en die horen te blijven zeggen wat
+  ze toen zeiden.
+  """
+  @spec rename_vps(Vps.t(), String.t()) ::
+          {:ok, Vps.t()} | {:error, :invalid_status | Ecto.Changeset.t()}
+  def rename_vps(%Vps{status: :deleted}, _naam), do: {:error, :invalid_status}
+
+  def rename_vps(%Vps{} = vps, naam) when is_binary(naam) do
+    vps
+    |> Vps.changeset(%{name: String.trim(naam)})
+    |> Repo.update()
+    |> tap_ok(fn _ -> Events.broadcast_changed(:vps) end)
+  end
+
+  def rename_vps(%Vps{}, _naam), do: {:error, :invalid_status}
+
+  @doc """
   Registers (enrolls) a new node in the fleet.
 
   On enrollment the node's live `available_*` capacity is initialised to its

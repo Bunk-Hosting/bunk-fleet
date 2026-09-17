@@ -210,6 +210,26 @@ defmodule ControlPlaneWeb.VpsController do
   def stop(conn, params), do: power(conn, params, &Provisioning.stop_vps/1)
 
   @doc """
+  Hernoemt een eigen VPS.
+
+  Alleen het label. De naam waaronder de gast op de hypervisor staat blijft wat
+  hij was -- daar herkent de agent zijn machine aan.
+  """
+  def update(conn, %{"id" => id, "name" => naam}) when is_binary(naam) do
+    with {:ok, uuid} <- valid_id(id),
+         %Vps{} = vps <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, uuid),
+         {:ok, hernoemd} <- Fleet.rename_vps(vps, naam) do
+      json(conn, %{vps: vps_json(hernoemd)})
+    else
+      {:error, :invalid_status} -> error(conn, :conflict, "invalid_status_deleted")
+      {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "invalid_vps")
+      _ -> not_found(conn)
+    end
+  end
+
+  def update(conn, _params), do: error(conn, :unprocessable_entity, "invalid_vps")
+
+  @doc """
   Herstart een eigen, draaiende VPS. 404 als hij niet van jou is.
 
   Van binnenuit: het besturingssysteem wordt gevraagd af te sluiten en komt weer

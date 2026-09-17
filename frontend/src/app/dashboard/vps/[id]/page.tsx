@@ -14,6 +14,7 @@ import {
   Play,
   Square,
   RotateCw,
+  Pencil,
   Trash2,
   Eye,
   EyeOff,
@@ -29,6 +30,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
@@ -68,6 +70,9 @@ export default function VpsDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [rebootDialogOpen, setRebootDialogOpen] = useState(false);
+  const [hernoemen, setHernoemen] = useState(false);
+  const [nieuweNaam, setNieuweNaam] = useState("");
+  const [naamBezig, setNaamBezig] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pollUntil, setPollUntil] = useState<number | null>(null);
@@ -227,6 +232,32 @@ export default function VpsDetailPage() {
     }
   };
 
+  // Hernoemen raakt alleen het label. De naam waaronder de gast op de hypervisor
+  // staat blijft wat hij was -- daar herkent de agent zijn machine aan, en die
+  // naam is bij het uitrollen vastgelegd.
+  const slaNaamOp = async () => {
+    const naam = nieuweNaam.trim();
+    if (!naam || naam === vps?.label) {
+      setHernoemen(false);
+      return;
+    }
+    setNaamBezig(true);
+    try {
+      await vpsApi.rename(id, naam);
+      setHernoemen(false);
+      await fetchVps(true);
+      toast({ title: "Naam gewijzigd", description: naam });
+    } catch (e) {
+      toast({
+        title: "Niet gewijzigd",
+        description: parseApiError(e, "Kon de naam niet wijzigen."),
+        variant: "destructive",
+      });
+    } finally {
+      setNaamBezig(false);
+    }
+  };
+
   // Herstarten vraagt het besturingssysteem netjes af te sluiten en weer op te
   // komen. De VPS blijft ondertussen ACTIVE: hij is niet uitgezet, en een
   // verzonnen tussenstand zou elke andere knop blokkeren tot de agent terugmeldt.
@@ -337,9 +368,53 @@ export default function VpsDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {vps.label || `VPS #${vps.id}`}
-          </h1>
+          {hernoemen ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                slaNaamOp();
+              }}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <Input
+                autoFocus
+                className="max-w-xs text-lg"
+                value={nieuweNaam}
+                disabled={naamBezig}
+                onChange={(e) => setNieuweNaam(e.target.value)}
+                aria-label="Naam van deze VPS"
+              />
+              <Button type="submit" size="sm" disabled={naamBezig || !nieuweNaam.trim()}>
+                {naamBezig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Opslaan"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={naamBezig}
+                onClick={() => setHernoemen(false)}
+              >
+                Annuleren
+              </Button>
+            </form>
+          ) : (
+            <h1 className="flex flex-wrap items-center gap-2 text-3xl font-bold tracking-tight">
+              {vps.label || `VPS #${vps.id}`}
+              {vps.status !== "DELETED" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Naam wijzigen"
+                  onClick={() => {
+                    setNieuweNaam(vps.label || "");
+                    setHernoemen(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+            </h1>
+          )}
           <div className="mt-2">
             <StatusBadge status={vps.status} />
           </div>

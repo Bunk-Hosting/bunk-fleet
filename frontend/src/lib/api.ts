@@ -637,6 +637,12 @@ export const vpsApi = {
    * start -- dat is een andere handeling en ziet er ook anders uit.
    */
   reboot: (id: string) => api.post<{ detail: string }>(`/vpses/${id}/reboot`),
+  /**
+   * Hernoemt een VPS. Alleen het label dat jij ziet: de naam waaronder de gast
+   * op de hypervisor staat blijft wat hij was, want daar herkent de agent zijn
+   * machine aan.
+   */
+  rename: (id: string, name: string) => api.patch(`/vpses/${id}`, { name }),
   // Mint a single-use console ticket (the WS handshake can't carry the bearer).
   consoleTicket: async (id: string): Promise<{ ticket: string }> => {
     const res = await api.post<{ ticket: string }>(`/vpses/${id}/console-ticket`);
