@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { VpsCard } from "@/components/vps/vps-card";
 import { vpsApi, billingApi } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
-import { formatEuro } from "@/lib/utils";
+import { formatBalance } from "@/lib/utils";
 import type { Vps } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -106,7 +106,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {balanceCents === null ? "—" : formatEuro(balanceCents / 100)}
+                {balanceCents === null ? "—" : formatBalance(balanceCents)}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Opwaarderen →</p>
             </CardContent>

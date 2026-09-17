@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { billingApi, parseApiError, type Wallet } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
-import { formatEuro, formatDateLong } from "@/lib/utils";
+import { formatEuro, formatDateLong, formatBalance } from "@/lib/utils";
 
 const PRESET_EUROS = [5, 10, 25, 50];
 const MIN_EUROS = 5;
@@ -136,7 +136,7 @@ export default function TegoedPage() {
                 lowBalance ? "text-destructive" : "text-primary"
               }`}
             >
-              {euroFromCents(balance)}
+              {formatBalance(balance)}
             </p>
             {lowBalance && (
               <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">

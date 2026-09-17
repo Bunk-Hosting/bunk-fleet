@@ -34,6 +34,25 @@ export function formatEuro(value: number | string): string {
   return `€ ${Number(value).toFixed(2).replace(".", ",")}`;
 }
 
+/**
+ * Boven dit bedrag is het tegoed geen bedrag meer maar een besluit: dit account
+ * hoeft niet op zijn saldo te letten. Negen mille en wat op het scherm nodigt
+ * uit tot rekenen dat nergens over gaat, en het ziet eruit als een fout.
+ *
+ * Alleen een label. Het grootboek houdt het echte getal bij, elke afschrijving
+ * gaat gewoon door, en zakt het saldo hieronder dan staat het bedrag er weer.
+ */
+export const ONBEPERKT_TEGOED_CENTEN = 999_900;
+
+export function isOnbeperktTegoed(cents: number): boolean {
+  return cents > ONBEPERKT_TEGOED_CENTEN;
+}
+
+/** Een saldo zoals de gebruiker het ziet: een bedrag, of "Unlimited". */
+export function formatBalance(cents: number): string {
+  return isOnbeperktTegoed(cents) ? "Unlimited" : formatEuro(cents / 100);
+}
+
 export function formatDateLong(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
   return new Date(dateStr).toLocaleDateString("nl-NL", {

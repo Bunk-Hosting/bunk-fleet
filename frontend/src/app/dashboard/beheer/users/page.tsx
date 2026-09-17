@@ -17,7 +17,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
 import { adminApi, parseApiError, type AdminUser } from "@/lib/api";
-import { formatEuro } from "@/lib/utils";
+import { formatBalance } from "@/lib/utils";
 
 const ROLES = ["user", "admin"] as const;
 
@@ -109,7 +109,7 @@ function UsersInner() {
     try {
       const res = await adminApi.addCredit(u.id, Math.round(euros * 100));
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, balance_cents: res.data.balance_cents } : x)));
-      toast({ title: "Tegoed aangepast", description: `${u.email}: ${formatEuro(res.data.balance_cents / 100)}` });
+      toast({ title: "Tegoed aangepast", description: `${u.email}: ${formatBalance(res.data.balance_cents)}` });
     } catch (e) {
       toast({ title: "Mislukt", description: parseApiError(e, "Kon tegoed niet aanpassen."), variant: "destructive" });
     } finally {
@@ -211,7 +211,7 @@ function UsersInner() {
                       </Select>
                     </td>
                     <td className="px-4 py-3">{u.vps_count}</td>
-                    <td className="px-4 py-3 font-medium">{formatEuro(u.balance_cents / 100)}</td>
+                    <td className="px-4 py-3 font-medium">{formatBalance(u.balance_cents)}</td>
                     <td className="px-4 py-3">
                       {u.two_factor ? <Badge variant="default">aan</Badge> : <Badge variant="secondary">uit</Badge>}
                     </td>

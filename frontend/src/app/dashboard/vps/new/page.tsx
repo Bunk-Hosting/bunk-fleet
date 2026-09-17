@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { packagesApi, vpsApi, billingApi, regionsApi, parseApiError } from "@/lib/api";
 import type { BunkRegion } from "@/lib/api";
-import { cn, formatPrice, formatEuro } from "@/lib/utils";
+import { cn, formatPrice, formatEuro, formatBalance } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
 export default function NewVpsPage() {
@@ -245,7 +245,7 @@ export default function NewVpsPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Huidig tegoed</span>
                 <span className="font-medium">
-                  {balanceCents === null ? "—" : formatEuro(balanceCents / 100)}
+                  {balanceCents === null ? "—" : formatBalance(balanceCents)}
                 </span>
               </div>
               {insufficient && (

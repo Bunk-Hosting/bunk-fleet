@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { AdminGuard } from "@/components/admin/admin-guard";
 import { adminApi, type AdminUserDetail, vpsStatusFromApi } from "@/lib/api";
+import { isOnbeperktTegoed } from "@/lib/utils";
 
 const euro = (cents: number) =>
   (cents / 100).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
@@ -83,7 +84,12 @@ function KlantDetail() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         {[
-          { label: "Tegoed", value: euro(data.balance_cents) },
+          {
+            label: "Tegoed",
+            value: isOnbeperktTegoed(data.balance_cents)
+              ? `Unlimited (${euro(data.balance_cents)})`
+              : euro(data.balance_cents),
+          },
           { label: "VPS'en", value: String(data.vpses.length) },
           {
             label: "Actieve abonnementen",
