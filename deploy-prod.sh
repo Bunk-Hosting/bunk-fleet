@@ -114,6 +114,7 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e CONSOLE_SSH_PRIVATE_KEY \
   -e CONSOLE_SSH_PUBLIC_KEY \
   -e CONSOLE_SSH_USER \
+  -e CONSOLE_KEY_ENC \
   -e MOLLIE_API_KEY \
   -e SMTP_HOST \
   -e SMTP_PORT \

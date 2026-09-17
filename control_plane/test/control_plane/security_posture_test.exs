@@ -33,6 +33,17 @@ defmodule ControlPlane.SecurityPostureTest do
     Application.put_env(:control_plane, :mollie, api_key: mollie_key)
   end
 
+  test "de consolesleutel-controle bestaat en staat aan in deze omgeving" do
+    # Bewust geen test die `:console` uitzet: die configuratie is globaal en zou
+    # doorlekken naar de tests over per-VPS consolesleutels die er parallel naast
+    # draaien. Precies die fout liet de suite eerder vandaag omvallen.
+    #
+    # Wat hier telt is dat de controle bestaat (iemand kan hem weghalen) en dat
+    # hij in deze omgeving groen staat -- de test hieronder eist dat `report/0`
+    # niets meldt, en dat kan alleen als deze controle slaagt.
+    assert :console_keys in SecurityPosture.check_keys()
+  end
+
   test "everything configured reports nothing" do
     configure("secret", "ops@bunkhosting.nl", "test_key")
 

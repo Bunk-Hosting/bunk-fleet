@@ -18,6 +18,7 @@ defmodule ControlPlane.SecurityPosture do
   """
   require Logger
 
+  alias ControlPlane.Console.Keys
   alias ControlPlane.Notifier
   alias ControlPlane.Turnstile
 
@@ -36,6 +37,16 @@ defmodule ControlPlane.SecurityPosture do
     Enum.map(inactive, fn {key, _active?, _message} -> key end)
   end
 
+  @doc """
+  De sleutels van alle controles, ongeacht of ze aan of uit staan.
+
+  Bestaat zodat een test kan vastleggen dát een controle bestaat, zonder daarvoor
+  de globale configuratie te verzetten. Dat laatste lekt naar tests die er
+  parallel naast draaien -- precies de fout die vandaag de suite liet omvallen.
+  """
+  @spec check_keys() :: [atom()]
+  def check_keys, do: Enum.map(checks(), fn {key, _active?, _message} -> key end)
+
   defp checks do
     [
       {:turnstile, &Turnstile.enabled?/0,
@@ -46,7 +57,13 @@ defmodule ControlPlane.SecurityPosture do
        "OPS_EMAIL is not set, so operational alerts (a charged VPS that was never " <>
          "created, a backup that stopped running) are written to the log and to nobody."},
       {:mollie, &mollie_configured?/0,
-       "MOLLIE_API_KEY is not set, so customers cannot top up their wallet."}
+       "MOLLIE_API_KEY is not set, so customers cannot top up their wallet."},
+      {:console_keys, &Keys.enabled?/0,
+       "CONSOLE_KEY_ENC is not set, so new VPSes get NO console key of their own and " <>
+         "keep authorising the one shared platform key -- the key that gives root on " <>
+         "every customer machine at once. Add it to .env.prod AND to the -e list in " <>
+         "deploy-prod.sh; that list is an allow-list, and this line is what caught it " <>
+         "the first time."}
     ]
   end
 

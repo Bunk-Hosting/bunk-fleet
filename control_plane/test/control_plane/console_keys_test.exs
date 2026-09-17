@@ -10,6 +10,8 @@ defmodule ControlPlane.ConsoleKeysTest do
   """
   use ControlPlane.DataCase, async: true
 
+  import Bitwise
+
   alias ControlPlane.Console.Keys
 
   # Expliciete sleutels in plaats van de globale configuratie verzetten: dat
@@ -77,8 +79,11 @@ defmodule ControlPlane.ConsoleKeysTest do
     {pem, _} = Keys.generate()
     {:ok, verzegeld} = Keys.seal(pem, k)
 
-    <<kop::binary-size(30), rest::binary>> = verzegeld
-    geknoeid = kop <> <<0>> <> binary_part(rest, 1, byte_size(rest) - 1)
+    # Eén bit omklappen in de ciphertext, niet "op nul zetten": stond daar al een
+    # nul, dan veranderde er niets en slaagde de ontsleuteling gewoon. Precies
+    # die test viel daardoor de ene keer wel en de andere keer niet om.
+    <<kop::binary-size(30), byte, rest::binary>> = verzegeld
+    geknoeid = kop <> <<bxor(byte, 0xFF)>> <> rest
 
     assert :error = Keys.unseal(geknoeid, k)
   end
