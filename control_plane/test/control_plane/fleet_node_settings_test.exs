@@ -13,6 +13,7 @@ defmodule ControlPlane.FleetNodeSettingsTest do
   alias ControlPlane.Accounts
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Package
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Repo
 
@@ -117,6 +118,26 @@ defmodule ControlPlane.FleetNodeSettingsTest do
       # De agent zou daar ooit aankomen en zijn eigen bron overschrijven.
       assert {:error, changeset} = wijzig(n, u, %{"vmid_min" => 8000, "vmid_max" => 9500})
       assert hd(errors_on(changeset).vmid_min) =~ "template"
+    end
+
+    test "weigert ook een bereik dat het template van een pakket bevat", %{user: u, node: n} do
+      # Een pakket mag een eigen template aanwijzen. Alleen de standaard
+      # controleren laat zo'n template erdoor, en dan mislukt elke bestelling
+      # van dat pakket zodra de agent bij dat nummer aankomt.
+      %Package{}
+      |> Package.changeset(%{
+        name: "Speciaal-#{System.unique_integer([:positive])}",
+        cpu_cores: 1,
+        ram_gb: 1,
+        disk_gb: 20,
+        bandwidth_tb: 1,
+        price_monthly: Decimal.new("1.00"),
+        template_id: 4500
+      })
+      |> Repo.insert!()
+
+      assert {:error, changeset} = wijzig(n, u, %{"vmid_min" => 4000, "vmid_max" => 4999})
+      assert hd(errors_on(changeset).vmid_min) =~ "4500"
     end
 
     test "weigert een omgekeerd bereik", %{user: u, node: n} do

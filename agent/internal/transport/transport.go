@@ -227,6 +227,13 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	if out == nil {
 		return nil
 	}
+	// Een leeg antwoord is geen fout. Een control plane dat nog 204 zonder body
+	// geeft -- een oudere versie, of een endpoint dat niets terug hoeft te zeggen
+	// -- moet deze agent niet laten struikelen. De aanroeper houdt dan de
+	// nulwaarde, wat voor instellingen precies "niets gewijzigd" betekent.
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("transport: decode %s: %w", path, err)
 	}
@@ -268,14 +275,37 @@ func (c *Client) Enroll(ctx context.Context, token, hypervisor, ownerEmail strin
 }
 
 // SendHeartbeat posts a single capacity heartbeat.
-func (c *Client) SendHeartbeat(ctx context.Context, hb Heartbeat) error {
+func (c *Client) SendHeartbeat(ctx context.Context, hb Heartbeat) (NodeSettings, error) {
 	if c.token == "" {
-		return errors.New("transport: not enrolled (no agent token)")
+		return NodeSettings{}, errors.New("transport: not enrolled (no agent token)")
 	}
 	if hb.NodeID == "" {
 		hb.NodeID = c.nodeID
 	}
-	return c.post(ctx, "/v1/heartbeat", hb, nil)
+	var out HeartbeatResponse
+	if err := c.post(ctx, "/v1/heartbeat", hb, &out); err != nil {
+		return NodeSettings{}, err
+	}
+	return out.Settings, nil
+}
+
+// NodeSettings is what the owner configured for this node in the dashboard. The
+// control plane returns it on every heartbeat, so a change lands within one
+// interval without anyone logging into the machine. A zero value for a field
+// means "not configured": the agent keeps whatever its own config says, so a
+// node nobody has touched does not suddenly behave differently.
+type NodeSettings struct {
+	OfferVCPU         int `json:"offer_vcpu"`
+	OfferRAMMB        int `json:"offer_ram_mb"`
+	OfferDiskGB       int `json:"offer_disk_gb"`
+	VMIDMin           int `json:"vmid_min"`
+	VMIDMax           int `json:"vmid_max"`
+	VCPUOversubscribe int `json:"vcpu_oversubscribe"`
+}
+
+// HeartbeatResponse is the control plane's answer to a heartbeat.
+type HeartbeatResponse struct {
+	Settings NodeSettings `json:"settings"`
 }
 
 // ReportResult posts the terminal outcome of a dispatched command back to the

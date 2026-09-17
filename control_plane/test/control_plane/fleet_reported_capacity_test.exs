@@ -195,6 +195,33 @@ defmodule ControlPlane.FleetReportedCapacityTest do
     assert bijgewerkt.available_ram_mb == 3651 - 2048
   end
 
+  test "een heartbeat met een verouderde node ondermijnt een afsluiting niet" do
+    # De node komt bij het verzoek binnen zoals hij op dat moment in de database
+    # stond. Sluit een beheerder hem daarna af -- of doet een mislukte bestelling
+    # dat automatisch -- dan mag deze heartbeat die afsluiting niet overschrijven.
+    # Met de oude waarde zou een node die je juist leeg wilt hebben weer vollopen.
+    r = regio()
+    n = node(r, %{status: :online})
+
+    # De verse stand: afgesloten. `n` is nog de oude.
+    Repo.update!(Ecto.Changeset.change(n, status: :draining))
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    assert bijgewerkt.status == :draining,
+           "de heartbeat heeft de afsluiting overschreven met de verouderde status"
+  end
+
+  test "een node die offline stond komt wel weer online" do
+    # De andere kant: een node die weer aanklopt hoort weer mee te doen.
+    r = regio()
+    n = node(r, %{status: :offline})
+
+    {:ok, bijgewerkt} = heartbeat(n)
+
+    assert bijgewerkt.status == :online
+  end
+
   test "een agent zonder zicht op zijn hypervisor levert geen plaatsbare ruimte op" do
     r = regio()
     n = node(r, %{available_ram_mb: 10_819})

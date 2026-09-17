@@ -95,7 +95,7 @@ defmodule ControlPlane.Fleet do
     with {:ok, node} <- fetch_node(node_id),
          true <- node_owner?(node, user) or {:error, :forbidden} do
       node
-      |> Node.settings_changeset(attrs)
+      |> Node.settings_changeset(attrs, package_template_ids())
       |> Repo.update()
       |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
     else
@@ -104,24 +104,47 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
-  Draagt een node over aan een gebruiker, of maakt hem eigenaarloos met `nil`.
+  Draagt een node over, of wijst er voor het eerst een eigenaar aan.
 
-  Dit is bewust een beheerdersactie en geen eigenaarsactie: de eigenaar beheert
-  de instellingen van zijn node, maar wie die eigenaar ís hoort niet door hemzelf
-  te kunnen worden veranderd. Het is ook het enige noodluik dat er is — raakt een
-  eigenaar onbereikbaar, dan draag je de node over in plaats van om hem heen te
-  werken.
+  Wie mag dat: de eigenaar zelf, en verder niemand. Een beheerder kan een node
+  die nog géén eigenaar heeft toewijzen -- anders zou een node die met een
+  beheerderstoken is ingeschreven er nooit een kunnen krijgen -- maar zodra er
+  een eigenaar is, is die de enige die hem kan overdragen.
+
+  Dat heeft een scherpe kant en die hoort hier te staan: raakt een eigenaar
+  onbereikbaar, dan kan niemand die node nog overdragen. Het alternatief was een
+  noodluik voor beheerders, en dat is precies wat "alleen de eigenaar" niet
+  betekent.
   """
-  @spec assign_node_owner(Ecto.UUID.t(), Ecto.UUID.t() | nil) ::
-          {:ok, Node.t()} | {:error, :not_found | :unknown_user | Ecto.Changeset.t()}
-  def assign_node_owner(node_id, owner_id) do
+  @spec assign_node_owner(Ecto.UUID.t(), User.t(), Ecto.UUID.t() | nil) ::
+          {:ok, Node.t()}
+          | {:error, :not_found | :forbidden | :unknown_user | Ecto.Changeset.t()}
+  def assign_node_owner(node_id, %User{} = door, owner_id) do
     with {:ok, node} <- fetch_node(node_id),
+         :ok <- mag_overdragen(node, door),
          :ok <- known_user(owner_id) do
       node
       |> Node.changeset(%{owner_id: owner_id})
       |> Repo.update()
       |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
     end
+  end
+
+  # Een node zonder eigenaar mag een beheerder toewijzen; dat is het enige
+  # moment waarop iemand anders dan de eigenaar erover gaat.
+  defp mag_overdragen(%Node{owner_id: nil}, %User{role: :admin}), do: :ok
+  defp mag_overdragen(%Node{owner_id: nil}, _user), do: {:error, :forbidden}
+
+  defp mag_overdragen(%Node{} = node, %User{} = user) do
+    if node_owner?(node, user), do: :ok, else: {:error, :forbidden}
+  end
+
+  # De templates waarmee besteld kan worden. Los opgehaald zodat het changeset
+  # zelf niets van de database hoeft te weten.
+  defp package_template_ids do
+    Repo.all(
+      from p in Package, where: not is_nil(p.template_id), select: p.template_id, distinct: true
+    )
   end
 
   defp fetch_node(node_id) do
@@ -365,14 +388,7 @@ defmodule ControlPlane.Fleet do
       ])
       |> without_capacity_when_unknown()
 
-    basis =
-      totals
-      |> Map.put(:last_heartbeat_at, Clock.now())
-      # A draining node is still alive and still serving the VPSes it has — it is
-      # only closed to new ones. Stamping :online here would undo an operator's
-      # drain within thirty seconds, silently, which is how a node you are trying
-      # to empty fills back up while you watch.
-      |> Map.put(:status, if(node.status == :draining, do: :draining, else: :online))
+    basis = Map.put(totals, :last_heartbeat_at, Clock.now())
 
     # PERF: only a real status transition (offline/pending -> online) or the
     # first heartbeat (which seeds available_*) is UI-relevant. A routine
@@ -388,7 +404,18 @@ defmodule ControlPlane.Fleet do
     # de twee serialiseren nu in plaats van elkaar te overschrijven.
     Repo.transaction(fn ->
       vers = Repo.one!(from n in Node, where: n.id == ^node.id, lock: "FOR UPDATE")
-      attrs = derive_available(basis, vers, totals)
+
+      # De status wordt uit de verse rij bepaald, niet uit de node waarmee dit
+      # verzoek binnenkwam. Die is geladen voordat het slot er was, en tussen die
+      # twee momenten kan een beheerder de node hebben afgesloten -- of kan een
+      # mislukte bestelling hem automatisch hebben dichtgezet. Met de oude waarde
+      # zou deze heartbeat dat overschrijven en gaat een node die je juist leeg
+      # wilt hebben weer vollopen.
+      #
+      # Een node die draint is nog steeds in leven en bedient wat hij heeft; hij
+      # is alleen dicht voor nieuwe VPS'en.
+      status = if vers.status == :draining, do: :draining, else: :online
+      attrs = basis |> Map.put(:status, status) |> derive_available(vers, totals)
 
       transition? =
         vers.status not in [:online, :draining] or is_nil(vers.available_vcpu) or

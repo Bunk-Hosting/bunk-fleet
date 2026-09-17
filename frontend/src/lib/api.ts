@@ -695,6 +695,14 @@ export const nodeApi = {
    */
   updateSettings: async (id: string, settings: Partial<NodeSettings>): Promise<MyNode> =>
     (await api.patch<{ node: MyNode }>(`/nodes/${id}/settings`, settings)).data.node,
+
+  /**
+   * Draagt een node over aan een andere gebruiker, of haalt de eigenaar eraf.
+   * Alleen de eigenaar zelf; een beheerder kan hooguit een node die nog geen
+   * eigenaar heeft toewijzen.
+   */
+  assignOwner: async (id: string, ownerEmail: string | null): Promise<MyNode> =>
+    (await api.post<{ node: MyNode }>(`/nodes/${id}/owner`, { owner_email: ownerEmail })).data.node,
 };
 
 export interface AdminNode {
@@ -896,14 +904,6 @@ export const adminApi = {
   nodes: async (): Promise<AdminNode[]> =>
     (await api.get<{ nodes: AdminNode[] }>("/beheer/nodes")).data.nodes,
 
-  /**
-   * Draagt een node over aan een gebruiker, of maakt hem eigenaarloos met null.
-   * Een beheerdersactie: de eigenaar beheert de instellingen van zijn node, maar
-   * wie die eigenaar is hoort hij niet zelf te kunnen veranderen.
-   */
-  assignNodeOwner: async (nodeId: string, ownerId: string | null): Promise<AdminNode> =>
-    (await api.post<{ node: AdminNode }>(`/beheer/nodes/${nodeId}/owner`, { owner_id: ownerId }))
-      .data.node,
   nodeDelete: (id: string) => api.delete(`/beheer/nodes/${id}`),
   userDetail: async (id: string): Promise<AdminUserDetail> =>
     (await api.get<AdminUserDetail>(`/beheer/users/${id}`)).data,

@@ -76,7 +76,7 @@ func collect(t *testing.T, prov provider.Provider) *transport.Heartbeat {
 	cp.SetCredentials("node-1", "token-1")
 
 	logger := slog.New(slog.NewTextHandler(new(strings.Builder), nil))
-	sendHeartbeat(context.Background(), logger, prov, cp, config.OfferConfig{})
+	sendHeartbeat(context.Background(), logger, prov, cp, &offerHolder{v: config.OfferConfig{}})
 
 	return got
 }
@@ -128,4 +128,56 @@ func TestCapacityReasonIsBoundedAndNeverEmpty(t *testing.T) {
 	if len(lang) > 200 {
 		t.Errorf("reden niet afgekapt: %d tekens", len(lang))
 	}
+}
+
+// instelbareProvider legt vast wat er via ApplySettings binnenkomt.
+type instelbareProvider struct {
+	stubProvider
+	laatste provider.Settings
+}
+
+func (p *instelbareProvider) ApplySettings(s provider.Settings) { p.laatste = s }
+
+func TestSettingsUitHetDashboardWordenToegepast(t *testing.T) {
+	prov := &instelbareProvider{}
+	offer := &offerHolder{v: config.OfferConfig{VCPU: 1, RAMMB: 1024, DiskGB: 10}}
+	logger := slog.New(slog.NewTextHandler(new(strings.Builder), nil))
+
+	applySettings(logger, prov, offer, transport.NodeSettings{
+		OfferVCPU: 4, OfferRAMMB: 8192, OfferDiskGB: 200,
+		VMIDMin: 2000, VMIDMax: 2999, VCPUOversubscribe: 4,
+	})
+
+	if got := offer.get(); got.VCPU != 4 || got.RAMMB != 8192 || got.DiskGB != 200 {
+		t.Errorf("aanbod niet overgenomen: %+v", got)
+	}
+	if prov.laatste.VMIDMin != 2000 || prov.laatste.VCPUOversubscribe != 4 {
+		t.Errorf("provider-instellingen niet doorgegeven: %+v", prov.laatste)
+	}
+}
+
+func TestNietIngesteldLaatDeLokaleWaardeStaan(t *testing.T) {
+	// Dit is het verschil dat telt: niets ingesteld hebben is iets anders dan op
+	// nul zetten, en alleen dat laatste hoort het gedrag te veranderen. Zou een
+	// nul het aanbod overschrijven, dan biedt een node die nog nooit is
+	// aangeraakt ineens niets meer aan.
+	prov := &instelbareProvider{}
+	lokaal := config.OfferConfig{VCPU: 2, RAMMB: 4096, DiskGB: 50}
+	offer := &offerHolder{v: lokaal}
+	logger := slog.New(slog.NewTextHandler(new(strings.Builder), nil))
+
+	applySettings(logger, prov, offer, transport.NodeSettings{})
+
+	if got := offer.get(); got != lokaal {
+		t.Errorf("lokale configuratie overschreven door lege instellingen: %+v", got)
+	}
+}
+
+func TestEenProviderZonderInstellingenGeeftGeenPaniek(t *testing.T) {
+	// De Configurable-interface is optioneel; een provider die niets in te
+	// stellen heeft implementeert hem niet en moet gewoon worden overgeslagen.
+	offer := &offerHolder{v: config.OfferConfig{}}
+	logger := slog.New(slog.NewTextHandler(new(strings.Builder), nil))
+
+	applySettings(logger, stubProvider{}, offer, transport.NodeSettings{VMIDMin: 2000, VMIDMax: 2999})
 }

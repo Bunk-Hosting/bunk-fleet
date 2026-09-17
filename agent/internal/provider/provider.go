@@ -132,3 +132,19 @@ type Backup struct {
 	// SizeBytes is the archive's size on the node's storage.
 	SizeBytes int64
 }
+
+// Settings are the runtime knobs the control plane may change while the agent is
+// running. A zero value means "not configured": the provider keeps whatever it
+// was started with, so a node nobody has touched keeps behaving as it did.
+type Settings struct {
+	VCPUOversubscribe int
+	VMIDMin           int
+	VMIDMax           int
+}
+
+// Configurable is implemented by providers that accept settings at runtime.
+// Optional on purpose: a provider that has nothing to configure simply does not
+// implement it, and the caller skips it.
+type Configurable interface {
+	ApplySettings(Settings)
+}

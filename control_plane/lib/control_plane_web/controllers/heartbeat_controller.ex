@@ -36,8 +36,12 @@ defmodule ControlPlaneWeb.HeartbeatController do
         })
 
       case Fleet.mark_online_heartbeat(node, total_attrs) do
-        {:ok, _node} ->
-          send_resp(conn, :no_content, "")
+        {:ok, bijgewerkt} ->
+          # Het antwoord draagt de instellingen die de eigenaar in het dashboard
+          # heeft gezet. Zo landt een wijziging binnen een heartbeat op de
+          # machine, zonder dat iemand daar hoeft in te loggen. Een oudere agent
+          # negeert de body en blijft werken zoals hij deed.
+          json(conn, %{settings: settings(bijgewerkt)})
 
         {:error, _changeset} ->
           conn
@@ -55,5 +59,19 @@ defmodule ControlPlaneWeb.HeartbeatController do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "missing_node_id"})
+  end
+
+  # Alleen wat de agent zelf toepast. Het naampatroon zit hier bewust niet bij:
+  # de naam van een gast wordt door het control plane samengesteld bij het
+  # uitdelen van de opdracht, niet door de agent.
+  defp settings(node) do
+    %{
+      offer_vcpu: node.offer_vcpu,
+      offer_ram_mb: node.offer_ram_mb,
+      offer_disk_gb: node.offer_disk_gb,
+      vmid_min: node.vmid_min,
+      vmid_max: node.vmid_max,
+      vcpu_oversubscribe: node.vcpu_oversubscribe
+    }
   end
 end

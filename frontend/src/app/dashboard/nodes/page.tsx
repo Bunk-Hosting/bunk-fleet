@@ -74,6 +74,38 @@ function NodeKaart({ node, onSaved }: { node: MyNode; onSaved: (n: MyNode) => vo
 
   const zet = (veld: keyof NodeSettings) => (v: string) => setForm((f) => ({ ...f, [veld]: v }));
 
+  // Overdragen kan alleen de eigenaar zelf. Dat is bewust geen beheerdersactie:
+  // zodra een node een eigenaar heeft, gaat alleen die erover. De keerzijde staat
+  // in de bevestiging, want daarna kun je er zelf niet meer bij.
+  const overdragen = async () => {
+    const email = window.prompt(
+      `${node.name} overdragen aan wie?\n\n` +
+        "Vul het e-mailadres in van het Bunk-account dat deze node overneemt. " +
+        "Laat leeg om de node zonder eigenaar achter te laten.\n\n" +
+        "Let op: na het overdragen kun jij de instellingen van deze node niet meer wijzigen.",
+      "",
+    );
+    if (email === null) return;
+
+    setSaving(true);
+    try {
+      const bijgewerkt = await nodeApi.assignOwner(node.id, email.trim() === "" ? null : email.trim());
+      onSaved(bijgewerkt);
+      toast({
+        title: "Overgedragen",
+        description: email.trim() === "" ? "De node heeft geen eigenaar meer." : `Nu van ${email.trim()}.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Niet overgedragen",
+        description: parseApiError(err, "Bestaat dat account, en ben jij de eigenaar van deze node?"),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const opslaan = async () => {
     setSaving(true);
     try {
@@ -107,10 +139,15 @@ function NodeKaart({ node, onSaved }: { node: MyNode; onSaved: (n: MyNode) => vo
               {node.agent_version ? ` · agent ${node.agent_version}` : ""}
             </span>
           </div>
-          <Button size="sm" className="gap-2" disabled={saving} onClick={opslaan}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Opslaan
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" disabled={saving} onClick={overdragen}>
+              Overdragen
+            </Button>
+            <Button size="sm" className="gap-2" disabled={saving} onClick={opslaan}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Opslaan
+            </Button>
+          </div>
         </div>
 
         {node.capacity_error && (

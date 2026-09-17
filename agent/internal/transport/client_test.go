@@ -180,7 +180,7 @@ func TestAuthenticatedCallsRefuseToRunUnenrolled(t *testing.T) {
 	c := cap.client()
 	ctx := context.Background()
 
-	if err := c.SendHeartbeat(ctx, Heartbeat{}); err == nil {
+	if _, err := c.SendHeartbeat(ctx, Heartbeat{}); err == nil {
 		t.Error("SendHeartbeat ran without credentials")
 	}
 	if err := c.ReportResult(ctx, "cmd-1", CommandResult{}); err == nil {
@@ -204,7 +204,7 @@ func TestHeartbeatCarriesTheBearerAndFillsInTheNodeID(t *testing.T) {
 	c := cap.client()
 	c.SetCredentials("node-7", "tok-xyz")
 
-	if err := c.SendHeartbeat(context.Background(), Heartbeat{AvailVCPU: 4}); err != nil {
+	if _, err := c.SendHeartbeat(context.Background(), Heartbeat{AvailVCPU: 4}); err != nil {
 		t.Fatalf("SendHeartbeat: %v", err)
 	}
 

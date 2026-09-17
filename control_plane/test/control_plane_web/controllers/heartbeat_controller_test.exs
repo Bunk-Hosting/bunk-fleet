@@ -32,7 +32,7 @@ defmodule ControlPlaneWeb.HeartbeatControllerTest do
   setup [:create_region]
 
   describe "POST /v1/heartbeat" do
-    test "valid bearer returns 204 and updates node totals and status", %{
+    test "valid bearer returns the settings and updates node totals and status", %{
       conn: conn,
       region: region
     } do
@@ -54,7 +54,7 @@ defmodule ControlPlaneWeb.HeartbeatControllerTest do
         |> put_req_header("authorization", "Bearer " <> agent_token)
         |> post(~p"/v1/heartbeat", body)
 
-      assert response(conn, 204)
+      assert json_response(conn, 200)
 
       updated = Repo.get!(Node, node.id)
       assert updated.total_vcpu == 32
@@ -89,7 +89,7 @@ defmodule ControlPlaneWeb.HeartbeatControllerTest do
         })
       end
 
-      assert response(gezond.(), 204)
+      assert json_response(gezond.(), 200)
 
       kapot =
         conn
@@ -106,7 +106,7 @@ defmodule ControlPlaneWeb.HeartbeatControllerTest do
           "capacity_error" => "proxmox: dial tcp 10.0.0.9:8006: connect: no route to host"
         })
 
-      assert response(kapot, 204)
+      assert json_response(kapot, 200)
 
       updated = Repo.get!(Node, node.id)
       assert updated.status == :online
@@ -150,12 +150,55 @@ defmodule ControlPlaneWeb.HeartbeatControllerTest do
         )
       end
 
-      assert response(stuur.(%{"capacity_error" => "geen verbinding"}), 204)
+      assert json_response(stuur.(%{"capacity_error" => "geen verbinding"}), 200)
       assert Repo.get!(Node, node.id).capacity_error == "geen verbinding"
 
-      assert response(stuur.(%{}), 204)
+      assert json_response(stuur.(%{}), 200)
       assert is_nil(Repo.get!(Node, node.id).capacity_error)
       assert Repo.get!(Node, node.id).reported_avail_ram_mb == 8192
+    end
+
+    test "het antwoord draagt de instellingen van de node", %{conn: conn, region: region} do
+      # Zo landt een wijziging uit het dashboard binnen een heartbeat op de
+      # machine, zonder dat iemand daar hoeft in te loggen.
+      %{node: node, agent_token: agent_token} = enroll_node(region)
+
+      node
+      |> Ecto.Changeset.change(%{
+        offer_ram_mb: 3584,
+        vmid_min: 2000,
+        vmid_max: 2999,
+        vcpu_oversubscribe: 4
+      })
+      |> Repo.update!()
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> post(~p"/v1/heartbeat", %{"node_id" => node.id, "total_vcpu" => 4})
+
+      assert %{"settings" => instellingen} = json_response(conn, 200)
+      assert instellingen["offer_ram_mb"] == 3584
+      assert instellingen["vmid_min"] == 2000
+      assert instellingen["vcpu_oversubscribe"] == 4
+
+      # Het naampatroon hoort hier niet bij: de naam van een gast wordt door het
+      # control plane samengesteld, niet door de agent.
+      refute Map.has_key?(instellingen, "guest_name_pattern")
+    end
+
+    test "een node zonder instellingen krijgt lege waarden terug", %{conn: conn, region: region} do
+      # Null betekent "niet ingesteld"; de agent houdt dan wat er lokaal staat.
+      %{node: node, agent_token: agent_token} = enroll_node(region)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> agent_token)
+        |> post(~p"/v1/heartbeat", %{"node_id" => node.id, "total_vcpu" => 4})
+
+      assert %{"settings" => instellingen} = json_response(conn, 200)
+      assert is_nil(instellingen["offer_ram_mb"])
+      assert is_nil(instellingen["vmid_min"])
     end
 
     test "missing bearer returns 401", %{conn: conn, region: region} do

@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
@@ -63,10 +64,50 @@ type Config struct {
 }
 
 // Client is a Proxmox VE provider implementation.
+//
+// The mutex guards only the fields the control plane may change while the agent
+// runs (see ApplySettings). Everything else is set once at construction. It is
+// needed because the heartbeat loop applies settings on one goroutine while the
+// command consumer creates VMs on another.
 type Client struct {
 	cfg  Config
 	base string
 	http *http.Client
+
+	mu       sync.RWMutex
+	settings provider.Settings
+}
+
+// ApplySettings takes the knobs the owner configured in the dashboard. A zero
+// value leaves the local configuration in place rather than resetting it: "not
+// configured" and "configured to zero" are different things, and only one of
+// them should change how this node behaves.
+func (c *Client) ApplySettings(s provider.Settings) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.settings = s
+}
+
+// oversubscribe / vmidRange return the effective values: what the control plane
+// said, falling back to what this agent was started with.
+func (c *Client) oversubscribe() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.settings.VCPUOversubscribe > 0 {
+		return c.settings.VCPUOversubscribe
+	}
+	return c.cfg.VCPUOversubscribe
+}
+
+func (c *Client) vmidRange() (int, int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.settings.VMIDMin > 0 && c.settings.VMIDMax >= c.settings.VMIDMin {
+		return c.settings.VMIDMin, c.settings.VMIDMax
+	}
+	return c.cfg.VMIDMin, c.cfg.VMIDMax
 }
 
 // compile-time assertion that Client satisfies provider.Provider.
@@ -299,7 +340,7 @@ func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
 		}
 		guests = append(guests, gl.Data...)
 	}
-	return parseCapacity(ns, guests, c.cfg.VCPUOversubscribe), nil
+	return parseCapacity(ns, guests, c.oversubscribe()), nil
 }
 
 // --- Lifecycle ------------------------------------------------------------
@@ -388,12 +429,12 @@ func (c *Client) waitTask(ctx context.Context, upid string) error {
 // falls back to the cluster's own answer, which is the lowest free id anywhere --
 // fine on a machine that only does Bunk, and exactly wrong on one that does not.
 func (c *Client) nextVMID(ctx context.Context) (int, error) {
-	if c.cfg.VMIDMin > 0 && c.cfg.VMIDMax >= c.cfg.VMIDMin {
+	if min, max := c.vmidRange(); min > 0 && max >= min {
 		used, err := c.usedVMIDs(ctx)
 		if err != nil {
 			return 0, err
 		}
-		return firstFreeVMID(used, c.cfg.VMIDMin, c.cfg.VMIDMax)
+		return firstFreeVMID(used, min, max)
 	}
 
 	var resp struct {

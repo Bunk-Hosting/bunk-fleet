@@ -341,7 +341,7 @@ defmodule ControlPlane.Provisioning do
               vps_id: vps.id,
               kind: :provision,
               status: :pending,
-              payload: provision_payload(vps, attrs)
+              payload: provision_payload(vps, attrs, node)
             })
           end)
 
@@ -728,9 +728,9 @@ defmodule ControlPlane.Provisioning do
   end
 
   # The exact snake_case payload the Go agent expects for a provision command.
-  defp provision_payload(%Vps{} = vps, attrs) do
+  defp provision_payload(%Vps{} = vps, attrs, node) do
     %{
-      "name" => guest_name(vps),
+      "name" => guest_name(vps, node),
       "vcpu" => vps.vcpu,
       "ram_mb" => vps.ram_mb,
       "disk_gb" => vps.disk_gb,
@@ -748,6 +748,45 @@ defmodule ControlPlane.Provisioning do
   # takeover). We derive a DNS-safe slug of the display name plus a short slice of
   # the VPS's UUID, so the name stays readable but is unique and deterministic
   # across command re-deliveries.
+  # De naam waaronder een gast op de hypervisor komt te staan.
+  #
+  # De agent herkent hieraan of hij een machine al heeft aangemaakt, dus het
+  # unieke deel is geen opsmuk: stond daar ooit alleen de door de klant gekozen
+  # naam in, dan nam de tweede klant met dezelfde naam op een node de draaiende
+  # VM van de eerste over. `{id}` is daarom verplicht in een patroon, en zonder
+  # patroon is het `{naam}-{id}`.
+  defp guest_name(%Vps{} = vps, %{guest_name_pattern: patroon} = node) when is_binary(patroon) do
+    patroon
+    |> String.replace("{id}", short_vps_id(vps))
+    |> String.replace("{naam}", name_slug(vps))
+    |> String.replace("{klant}", owner_slug(vps))
+    |> String.replace("{node}", slug(node.name, "node"))
+    |> String.trim("-")
+    |> String.slice(0, 63)
+  end
+
+  defp guest_name(%Vps{} = vps, _node_zonder_patroon), do: guest_name(vps)
+
+  defp short_vps_id(%Vps{id: id}), do: id |> String.replace("-", "") |> String.slice(0, 8)
+
+  defp name_slug(%Vps{name: name}), do: slug(name, "vps")
+
+  defp owner_slug(%Vps{owner_email: email}),
+    do: slug(email && List.first(String.split(email, "@")), "klant")
+
+  defp slug(nil, standaard), do: standaard
+
+  defp slug(waarde, standaard) do
+    schoon =
+      waarde
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9-]+/, "-")
+      |> String.trim("-")
+      |> String.slice(0, 40)
+
+    if schoon == "", do: standaard, else: schoon
+  end
+
   defp guest_name(%Vps{id: id, name: name}) do
     slug =
       (name || "")

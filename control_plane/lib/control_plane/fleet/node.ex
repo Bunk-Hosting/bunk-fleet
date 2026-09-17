@@ -136,8 +136,8 @@ defmodule ControlPlane.Fleet.Node do
   scheduler zijn (capaciteit, status, tokens). Een eigenaar hoort daar niet bij
   te kunnen, ook niet per ongeluk via een veld dat hij meestuurt.
   """
-  @spec settings_changeset(t(), map()) :: Ecto.Changeset.t()
-  def settings_changeset(node, attrs) do
+  @spec settings_changeset(t(), map(), [integer()]) :: Ecto.Changeset.t()
+  def settings_changeset(node, attrs, template_ids \\ []) do
     node
     |> cast(attrs, @settings_fields)
     |> validate_number(:offer_vcpu, greater_than_or_equal_to: 0)
@@ -156,14 +156,23 @@ defmodule ControlPlane.Fleet.Node do
       greater_than_or_equal_to: 100,
       less_than_or_equal_to: 999_999_999
     )
-    |> validate_vmid_range()
+    |> validate_vmid_range(template_ids)
     |> validate_guest_name_pattern()
   end
 
-  defp validate_vmid_range(changeset) do
+  defp validate_vmid_range(changeset, template_ids) do
     min = get_field(changeset, :vmid_min)
     max = get_field(changeset, :vmid_max)
-    template = Application.get_env(:control_plane, :default_template_id, 9000)
+
+    # Alle templates waarmee besteld kan worden, niet alleen de standaard: een
+    # pakket mag een eigen template aanwijzen, en een bereik dat dáár overheen
+    # loopt levert dezelfde storing op.
+    gereserveerd =
+      [Application.get_env(:control_plane, :default_template_id, 9000) | template_ids]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    botsing = min && max && Enum.find(gereserveerd, &(&1 >= min and &1 <= max))
 
     cond do
       is_nil(min) != is_nil(max) ->
@@ -175,10 +184,10 @@ defmodule ControlPlane.Fleet.Node do
       min > max ->
         add_error(changeset, :vmid_max, "moet minstens zo hoog zijn als het laagste nummer")
 
-      # Zou de template in het bereik vallen, dan komt de agent daar ooit aan en
+      # Zou een template in het bereik vallen, dan komt de agent daar ooit aan en
       # overschrijft hij zijn eigen bron.
-      template >= min and template <= max ->
-        add_error(changeset, :vmid_min, "dit bereik bevat template #{template}")
+      botsing ->
+        add_error(changeset, :vmid_min, "dit bereik bevat template #{botsing}")
 
       true ->
         changeset

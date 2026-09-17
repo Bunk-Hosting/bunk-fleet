@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -122,6 +123,8 @@ func run(logger *slog.Logger) error {
 		logger.Warn("not enrolled; command consumer not started")
 	}
 
+	offer := &offerHolder{v: cfg.Offer}
+
 	// Heartbeat loop.
 	ticker := time.NewTicker(cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -129,7 +132,7 @@ func run(logger *slog.Logger) error {
 	logger.Info("starting heartbeat loop", "interval", cfg.HeartbeatInterval.String())
 
 	// Send an immediate first heartbeat, then on each tick.
-	sendHeartbeat(ctx, logger, prov, cp, cfg.Offer)
+	sendHeartbeat(ctx, logger, prov, cp, offer)
 
 	for {
 		select {
@@ -137,7 +140,7 @@ func run(logger *slog.Logger) error {
 			logger.Info("shutdown signal received, stopping")
 			return nil
 		case <-ticker.C:
-			sendHeartbeat(ctx, logger, prov, cp, cfg.Offer)
+			sendHeartbeat(ctx, logger, prov, cp, offer)
 		}
 	}
 }
@@ -199,10 +202,64 @@ func capOffer(c provider.Capacity, o config.OfferConfig) provider.Capacity {
 	return c
 }
 
+// offerHolder houdt hoeveel van deze machine naar de pool gaat. Het wordt
+// geschreven door de heartbeat-lus en gelezen door diezelfde lus, maar via een
+// slot omdat de waarde ook uit een antwoord van de control plane kan komen en
+// het aantal lezers later kan groeien.
+type offerHolder struct {
+	mu sync.RWMutex
+	v  config.OfferConfig
+}
+
+func (o *offerHolder) get() config.OfferConfig {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.v
+}
+
+func (o *offerHolder) set(v config.OfferConfig) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.v = v
+}
+
+// applySettings neemt over wat de control plane meestuurt. Een nul betekent
+// "niet ingesteld" en laat staan wat er lokaal is geconfigureerd -- niets
+// ingesteld hebben is iets anders dan op nul zetten, en alleen dat laatste hoort
+// het gedrag van een node te veranderen.
+func applySettings(logger *slog.Logger, prov provider.Provider, offer *offerHolder, s transport.NodeSettings) {
+	huidig := offer.get()
+	nieuw := config.OfferConfig{
+		VCPU:   kies(s.OfferVCPU, huidig.VCPU),
+		RAMMB:  kies(s.OfferRAMMB, huidig.RAMMB),
+		DiskGB: kies(s.OfferDiskGB, huidig.DiskGB),
+	}
+	if nieuw != huidig {
+		logger.Info("aanbod bijgesteld vanuit het dashboard",
+			"vcpu", nieuw.VCPU, "ram_mb", nieuw.RAMMB, "disk_gb", nieuw.DiskGB)
+		offer.set(nieuw)
+	}
+
+	if c, ok := prov.(provider.Configurable); ok {
+		c.ApplySettings(provider.Settings{
+			VCPUOversubscribe: s.VCPUOversubscribe,
+			VMIDMin:           s.VMIDMin,
+			VMIDMax:           s.VMIDMax,
+		})
+	}
+}
+
+func kies(vanCP, lokaal int) int {
+	if vanCP > 0 {
+		return vanCP
+	}
+	return lokaal
+}
+
 // sendHeartbeat collects capacity from the provider and reports it to the
 // control plane. Errors are logged but never fatal: a single failed heartbeat
 // must not take the agent down.
-func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, offer config.OfferConfig) {
+func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, offer *offerHolder) {
 	hbCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
@@ -223,7 +280,7 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		logger.Error("capacity query failed", "err", err)
 		hb.CapacityError = capacityReason(err)
 	} else {
-		capacity = capOffer(capacity, offer)
+		capacity = capOffer(capacity, offer.get())
 		hb.TotalVCPU = capacity.TotalVCPU
 		hb.AvailVCPU = capacity.AvailVCPU
 		hb.TotalRAMMB = capacity.TotalRAMMB
@@ -232,10 +289,16 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 		hb.AvailDiskGB = capacity.AvailDiskGB
 	}
 
-	if err := cp.SendHeartbeat(hbCtx, hb); err != nil {
+	settings, err := cp.SendHeartbeat(hbCtx, hb)
+	if err != nil {
 		logger.Error("heartbeat send failed", "err", err)
 		return
 	}
+
+	// Wat de eigenaar in het dashboard heeft gezet, toegepast op de volgende
+	// ronde. Het antwoord komt elke keer mee, dus een wijziging landt binnen een
+	// interval zonder dat iemand op deze machine hoeft in te loggen.
+	applySettings(logger, prov, offer, settings)
 	if hb.CapacityError != "" {
 		logger.Info("heartbeat sent without capacity", "reason", hb.CapacityError)
 		return

@@ -9,6 +9,7 @@ defmodule ControlPlaneWeb.NodeController do
   """
   use ControlPlaneWeb, :controller
 
+  alias ControlPlane.Accounts
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Node
 
@@ -54,6 +55,54 @@ defmodule ControlPlaneWeb.NodeController do
       end)
     end)
   end
+
+  @doc """
+  Draagt een node over aan een andere gebruiker, of haalt de eigenaar eraf.
+
+  Alleen de eigenaar zelf. Een beheerder kan een node die nog geen eigenaar
+  heeft toewijzen -- zonder dat zou een node die met een beheerderstoken is
+  ingeschreven er nooit een kunnen krijgen -- maar daarna gaat de eigenaar er
+  alleen over.
+  """
+  def assign_owner(conn, %{"id" => id} = params) do
+    with {:ok, node_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         {:ok, owner_id} <- parse_owner(params["owner_email"]),
+         {:ok, node} <- Fleet.assign_node_owner(node_id, conn.assigns.current_user, owner_id) do
+      json(conn, %{node: node_json(node)})
+    else
+      {:error, :unknown_user} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "unknown_user"})
+
+      {:error, :invalid_owner} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_owner"})
+
+      # Ook bij :forbidden een 404: dat een node bestaat is zelf al iets wat een
+      # vreemde niet hoeft te weten.
+      _ ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
+  # Een e-mailadres en geen id: de eigenaar van een node heeft geen lijst van
+  # gebruikers en hoort die ook niet te krijgen. nil en "" betekenen allebei
+  # "haal de eigenaar eraf"; een adres zonder account wordt geweigerd in plaats
+  # van stil als "geen eigenaar" gelezen.
+  defp parse_owner(nil), do: {:ok, nil}
+
+  defp parse_owner(raw) when is_binary(raw) do
+    case String.trim(raw) do
+      "" ->
+        {:ok, nil}
+
+      email ->
+        case Accounts.get_user_by_email(email) do
+          %{id: id} -> {:ok, id}
+          nil -> {:error, :unknown_user}
+        end
+    end
+  end
+
+  defp parse_owner(_raw), do: {:error, :invalid_owner}
 
   defp node_json(%Node{} = n) do
     %{

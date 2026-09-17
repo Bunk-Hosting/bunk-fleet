@@ -243,6 +243,7 @@ defmodule ControlPlaneWeb.Router do
     # en die scope zou hem buiten de deur houden.
     get "/nodes", NodeController, :index
     patch "/nodes/:id/settings", NodeController, :update_settings
+    post "/nodes/:id/owner", NodeController, :assign_owner
 
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
@@ -296,7 +297,6 @@ defmodule ControlPlaneWeb.Router do
     # door Cloudflare's WAF geblokkeerd voor het de origin bereikt, waardoor het
     # vanuit de browser onbereikbaar is. Zie de opmerking boven deze scope.
     post "/enroll-tokens", PanelController, :create_enroll_token
-    post "/nodes/:id/owner", PanelController, :assign_node_owner
     post "/nodes/:id/drain", PanelController, :drain_node
     post "/nodes/:id/resume", PanelController, :resume_node
     delete "/nodes/:id", PanelController, :delete_node

@@ -38,38 +38,85 @@ defmodule ControlPlane.FleetNodeOwnerTest do
     |> Repo.insert!()
   end
 
-  describe "toewijzen" do
-    test "draagt een node over aan een gebruiker" do
+  describe "toewijzen en overdragen" do
+    test "een beheerder wijst een node zonder eigenaar toe" do
+      # Het enige moment waarop iemand anders dan de eigenaar erover gaat. Zonder
+      # dit zou een node die met een beheerderstoken is ingeschreven nooit een
+      # eigenaar kunnen krijgen.
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm1@bunk.test"), :admin)
       u = gebruiker("eigenaar1@bunk.test")
       n = fleet_node()
 
-      assert {:ok, bijgewerkt} = Fleet.assign_node_owner(n.id, u.id)
+      assert {:ok, bijgewerkt} = Fleet.assign_node_owner(n.id, beheerder, u.id)
       assert bijgewerkt.owner_id == u.id
     end
 
-    test "maakt een node eigenaarloos met nil" do
-      # Het noodluik: raakt een eigenaar onbereikbaar, dan draag je de node over
-      # in plaats van om hem heen te werken.
-      u = gebruiker("eigenaar2@bunk.test")
+    test "een gewone gebruiker kan een node zonder eigenaar niet claimen" do
+      # Anders pakt de eerste de beste een machine die niet van hem is.
       n = fleet_node()
-      {:ok, _} = Fleet.assign_node_owner(n.id, u.id)
+      dief = gebruiker("dief@bunk.test")
 
-      assert {:ok, bijgewerkt} = Fleet.assign_node_owner(n.id, nil)
+      assert {:error, :forbidden} = Fleet.assign_node_owner(n.id, dief, dief.id)
+    end
+
+    test "de eigenaar draagt zijn eigen node over" do
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm2@bunk.test"), :admin)
+      eigenaar = gebruiker("eigenaar2@bunk.test")
+      opvolger = gebruiker("opvolger@bunk.test")
+      n = fleet_node()
+      {:ok, n} = Fleet.assign_node_owner(n.id, beheerder, eigenaar.id)
+
+      assert {:ok, bijgewerkt} = Fleet.assign_node_owner(n.id, eigenaar, opvolger.id)
+      assert bijgewerkt.owner_id == opvolger.id
+    end
+
+    test "een beheerder kan een node met eigenaar NIET overdragen" do
+      # Dit is de regel waar het om gaat: zodra er een eigenaar is, gaat alleen
+      # die erover -- ook een beheerder niet.
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm3@bunk.test"), :admin)
+      eigenaar = gebruiker("eigenaar3@bunk.test")
+      n = fleet_node()
+      {:ok, n} = Fleet.assign_node_owner(n.id, beheerder, eigenaar.id)
+
+      assert {:error, :forbidden} = Fleet.assign_node_owner(n.id, beheerder, beheerder.id)
+      assert Repo.get!(Node, n.id).owner_id == eigenaar.id
+    end
+
+    test "een andere gebruiker kan een node met eigenaar niet overnemen" do
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm4@bunk.test"), :admin)
+      eigenaar = gebruiker("eigenaar4@bunk.test")
+      vreemde = gebruiker("vreemde@bunk.test")
+      n = fleet_node()
+      {:ok, n} = Fleet.assign_node_owner(n.id, beheerder, eigenaar.id)
+
+      assert {:error, :forbidden} = Fleet.assign_node_owner(n.id, vreemde, vreemde.id)
+    end
+
+    test "de eigenaar kan zijn node eigenaarloos maken" do
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm5@bunk.test"), :admin)
+      eigenaar = gebruiker("eigenaar5@bunk.test")
+      n = fleet_node()
+      {:ok, n} = Fleet.assign_node_owner(n.id, beheerder, eigenaar.id)
+
+      assert {:ok, bijgewerkt} = Fleet.assign_node_owner(n.id, eigenaar, nil)
       assert is_nil(bijgewerkt.owner_id)
     end
 
     test "weigert een gebruiker die niet bestaat" do
-      # Anders levert een typefout een node op die niemand meer kan beheren.
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm6@bunk.test"), :admin)
       n = fleet_node()
 
-      assert {:error, :unknown_user} = Fleet.assign_node_owner(n.id, Ecto.UUID.generate())
+      assert {:error, :unknown_user} =
+               Fleet.assign_node_owner(n.id, beheerder, Ecto.UUID.generate())
+
       assert is_nil(Repo.get!(Node, n.id).owner_id)
     end
 
     test "weigert een node die niet bestaat" do
-      u = gebruiker("eigenaar3@bunk.test")
+      {:ok, beheerder} = Accounts.update_user_role(gebruiker("adm7@bunk.test"), :admin)
 
-      assert {:error, :not_found} = Fleet.assign_node_owner(Ecto.UUID.generate(), u.id)
+      assert {:error, :not_found} =
+               Fleet.assign_node_owner(Ecto.UUID.generate(), beheerder, beheerder.id)
     end
   end
 
@@ -77,7 +124,7 @@ defmodule ControlPlane.FleetNodeOwnerTest do
     test "de eigenaar wel" do
       u = gebruiker("eigenaar4@bunk.test")
       n = fleet_node()
-      {:ok, n} = Fleet.assign_node_owner(n.id, u.id)
+      n = Repo.update!(Ecto.Changeset.change(n, owner_id: u.id))
 
       assert Fleet.node_owner?(n, u)
     end
@@ -88,7 +135,7 @@ defmodule ControlPlane.FleetNodeOwnerTest do
       eigenaar = gebruiker("eigenaar5@bunk.test")
       {:ok, beheerder} = Accounts.update_user_role(gebruiker("beheerder@bunk.test"), :admin)
       n = fleet_node()
-      {:ok, n} = Fleet.assign_node_owner(n.id, eigenaar.id)
+      n = Repo.update!(Ecto.Changeset.change(n, owner_id: eigenaar.id))
 
       refute Fleet.node_owner?(n, beheerder)
     end
@@ -103,7 +150,7 @@ defmodule ControlPlane.FleetNodeOwnerTest do
 
     test "niet ingelogd is nooit de eigenaar" do
       n = fleet_node()
-      {:ok, n} = Fleet.assign_node_owner(n.id, gebruiker("eigenaar7@bunk.test").id)
+      n = Repo.update!(Ecto.Changeset.change(n, owner_id: gebruiker("eigenaar7@bunk.test").id))
 
       refute Fleet.node_owner?(n, nil)
     end
