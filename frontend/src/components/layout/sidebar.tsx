@@ -50,9 +50,10 @@ const mainNavItems: NavItem[] = [
   { label: "Beveiliging", href: "/dashboard/beveiliging", icon: ShieldCheck },
 ];
 
-// Alleen zichtbaar voor wie hardware beheert. Een klant zonder node heeft niets
-// aan een leeg scherm in zijn menu, en een operator die er wel een heeft moet
-// hem kunnen vinden zonder het pad te kennen.
+// Alleen zichtbaar voor wie echt een node bezit (`owns_nodes` is een
+// bestaanscheck op eigenaarschap, geen rol). Onderaan het menu, want dit is
+// bijzaak: vrijwel iedereen die inlogt is klant en niet operator, en wie wel
+// hardware beheert weet waar hij moet zijn.
 const nodeNavItems: NavItem[] = [
   { label: "Mijn nodes", href: "/dashboard/nodes", icon: HardDrive },
 ];
@@ -148,18 +149,6 @@ function SidebarContent({ user }: SidebarProps) {
           />
         ))}
 
-        {user.owns_nodes && (
-          <>
-            <Separator className="my-4" />
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Hardware
-            </p>
-            {nodeNavItems.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-          </>
-        )}
-
         <Separator className="my-4" />
         <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Betalingen
@@ -175,6 +164,18 @@ function SidebarContent({ user }: SidebarProps) {
               Beheer
             </p>
             {adminNavItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </>
+        )}
+
+        {user.owns_nodes && (
+          <>
+            <Separator className="my-4" />
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Hardware
+            </p>
+            {nodeNavItems.map((item) => (
               <NavLink key={item.href} item={item} pathname={pathname} />
             ))}
           </>
