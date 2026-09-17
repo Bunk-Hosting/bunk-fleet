@@ -317,10 +317,27 @@ defmodule ControlPlane.Provisioning.Results do
   # niet in een databasetransactie thuis.
   defp finalize_vps(multi, %Command{kind: :inventory, node_id: node_id}, :done, result)
        when not is_nil(node_id) do
-    Multi.run(multi, :drift, fn _repo, _changes ->
-      guests = gasten_uit(result)
-      {:ok, Drift.compare(node_id, guests)}
-    end)
+    case gasten_uit(result) do
+      nil ->
+        # Een antwoord dat geslaagd heet maar geen gastenlijst bevat. Dat is
+        # geen node zonder gasten: het is een antwoord waar we niets aan hebben,
+        # en vergelijken zou elke VPS op die node als verdwenen aanmerken.
+        #
+        # Dit is precies wat er de eerste keer gebeurde: het veld stond niet in
+        # de allow-list van de resultaatverwerking, werd stil weggegooid, en de
+        # driftmelding sloeg alarm over twee VPS'en die gewoon draaiden.
+        Logger.warning(
+          "inventarisatie van node #{node_id} kwam terug zonder gastenlijst; " <>
+            "de administratie is niet vergeleken"
+        )
+
+        multi
+
+      guests ->
+        Multi.run(multi, :drift, fn _repo, _changes ->
+          {:ok, Drift.compare(node_id, guests)}
+        end)
+    end
   end
 
   defp finalize_vps(multi, %Command{kind: :inventory, node_id: node_id}, :failed, result) do
@@ -338,12 +355,12 @@ defmodule ControlPlane.Provisioning.Results do
 
   # De agent stuurt een lijst strings. Alles wat daar niet op lijkt is geen lege
   # lijst maar een onbruikbaar antwoord, en dan is vergelijken gevaarlijker dan
-  # niets doen.
+  # niets doen -- vandaar `nil` en niet `[]`.
   defp gasten_uit(%{"guests" => guests}) when is_list(guests) do
     Enum.filter(guests, &is_binary/1)
   end
 
-  defp gasten_uit(_result), do: []
+  defp gasten_uit(_result), do: nil
 
   # The VPS row after a successful provision. Three outcomes, because a delete can
   # have been requested while the provision was still in flight.

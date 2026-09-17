@@ -93,7 +93,25 @@ defmodule ControlPlaneWeb.CommandController do
       "error" => params["error"],
       # Backups: where the node put the archive, and how big it is.
       "volid" => params["volid"],
-      "size_bytes" => params["size_bytes"]
+      "size_bytes" => params["size_bytes"],
+      # Inventarisatie: elk gast-id dat de node zegt te hebben. Begrensd, want
+      # dit komt van een machine die niet van ons hoeft te zijn: een lijst van
+      # een miljoen strings zou hier een rij van een miljoen strings worden.
+      "guests" => gasten(params["guests"])
     }
   end
+
+  @max_guests 5_000
+
+  # Alleen een echte lijst strings telt. Geen lijst betekent `nil` en NIET een
+  # lege lijst: die twee zijn hier het verschil tussen "deze node heeft geen
+  # gasten" en "dit antwoord gaat niet over gasten", en op het eerste handelen
+  # terwijl het het tweede was zou elke VPS als verdwenen aanmerken.
+  defp gasten(lijst) when is_list(lijst) do
+    lijst
+    |> Enum.filter(&is_binary/1)
+    |> Enum.take(@max_guests)
+  end
+
+  defp gasten(_anders), do: nil
 end

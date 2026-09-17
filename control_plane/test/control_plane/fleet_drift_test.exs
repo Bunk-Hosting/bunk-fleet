@@ -113,6 +113,39 @@ defmodule ControlPlane.FleetDriftTest do
     end
   end
 
+  describe "een antwoord zonder gastenlijst" do
+    test "leidt tot niets in plaats van tot een vals alarm" do
+      # Dit is precies wat er de eerste keer op productie gebeurde: het veld
+      # `guests` stond niet in de allow-list van de resultaatverwerking, werd
+      # stil weggegooid, en de vergelijking kreeg een lege lijst. Elke draaiende
+      # VPS op die node werd als verdwenen gemeld.
+      node = node_met_status()
+      vps = vps_op(node, "2001")
+
+      commando =
+        %Command{}
+        |> Command.changeset(%{
+          node_id: node.id,
+          kind: :inventory,
+          status: :pending,
+          payload: %{}
+        })
+        |> Repo.insert!()
+
+      # Een "done" zonder gastenlijst, zoals de oude allow-list hem opleverde.
+      {:ok, _} =
+        ControlPlane.Provisioning.apply_result(commando, %{
+          "status" => "done",
+          "vm_id" => "",
+          "ip" => ""
+        })
+
+      # De VPS staat er nog precies zo bij; er is geen drift gemeld.
+      bijgewerkt = Repo.get!(Vps, vps.id)
+      assert bijgewerkt.status == :active
+    end
+  end
+
   describe "aanvragen" do
     test "elke online node krijgt een inventarisatie" do
       een = node_met_status()
