@@ -693,7 +693,8 @@ defmodule ControlPlaneWeb.Admin.PanelController do
       capacity_error: n.capacity_error,
       drain_reason: n.drain_reason,
       owner_id: n.owner_id,
-      owner: owner_label(n)
+      owner: owner_label(n),
+      settings: Map.take(n, Node.settings_fields())
     }
   end
 

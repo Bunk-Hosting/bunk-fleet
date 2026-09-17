@@ -77,6 +77,32 @@ defmodule ControlPlane.Fleet do
     set_node_status(node_id, :draining, [:online, :offline, :pending], reason)
   end
 
+  @doc "De nodes die `user` beheert, nieuwste eerst."
+  @spec list_nodes_owned_by(User.t()) :: [Node.t()]
+  def list_nodes_owned_by(%User{id: id}) do
+    Repo.all(from n in Node, where: n.owner_id == ^id, order_by: [desc: n.inserted_at])
+  end
+
+  @doc """
+  Wijzigt de instellingen van een node, mits `user` de eigenaar is.
+
+  De eigenaarscontrole zit hier en niet alleen in de controller: een tweede
+  ingang naar deze functie mag niet per ongeluk om het slot heen komen.
+  """
+  @spec update_node_settings(Ecto.UUID.t(), User.t(), map()) ::
+          {:ok, Node.t()} | {:error, :not_found | :forbidden | Ecto.Changeset.t()}
+  def update_node_settings(node_id, %User{} = user, attrs) do
+    with {:ok, node} <- fetch_node(node_id),
+         true <- node_owner?(node, user) or {:error, :forbidden} do
+      node
+      |> Node.settings_changeset(attrs)
+      |> Repo.update()
+      |> tap_ok(fn _ -> Events.broadcast_changed(:node) end)
+    else
+      {:error, reden} -> {:error, reden}
+    end
+  end
+
   @doc """
   Draagt een node over aan een gebruiker, of maakt hem eigenaarloos met `nil`.
 

@@ -238,6 +238,12 @@ defmodule ControlPlaneWeb.Router do
     # the answer changes when a node joins, fills up or goes offline.
     get "/regions", RegionController, :index
 
+    # De nodes die deze gebruiker beheert, en hun instellingen. Bewust hier en
+    # niet onder /beheer: de eigenaar van een node is niet per se een beheerder,
+    # en die scope zou hem buiten de deur houden.
+    get "/nodes", NodeController, :index
+    patch "/nodes/:id/settings", NodeController, :update_settings
+
     # Self-service VPS lifecycle, scoped to the authenticated owner.
     resources "/vpses", VpsController, only: [:index, :show, :create, :delete]
     post "/vpses/:id/start", VpsController, :start

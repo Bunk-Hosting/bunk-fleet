@@ -259,6 +259,7 @@ interface BunkUser {
   inserted_at?: string;
   totp_enabled?: boolean;
   passkeys_enabled?: boolean;
+  owns_nodes?: boolean;
   confirmed_at?: string | null;
 }
 
@@ -272,6 +273,7 @@ function transformUser(u: BunkUser): User {
     is_active: true,
     totp_enabled: Boolean(u.totp_enabled),
     passkeys_enabled: Boolean(u.passkeys_enabled),
+    owns_nodes: Boolean(u.owns_nodes),
     confirmed_at: u.confirmed_at ?? null,
   };
 }
@@ -645,6 +647,56 @@ export interface AdminVps {
   ip_address: string | null;
   inserted_at: string;
 }
+/** De instellingen die de eigenaar van een node zelf beheert. */
+export interface NodeSettings {
+  /** Hoeveel van de machine naar de VPS-pool gaat. null of 0 = alles. */
+  offer_vcpu: number | null;
+  offer_ram_mb: number | null;
+  offer_disk_gb: number | null;
+  /** Het VMID-blok dat van Bunk is, zodat klant-VPS'en niet tussen de eigen machines komen. */
+  vmid_min: number | null;
+  vmid_max: number | null;
+  /** vCPU's per fysieke core. RAM en schijf worden nooit overboekt. */
+  vcpu_oversubscribe: number | null;
+  /** Hoe een gast op de hypervisor heet. Moet {id} bevatten. */
+  guest_name_pattern: string | null;
+}
+
+/** Een node zoals de eigenaar hem ziet: zijn eigen machine, niet de hele vloot. */
+export interface MyNode {
+  id: string;
+  name: string;
+  status: string;
+  hypervisor: string;
+  total_vcpu: number | null;
+  total_ram_mb: number | null;
+  total_disk_gb: number | null;
+  available_vcpu: number | null;
+  available_ram_mb: number | null;
+  available_disk_gb: number | null;
+  reported_avail_vcpu: number | null;
+  reported_avail_ram_mb: number | null;
+  reported_avail_disk_gb: number | null;
+  agent_version: string | null;
+  capacity_error: string | null;
+  drain_reason: string | null;
+  last_heartbeat_at: string | null;
+  settings: NodeSettings;
+}
+
+export const nodeApi = {
+  /** De nodes die de ingelogde gebruiker beheert. */
+  mine: async (): Promise<MyNode[]> =>
+    (await api.get<{ nodes: MyNode[] }>("/nodes")).data.nodes,
+
+  /**
+   * Wijzigt de instellingen van een node. Alleen de eigenaar mag dit; een node
+   * van iemand anders geeft 404, want dat hij bestaat is al te veel informatie.
+   */
+  updateSettings: async (id: string, settings: Partial<NodeSettings>): Promise<MyNode> =>
+    (await api.patch<{ node: MyNode }>(`/nodes/${id}/settings`, settings)).data.node,
+};
+
 export interface AdminNode {
   id: string;
   name: string;

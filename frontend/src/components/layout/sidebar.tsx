@@ -18,6 +18,7 @@ import {
   Receipt,
   CreditCard,
   Activity,
+  HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -48,6 +49,13 @@ const mainNavItems: NavItem[] = [
   { label: "Beveiliging", href: "/dashboard/beveiliging", icon: ShieldCheck },
 ];
 
+// Alleen zichtbaar voor wie hardware beheert. Een klant zonder node heeft niets
+// aan een leeg scherm in zijn menu, en een operator die er wel een heeft moet
+// hem kunnen vinden zonder het pad te kennen.
+const nodeNavItems: NavItem[] = [
+  { label: "Mijn nodes", href: "/dashboard/nodes", icon: HardDrive },
+];
+
 const billingNavItems: NavItem[] = [
   { label: "Tegoed", href: "/dashboard/billing", icon: Wallet },
 ];
@@ -62,7 +70,7 @@ const adminNavItems: NavItem[] = [
   { label: "Activiteit", href: "/dashboard/beheer/activiteit", icon: Activity },
 ];
 
-const allNavItems = [...mainNavItems, ...billingNavItems, ...adminNavItems];
+const allNavItems = [...mainNavItems, ...nodeNavItems, ...billingNavItems, ...adminNavItems];
 
 function isActive(itemHref: string, pathname: string): boolean {
   if (pathname === itemHref) return true;
@@ -137,6 +145,18 @@ function SidebarContent({ user }: SidebarProps) {
             badge={item.href === "/dashboard/beveiliging" && !user.totp_enabled}
           />
         ))}
+
+        {user.owns_nodes && (
+          <>
+            <Separator className="my-4" />
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Hardware
+            </p>
+            {nodeNavItems.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </>
+        )}
 
         <Separator className="my-4" />
         <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

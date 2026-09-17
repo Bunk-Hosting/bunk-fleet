@@ -60,6 +60,17 @@ defmodule ControlPlane.Fleet.Node do
     # die weet zelf waarom.
     field :drain_reason, :string
 
+    # Instellingen die de eigenaar vanuit het dashboard beheert. De agent haalt
+    # ze op bij zijn heartbeat; NULL betekent "niet ingesteld", en dan houdt hij
+    # wat er lokaal in zijn service-bestand staat.
+    field :offer_vcpu, :integer
+    field :offer_ram_mb, :integer
+    field :offer_disk_gb, :integer
+    field :vmid_min, :integer
+    field :vmid_max, :integer
+    field :vcpu_oversubscribe, :integer
+    field :guest_name_pattern, :string
+
     # Wat de agent als vrij meldt. Los van available_*, dat van de scheduler is:
     # deze cijfers kennen ook wat er op de machine draait buiten Bunk om. nil =
     # nog niets gemeld; de scheduler slaat de eis dan over.
@@ -98,6 +109,133 @@ defmodule ControlPlane.Fleet.Node do
     belongs_to :owner, User, foreign_key: :owner_id
 
     timestamps(type: :utc_datetime)
+  end
+
+  @settings_fields [
+    :offer_vcpu,
+    :offer_ram_mb,
+    :offer_disk_gb,
+    :vmid_min,
+    :vmid_max,
+    :vcpu_oversubscribe,
+    :guest_name_pattern
+  ]
+
+  @doc "De instellingen die de eigenaar van een node vanuit het dashboard beheert."
+  @spec settings_fields() :: [atom()]
+  def settings_fields, do: @settings_fields
+
+  # Plaatshouders die in een naampatroon gebruikt mogen worden. `{id}` is
+  # verplicht en de rest is smaak -- zie de validatie hieronder voor waarom.
+  @placeholders ~w({id} {naam} {klant} {node})
+
+  @doc """
+  Changeset voor de instellingen die de eigenaar mag wijzigen.
+
+  Bewust los van `changeset/2`: die cast ook velden die van de agent en de
+  scheduler zijn (capaciteit, status, tokens). Een eigenaar hoort daar niet bij
+  te kunnen, ook niet per ongeluk via een veld dat hij meestuurt.
+  """
+  @spec settings_changeset(t(), map()) :: Ecto.Changeset.t()
+  def settings_changeset(node, attrs) do
+    node
+    |> cast(attrs, @settings_fields)
+    |> validate_number(:offer_vcpu, greater_than_or_equal_to: 0)
+    |> validate_number(:offer_ram_mb, greater_than_or_equal_to: 0)
+    |> validate_number(:offer_disk_gb, greater_than_or_equal_to: 0)
+    # Meer dan 32 vCPU per core is geen instelling meer maar een vergissing.
+    |> validate_number(:vcpu_oversubscribe,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 32
+    )
+    |> validate_number(:vmid_min,
+      greater_than_or_equal_to: 100,
+      less_than_or_equal_to: 999_999_999
+    )
+    |> validate_number(:vmid_max,
+      greater_than_or_equal_to: 100,
+      less_than_or_equal_to: 999_999_999
+    )
+    |> validate_vmid_range()
+    |> validate_guest_name_pattern()
+  end
+
+  defp validate_vmid_range(changeset) do
+    min = get_field(changeset, :vmid_min)
+    max = get_field(changeset, :vmid_max)
+    template = Application.get_env(:control_plane, :default_template_id, 9000)
+
+    cond do
+      is_nil(min) != is_nil(max) ->
+        add_error(changeset, :vmid_max, "geef een begin en een eind, of geen van beide")
+
+      is_nil(min) ->
+        changeset
+
+      min > max ->
+        add_error(changeset, :vmid_max, "moet minstens zo hoog zijn als het laagste nummer")
+
+      # Zou de template in het bereik vallen, dan komt de agent daar ooit aan en
+      # overschrijft hij zijn eigen bron.
+      template >= min and template <= max ->
+        add_error(changeset, :vmid_min, "dit bereik bevat template #{template}")
+
+      true ->
+        changeset
+    end
+  end
+
+  # De naam van een gast op de hypervisor moet uniek zijn: de agent gebruikt hem
+  # om te herkennen of hij een machine al heeft aangemaakt. Stond daar ooit
+  # alleen de door de klant gekozen naam in, dan namen twee klanten met dezelfde
+  # naam op een node elkaars draaiende VM over. Daarom is `{id}` verplicht en is
+  # dit geen vrij tekstveld.
+  defp validate_guest_name_pattern(changeset) do
+    case get_change(changeset, :guest_name_pattern) do
+      nil -> changeset
+      "" -> put_change(changeset, :guest_name_pattern, nil)
+      patroon -> check_pattern(changeset, patroon)
+    end
+  end
+
+  defp check_pattern(changeset, patroon) do
+    rest = Regex.replace(~r/\{[a-z]+\}/, patroon, "")
+
+    cond do
+      not String.contains?(patroon, "{id}") ->
+        add_error(
+          changeset,
+          :guest_name_pattern,
+          "moet {id} bevatten, anders zijn twee VPS'en niet uit elkaar te houden"
+        )
+
+      onbekend = eerste_onbekende(patroon) ->
+        add_error(
+          changeset,
+          :guest_name_pattern,
+          "#{onbekend} bestaat niet; gebruik #{Enum.join(@placeholders, ", ")}"
+        )
+
+      not Regex.match?(~r/^[a-z0-9-]*$/, rest) ->
+        add_error(
+          changeset,
+          :guest_name_pattern,
+          "gebruik alleen kleine letters, cijfers en streepjes rond de plaatshouders"
+        )
+
+      String.length(patroon) > 100 ->
+        add_error(changeset, :guest_name_pattern, "is te lang")
+
+      true ->
+        changeset
+    end
+  end
+
+  defp eerste_onbekende(patroon) do
+    ~r/\{[a-z]+\}/
+    |> Regex.scan(patroon)
+    |> List.flatten()
+    |> Enum.find(&(&1 not in @placeholders))
   end
 
   @doc false

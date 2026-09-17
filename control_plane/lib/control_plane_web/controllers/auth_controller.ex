@@ -277,6 +277,11 @@ defmodule ControlPlaneWeb.AuthController do
       confirmed_at: user.confirmed_at,
       totp_enabled: not is_nil(user.totp_confirmed_at),
       passkeys_enabled: Accounts.passkeys_active?(user),
+      # Of deze gebruiker hardware beheert. Het dashboard toont het nodescherm
+      # alleen dan: een klant die geen node heeft hoeft geen leeg scherm in zijn
+      # menu, en een operator die er wel een heeft moet hem kunnen vinden zonder
+      # het pad te kennen.
+      owns_nodes: Accounts.owns_nodes?(user),
       inserted_at: user.inserted_at
     }
   end

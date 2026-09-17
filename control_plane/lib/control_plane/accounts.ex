@@ -411,6 +411,17 @@ defmodule ControlPlane.Accounts do
   end
 
   @doc """
+  Of deze gebruiker hardware beheert.
+
+  Bewust een bestaanscheck en geen telling: het dashboard wil alleen weten of het
+  het nodescherm moet tonen, en `exists?` stopt bij de eerste rij.
+  """
+  @spec owns_nodes?(User.t()) :: boolean()
+  def owns_nodes?(%User{id: id}) do
+    Repo.exists?(from n in ControlPlane.Fleet.Node, where: n.owner_id == ^id)
+  end
+
+  @doc """
   Returns the user owning a valid, non-expired session `token`, or `nil`.
 
   Elke geslaagde lookup houdt de sessie levend: zolang iemand het paneel gebruikt

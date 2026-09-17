@@ -8,6 +8,8 @@ export interface User {
   vps_count?: number;
   totp_enabled: boolean;
   passkeys_enabled: boolean;
+  /** Of deze gebruiker hardware beheert; bepaalt of het nodescherm in het menu staat. */
+  owns_nodes: boolean;
   /** null until the user clicks the link in their confirmation email. */
   confirmed_at: string | null;
 }
