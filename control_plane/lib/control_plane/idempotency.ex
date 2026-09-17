@@ -46,15 +46,38 @@ defmodule ControlPlane.Idempotency do
 
   Zie de moduledoc voor de drie uitkomsten.
   """
+  # De kolom is 200 tekens. Een langere sleutel wordt GEWEIGERD en niet
+  # afgekapt, en dat is geen strengheid maar noodzaak:
+  #
+  #   * Afkappen bij opslaan en zoeken op de volledige sleutel laat de opzoeker
+  #     niets vinden. De code viel dan terug op "geen sleutel" en bestelde een
+  #     tweede VPS met een tweede afschrijving -- precies wat deze module moet
+  #     voorkomen.
+  #   * Afkappen bij allebei is nog erger: twee verschillende lange sleutels
+  #     worden na afkappen identiek, en dan krijgt een klant bij zijn tweede,
+  #     écht andere bestelling de VPS van de eerste terug.
+  #
+  # Een sleutel die niet past is een fout van de client, en die hoort hij te
+  # horen in plaats van er stilzwijgend iets anders van te maken.
+  @max_key 200
+
   @spec claim(binary(), String.t() | nil, String.t()) ::
           {:ok, {:claimed, Key.t()} | {:done, binary()} | :zonder_sleutel}
-          | {:error, :in_flight}
+          | {:error, :in_flight | :invalid_key}
   def claim(_user_id, nil, _scope), do: {:ok, :zonder_sleutel}
   def claim(_user_id, "", _scope), do: {:ok, :zonder_sleutel}
 
   def claim(user_id, key, scope) when is_binary(key) do
+    if String.length(key) > @max_key do
+      {:error, :invalid_key}
+    else
+      neem(user_id, key, scope)
+    end
+  end
+
+  defp neem(user_id, key, scope) do
     %Key{}
-    |> Key.changeset(%{user_id: user_id, key: String.slice(key, 0, 200), scope: scope})
+    |> Key.changeset(%{user_id: user_id, key: key, scope: scope})
     |> Repo.insert()
     |> case do
       {:ok, rij} ->
@@ -73,8 +96,15 @@ defmodule ControlPlane.Idempotency do
          ) do
       %Key{status: "done", vps_id: vps_id} when not is_nil(vps_id) -> {:ok, {:done, vps_id}}
       %Key{} -> {:error, :in_flight}
-      # Weg tussen de insert en deze query: dan is er niets meer om op te
-      # wachten en mag dit verzoek het gewoon doen.
+      # De rij is tussen de insert en deze query verdwenen. Dat kan echt
+      # gebeuren: een gelijktijdig verzoek dat mislukte geeft zijn sleutel vrij
+      # (`release/1`). Er is dan niets meer om op te wachten en dit verzoek mag
+      # het werk doen.
+      #
+      # Let op bij het wijzigen: zolang de sleutel niet wordt verbouwd tussen
+      # opslaan en opzoeken is dit een echte race en geen bug. Werd hij dat wel
+      # -- afkappen bij het ene en niet bij het andere -- dan is deze tak de
+      # plek waar een dubbele bestelling er stilletjes doorheen glipt.
       nil -> {:ok, :zonder_sleutel}
     end
   end

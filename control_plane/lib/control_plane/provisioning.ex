@@ -143,6 +143,69 @@ defmodule ControlPlane.Provisioning do
   end
 
   @doc """
+  Fails VPSes still `:provisioning` on a node that has gone away, and returns how
+  many.
+
+  `fail_stuck_queued_vpses/1` only looks at `:queued` -- rows the control plane
+  never managed to dispatch. Once a placement succeeds the VPS goes
+  `:provisioning` with a command behind it, and from there the only way out is
+  the agent reporting a result. If the node never comes back, nobody ever
+  reports: the row stays "bezig" in the panel forever, its reservation stays
+  `:held` so the node looks fuller than it is even after it returns, and the
+  customer stays charged for a machine that does not exist.
+
+  The trigger is deliberately narrow -- the node is `:offline` (the heartbeat
+  sweeper has already decided it is gone) and the provision command has sat
+  unresolved past the grace. A node that is merely slow stays `:online` and its
+  command keeps being redelivered, which is the existing recovery path and is
+  better than this one.
+
+  The grace is half an hour: far past the 120-second heartbeat TTL, so a reboot
+  or a brief network cut never reaches this code.
+
+  It goes through `apply_result/2` with a synthesised failure rather than
+  updating the rows here, so the refund, the reservation release and the
+  capacity restore are literally the same code that runs when an agent reports a
+  failed provision. A second implementation of that path would be a second place
+  for the money to go wrong.
+
+  What this cannot do is clean up a half-built VM on the node, because the agent
+  never told us a vm_id. If the node returns with a guest we do not know about,
+  `ControlPlane.Fleet.Drift` is what reports it.
+  """
+  @spec fail_stuck_provisioning_vpses(non_neg_integer()) :: non_neg_integer()
+  def fail_stuck_provisioning_vpses(grace_seconds \\ 1800) do
+    cutoff = Clock.shift(-grace_seconds)
+
+    gestrand =
+      Repo.all(
+        from c in Command,
+          join: v in Vps,
+          on: v.id == c.vps_id,
+          join: n in Node,
+          on: n.id == c.node_id,
+          where: c.kind == :provision and c.status in [:pending, :delivered],
+          where: v.status == :provisioning,
+          where: n.status == :offline,
+          where: c.inserted_at < ^cutoff
+      )
+
+    Enum.each(gestrand, fn command ->
+      Logger.error(
+        "vps #{command.vps_id} hangt in :provisioning op node #{command.node_id}, " <>
+          "die offline is; de bestelling wordt als mislukt afgehandeld en terugbetaald"
+      )
+
+      apply_result(command, %{
+        "status" => "failed",
+        "error" => "node unreachable: provision never reported a result"
+      })
+    end)
+
+    length(gestrand)
+  end
+
+  @doc """
   Re-dispatches teardowns that failed, and returns how many it retried.
 
   A delete whose command fails leaves the VPS `:deleting` with a live VM still

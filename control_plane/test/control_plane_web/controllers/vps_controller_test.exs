@@ -638,27 +638,42 @@ defmodule ControlPlaneWeb.VpsControllerTest do
     end
 
     test "429 once the per-owner quota is reached", %{conn: conn, region: region, user: user} do
-      prev = Application.get_env(:control_plane, :max_vpses_per_owner)
-      Application.put_env(:control_plane, :max_vpses_per_owner, 1)
-      on_exit(fn -> restore_env(:max_vpses_per_owner, prev) end)
+      # The cap is filled for real instead of lowered with Application.put_env:
+      # that is global state, this file is async, and a parallel test that
+      # creates a VPS would then get a 429 it never asked for. The rows go in
+      # straight through Repo because what is under test here is the HTTP status
+      # the controller puts on :quota_exceeded, not the counting itself --
+      # grenswaarden_test.exs owns the boundary.
+      cap = Application.get_env(:control_plane, :max_vpses_per_owner, 10)
 
-      ok = %{
+      for n <- 1..cap do
+        Repo.insert!(%Vps{
+          name: "vol-#{n}",
+          vcpu: 1,
+          ram_mb: 1024,
+          disk_gb: 10,
+          status: :active,
+          owner_id: user.id,
+          owner_email: user.email,
+          region_id: region.id
+        })
+      end
+
+      over = %{
         "region_id" => region.id,
-        "name" => "one",
+        "name" => "one-too-many",
         "vcpu" => 2,
         "ram_mb" => 4096,
         "disk_gb" => 50
       }
-
-      assert conn |> auth(user) |> post(~p"/api/v1/vpses", consented(ok)) |> json_response(201)
-
-      over = %{ok | "name" => "two"}
 
       assert %{"error" => "quota_exceeded"} =
                conn
                |> auth(user)
                |> post(~p"/api/v1/vpses", consented(over))
                |> json_response(429)
+
+      assert Provisioning.count_live_vpses(user.id) == cap
     end
   end
 
@@ -718,7 +733,4 @@ defmodule ControlPlaneWeb.VpsControllerTest do
   # van achttien keer uitgeschreven. De twee tests die de bevestiging zelf
   # onderzoeken zetten hem bewust niet via deze helper.
   defp consented(params), do: Map.put(params, "immediate_delivery_consent", true)
-
-  defp restore_env(key, nil), do: Application.delete_env(:control_plane, key)
-  defp restore_env(key, value), do: Application.put_env(:control_plane, key, value)
 end

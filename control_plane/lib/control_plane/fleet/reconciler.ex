@@ -119,6 +119,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     reconcile_nodes()
     reclaim_reservations()
     fail_stuck_creates()
+    fail_stuck_provisionings()
     refund_orphan_charges()
     retry_stuck_deletes()
     state = maybe_meter_usage(state)
@@ -272,6 +273,38 @@ defmodule ControlPlane.Fleet.Reconciler do
     exception ->
       Logger.error(
         "fleet reconciler stuck-create sweep failed: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
+  end
+
+  # De VPS die wél werd uitgestuurd maar op een node belandde die daarna wegviel.
+  # `fail_stuck_creates/0` hierboven ziet die niet: die kijkt naar :queued, en
+  # deze staat op :provisioning.
+  defp fail_stuck_provisionings do
+    count = Provisioning.fail_stuck_provisioning_vpses()
+
+    if count > 0 do
+      Logger.error("#{count} vps(en) losgemaakt van een node die niet meer terugkwam")
+
+      ControlPlane.Notifier.deliver_operational_alert(
+        "#{count} VPS(en) vastgelopen op een verdwenen node",
+        """
+        #{count} VPS(en) stonden op :provisioning terwijl hun node offline is en
+        het provision-commando nooit een resultaat opleverde. Ze zijn als mislukt
+        afgehandeld: het abonnement is teruggeboekt en de gereserveerde
+        capaciteit is vrijgegeven.
+
+        Wat dit NIET doet is een half aangemaakte VM opruimen -- de agent heeft
+        nooit een vm_id gemeld. Komt de node terug, kijk dan naar de
+        driftmelding: een gast binnen het VMID-bereik die wij niet kennen is
+        hiervan het overblijfsel.
+        """
+      )
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler stuck-provisioning sweep faalde: #{Exception.message(exception)}",
         crash_reason: {exception, __STACKTRACE__}
       )
   end

@@ -63,6 +63,9 @@ defmodule ControlPlaneWeb.VpsController do
       {:error, :in_flight} ->
         error(conn, :conflict, "order_in_progress")
 
+      {:error, :invalid_key} ->
+        error(conn, :unprocessable_entity, "invalid_idempotency_key")
+
       {:ok, claim} ->
         bestel(conn, user, params, claim)
     end

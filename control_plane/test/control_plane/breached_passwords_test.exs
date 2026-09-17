@@ -11,7 +11,14 @@ defmodule ControlPlane.BreachedPasswordsTest do
   gaan: er mag nooit een heel wachtwoord of een hele hash de deur uit, en een
   storing bij de dienst mag geen registratie blokkeren.
   """
-  use ControlPlane.DataCase, async: true
+  # Niet async: de setup zet `:check_breached_passwords` aan, en dat is globale
+  # configuratie. Staat hij aan terwijl een andere test parallel een gebruiker
+  # registreert, dan doet díe test een Req-aanroep waarvoor in zijn eigen proces
+  # geen stub bestaat. Het valt open (de registratie gaat door), maar het is
+  # dezelfde soort lek waarmee de consolesleutel-test ooit een hele suite
+  # omgooide. ExUnit draait sync-bestanden pas als alle async-tests klaar zijn,
+  # dus zo kan het niemand meer raken.
+  use ControlPlane.DataCase, async: false
 
   alias ControlPlane.Accounts
   alias ControlPlane.Accounts.BreachedPasswords
