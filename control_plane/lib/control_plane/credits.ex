@@ -160,29 +160,86 @@ defmodule ControlPlane.Credits do
               e.inserted_at > ^@vps_id_since and e.amount_cents < 0
       )
 
-    Enum.each(orphans, fn entry ->
-      # Stamped as refunded by tying it to nothing and changing its kind would
-      # rewrite history; a ledger only ever grows. The counter-entry carries the
-      # same absent vps_id, and `kind` says what it was for.
-      {:ok, _} =
-        add_entry(
-          entry.user_id,
-          -entry.amount_cents,
-          "vps_refund",
-          "Terugbetaling: de VPS is nooit aangemaakt"
+    Enum.reduce(orphans, 0, fn entry, geteld ->
+      case refund_failed_charge(entry, "Terugbetaling: de VPS is nooit aangemaakt") do
+        {:ok, :already_refunded} ->
+          # Een ander pad was ons voor. Niet tellen en niet loggen: dit is het
+          # normale geval sinds de bestelweg zelf ook merkt.
+          geteld
+
+        {:ok, _} ->
+          Logger.error(
+            "refunded an orphaned vps_charge of #{abs(entry.amount_cents)} cents: " <>
+              "the VPS it paid for was never created"
+          )
+
+          geteld + 1
+
+        {:error, reden} ->
+          Logger.error("terugbetaling van een verweesde afschrijving mislukte: #{inspect(reden)}")
+          geteld
+      end
+    end)
+  end
+
+  @doc """
+  Betaalt één afschrijving terug en merkt hem, in één transactie.
+
+  De afschrijving voor een VPS gebeurt vóórdat die VPS bestaat, dus de regel
+  heeft even geen `vps_id`. Precies daarop jaagt `refund_orphan_charges/1`. Wie
+  vanuit de bestelweg terugbetaalt zonder de oorspronkelijke regel te merken,
+  laat hem dus liggen voor de sweeper -- die tien minuten later hetzelfde bedrag
+  nog eens uitbetaalt. Dat is op productie gebeurd: er stond meer terugbetaald
+  dan er ooit was afgeschreven.
+
+  De tegenboeking en de markering horen daarom bij elkaar. Twee losse writes met
+  een deploy ertussen laten een terugbetaling zonder markering achter, en dan
+  betaalt elke volgende tik opnieuw uit -- zonder bovengrens.
+
+  De markering verandert `kind` van `"vps_charge"` naar `"vps_charge_refunded"`
+  en raakt geen bedrag aan: het grootboek groeit, het wordt niet herschreven.
+
+  Geeft `{:ok, :already_refunded}` voor een regel die al gemerkt is, zodat elke
+  aanroeper hem gerust nog eens mag aanroepen.
+  """
+  @spec refund_failed_charge(LedgerEntry.t() | nil, String.t()) ::
+          {:ok, LedgerEntry.t() | :already_refunded} | {:error, term()}
+  def refund_failed_charge(entry, beschrijving \\ "Terugbetaling: VPS-aanmaak mislukt")
+
+  def refund_failed_charge(nil, _beschrijving), do: {:ok, :already_refunded}
+
+  def refund_failed_charge(%LedgerEntry{} = entry, beschrijving) do
+    Repo.transaction(fn ->
+      # Opnieuw lezen ONDER SLOT: twee paden kunnen tegelijk terugbetalen (de
+      # bestelweg en de sweeper, of twee sweeps). Wie het slot krijgt en de
+      # markering al ziet staan, doet niets meer.
+      vers =
+        Repo.one(
+          from e in LedgerEntry,
+            where: e.id == ^entry.id and e.kind == "vps_charge" and e.amount_cents < 0,
+            lock: "FOR UPDATE"
         )
 
-      # Mark the original so the next sweep does not refund it again. This is the
-      # only mutation of a ledger row in the system, and it changes no amount.
-      {:ok, _} = entry |> LedgerEntry.changeset(%{kind: "vps_charge_refunded"}) |> Repo.update()
+      case vers do
+        nil ->
+          :already_refunded
 
-      Logger.error(
-        "refunded an orphaned vps_charge of #{abs(entry.amount_cents)} cents: " <>
-          "the VPS it paid for was never created"
-      )
+        gevonden ->
+          {:ok, tegenboeking} =
+            add_entry(
+              gevonden.user_id,
+              -gevonden.amount_cents,
+              "vps_refund",
+              beschrijving,
+              gevonden.vps_id
+            )
+
+          {:ok, _} =
+            gevonden |> LedgerEntry.changeset(%{kind: "vps_charge_refunded"}) |> Repo.update()
+
+          tegenboeking
+      end
     end)
-
-    length(orphans)
   end
 
   @doc """
@@ -202,17 +259,7 @@ defmodule ControlPlane.Credits do
         false
 
       entry ->
-        {:ok, _} =
-          add_entry(
-            entry.user_id,
-            -entry.amount_cents,
-            "vps_refund",
-            "Terugbetaling: VPS-aanmaak mislukt",
-            vps_id
-          )
-
-        {:ok, _} = entry |> LedgerEntry.changeset(%{kind: "vps_charge_refunded"}) |> Repo.update()
-        true
+        match?({:ok, %LedgerEntry{}}, refund_failed_charge(entry))
     end
   end
 

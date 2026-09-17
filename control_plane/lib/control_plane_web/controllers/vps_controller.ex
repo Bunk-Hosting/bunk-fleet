@@ -14,6 +14,8 @@ defmodule ControlPlaneWeb.VpsController do
   use ControlPlaneWeb, :controller
   import ControlPlaneWeb.ApiResponse
 
+  require Logger
+
   alias ControlPlane.Backups
   alias ControlPlane.Backups.VpsBackup
   alias ControlPlane.Clock
@@ -59,7 +61,7 @@ defmodule ControlPlaneWeb.VpsController do
            charge_safe_create(
              user,
              attrs |> Map.put(:package_id, pkg.id) |> Map.put(:withdrawal_waiver_at, Clock.now()),
-             price
+             charge
            ),
          # The charge had to come first — the wallet is checked and debited before
          # anything is provisioned — so only now can it be told which machine it
@@ -87,30 +89,46 @@ defmodule ControlPlaneWeb.VpsController do
 
   # Provision after the wallet was charged; refund if provisioning fails so a
   # failed create never leaves the customer debited.
-  defp charge_safe_create(user, attrs, price_cents) do
+  #
+  # De afschrijving zelf gaat mee, niet alleen het bedrag. Terugbetalen is meer
+  # dan een tegenboeking: de oorspronkelijke regel moet gemerkt worden, anders
+  # blijft hij liggen als een verweesde afschrijving en betaalt
+  # `Credits.refund_orphan_charges/1` hem tien minuten later nóg een keer. Dat
+  # is op productie gebeurd.
+  defp charge_safe_create(user, attrs, charge) do
     case Provisioning.create_vps_for_owner(user, attrs) do
       {:ok, _} = ok ->
         ok
 
       other ->
-        refund_charge(user.id, price_cents)
+        refund_charge(charge)
         other
     end
   rescue
     # A raise after the wallet was debited (bug, changeset explosion, etc.) must
     # still refund, otherwise the customer is charged for a VPS they never got.
     e ->
-      refund_charge(user.id, price_cents)
+      refund_charge(charge)
       reraise e, __STACKTRACE__
   catch
     # DBConnection pool timeouts surface as an :exit, not a rescue-able error.
     :exit, reason ->
-      refund_charge(user.id, price_cents)
+      refund_charge(charge)
       exit(reason)
   end
 
-  defp refund_charge(user_id, price_cents) do
-    Credits.refund(user_id, price_cents, "vps_refund", "Terugbetaling: VPS-aanmaak mislukt")
+  defp refund_charge(charge) do
+    case Credits.refund_failed_charge(charge) do
+      {:ok, _} ->
+        :ok
+
+      {:error, reden} ->
+        # Niet stilhouden: de klant staat nu gedebiteerd voor een VPS die er niet
+        # is. De sweeper pakt hem alsnog op -- de regel is niet gemerkt -- maar
+        # dat duurt tien minuten en niemand weet het zonder deze regel.
+        Logger.error("terugbetaling na een mislukte VPS-aanmaak mislukte: #{inspect(reden)}")
+        :ok
+    end
   end
 
   defp package_price_cents(%Package{price_monthly: price}) do
