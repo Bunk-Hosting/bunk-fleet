@@ -72,7 +72,11 @@ jobs:
         # Een groene uitrol die niets serveert is geen groene uitrol.
         run: |
           set -e
-          for url in http://127.0.0.1:4000/api/v1/auth/me http://127.0.0.1:3001/login; do
+          # Allebei door de edge, want dat is de weg die een klant ook neemt --
+          # en het control plane publiceert geen eigen poort meer op de host:
+          # tijdens een uitrol staan er twee containers, en die kunnen dezelfde
+          # poort niet allebei hebben.
+          for url in http://127.0.0.1:3001/api/v1/auth/me http://127.0.0.1:3001/login; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url")
             echo "$url -> $code"
             case "$code" in

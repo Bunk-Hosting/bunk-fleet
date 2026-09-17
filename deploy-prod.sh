@@ -42,6 +42,10 @@ ENV_FILE="${BUNK_ENV_FILE:-/opt/bunk-fleet/.env.prod}"
 NET=bunkfleet
 PGNAME=bf-prod-pg
 CPNAME=bf-prod-cp
+# De naam waarop nginx en de frontend het control plane aanspreken. Bewust niet
+# de containernaam: tijdens een uitrol staan er twee containers, en een alias kan
+# naar allebei wijzen terwijl een naam maar bij één hoort.
+CP_ALIAS=bunk-cp-live
 IMG=bunk-fleet-cp:latest
 
 # Dezelfde stempel als in de agentbinary: build-prod.sh schrijft hem hiernaast
@@ -110,6 +114,17 @@ pg_ok=0
 for i in $(seq 1 30); do docker exec "$PGNAME" pg_isready -U bunkfleet >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 2; done
 [ "$pg_ok" = 1 ] || { echo "FATAL: Postgres never became ready"; docker logs --tail 30 "$PGNAME"; exit 1; }
 
+# 3b. Trage queries laten zich zien. Stond op -1, dus er werd niets gelogd en op
+# de vraag "zitten er trage queries in" was het eerlijke antwoord dat niemand dat
+# kon weten. Op databaseniveau en niet met `-c` op de container: dat laatste
+# vereist de container opnieuw opzetten, en een database herstarten om een
+# logregel aan te zetten is de verkeerde volgorde. Deze instelling geldt vanaf de
+# volgende verbinding en overleeft een herstart.
+docker exec "$PGNAME" psql -U bunkfleet -d control_plane -q -c \
+  "ALTER DATABASE control_plane SET log_min_duration_statement = '250ms'" >/dev/null 2>&1 \
+  && echo "trage queries (>250ms) worden gelogd" \
+  || echo "let op: kon log_min_duration_statement niet zetten" >&2
+
 # 4. Migrate (release eval) — runtime.exs evaluates the full prod config block on
 # any release command, so it needs SECRET_KEY_BASE et al. even though eval doesn't
 # boot the endpoint.
@@ -165,8 +180,28 @@ fi
 # staat waaróm je aan het uitrollen bent. Na een mislukte uitrol stond je
 # tot nu toe met lege handen: de nieuwe container heeft niets meegemaakt en de
 # oude bestaat niet meer.
-bewaar_log "$CPNAME"
-docker rm -f "$CPNAME" >/dev/null 2>&1 || true
+# De nieuwe control plane komt ERNAAST te staan, niet in plaats van. Hier stond
+# `docker rm -f` gevolgd door `docker run`, en daartussen zat een gat waarin er
+# geen control plane was: gemeten 12 tot 28 seconden waarin élk verzoek faalde,
+# /healthz incluis. Dat is de laatste storing die we zelf veroorzaakten, en het
+# patroon om hem te vermijden stond al in deploy-edge.sh voor de frontend.
+#
+# nginx en de frontend praten daarom niet met de containernaam maar met de alias
+# `bunk-cp-live`. Zolang beide containers draaien wijst die naar allebei -- dat
+# mag, want de migraties zijn al gedraaid en beide versies praten met dezelfde
+# database. Zodra de oude weg is, wijst hij alleen nog naar de nieuwe.
+#
+# Waarom twee control planes naast elkaar geen dubbel werk opleveren: de
+# reconciler plant zijn eerste tik pas ná zijn interval (dertig seconden), en de
+# wissel hieronder is ruim daarvóór klaar -- opstarten plus een gezondheids-
+# controle is een seconde of tien. De nieuwe doet dus geen ronde zolang de oude
+# er nog is. Duurt het onverhoopt langer, dan vangen de bestaande grendels het
+# op: elke stap die geld raakt pakt zijn eigen slot en controleert opnieuw
+# binnen de transactie (zie `Credits.refund_failed_charge/2` en
+# `Locks.take/3`). Dat moet ook los van dit script blijven kloppen -- een uitrol
+# is niet de enige manier waarop er ooit twee instanties kunnen draaien.
+NIEUW_CP="${CPNAME}-nieuw"
+docker rm -f "$NIEUW_CP" >/dev/null 2>&1 || true
 # Gewicht ten opzichte van alles wat er verder op deze machine draait. Het is
 # geen limiet en geen reservering: het telt alleen als er om CPU gevochten
 # wordt, en dan wint productie. Dat is hier nodig omdat de CI-runner op
@@ -174,10 +209,15 @@ docker rm -f "$CPNAME" >/dev/null 2>&1 || true
 # 34, antwoordde /healthz een derde van de keren met 504 (nginx kapt af op 5s,
 # Ecto op 2), en was de machine acht minuten lang niet eens te bevragen. Een
 # klant hoort niets te merken van het feit dat wij aan het uitrollen zijn.
-docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
+#
+# Geen `-p 127.0.0.1:4000:4000` meer: twee containers kunnen die poort niet
+# allebei publiceren, en niemand buiten deze machine had hem nodig. Wat hem wél
+# gebruikte -- de gezondheidscontrole hieronder en die van de workflow -- gaat nu
+# door de edge, en dat is de weg die een klant ook neemt.
+docker run -d --name "$NIEUW_CP" --network "$NET" --network-alias "$CP_ALIAS" \
+  --restart unless-stopped \
   --cpu-shares 4096 \
   --log-opt max-size=50m --log-opt max-file=5 \
-  -p 127.0.0.1:4000:4000 \
   -e PHX_SERVER=true \
   -e BUNK_BUILD_VERSION="$BUNK_BUILD_VERSION" \
   -e DATABASE_URL="$DATABASE_URL" \
@@ -200,17 +240,39 @@ docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
   -e OPS_EMAIL \
   -e TURNSTILE_SECRET_KEY \
   "$IMG" >/dev/null
-echo "STARTED $CPNAME on :4000"
+echo "STARTED $NIEUW_CP (naast de draaiende)"
 
-# 6. Health check — a crash-looping CP (bad migration, missing env) must FAIL
-# the deploy, not fall through to a green "container status" summary.
-health_ok=0
-for i in $(seq 1 30); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000/api/v1/auth/me 2>/dev/null || echo 000)
-  [ "$code" = "401" ] && { echo "HEALTH_OK (auth/me -> 401 as expected)"; health_ok=1; break; }
-  sleep 2
-done
-[ "$health_ok" = 1 ] || { echo "FATAL: control plane never became healthy"; docker logs --tail 40 "$CPNAME"; exit 1; }
+# 6. Hij moet zelf antwoorden voordat de oude weggaat. Dit is het verschil tussen
+# een mislukte uitrol en een platte dienst: een control plane die niet opkomt --
+# een migratie die halverwege strandde, een ontbrekende omgevingsvariabele --
+# laat vanaf hier de draaiende versie gewoon staan.
+#
+# Op de containernaam en niet op de alias, want de alias wijst op dit moment ook
+# naar de oude: die zou altijd antwoorden, en dan controleren we niets.
+if ! docker run --rm --network "$NET" nginx:1.27-alpine sh -c \
+  "for i in \$(seq 1 60); do code=\$(wget -S -q -O /dev/null http://$NIEUW_CP:4000/api/v1/auth/me 2>&1 | grep -c '401 Unauthorized'); [ \"\$code\" != 0 ] && exit 0; sleep 2; done; exit 1"; then
+  echo "FATAL: de nieuwe control plane werd niet gezond; de draaiende versie blijft staan" >&2
+  docker logs --tail 40 "$NIEUW_CP" >&2 || true
+  docker rm -f "$NIEUW_CP" >/dev/null 2>&1 || true
+  exit 1
+fi
+echo "HEALTH_OK (auth/me -> 401 as expected)"
+
+# 7. Pas nu de oude weg. Netjes stoppen: verzoeken die al onderweg zijn mogen af,
+# en pas daarna verdwijnt zijn adres achter de alias.
+#
+# `docker rm -f` gooit het logbestand weg, en dat is precies het log waarin staat
+# waaróm je aan het uitrollen bent. Na een mislukte uitrol stond je tot nu toe
+# met lege handen: de nieuwe container heeft niets meegemaakt en de oude bestaat
+# niet meer.
+if [ "$(docker inspect -f '{{.State.Running}}' "$CPNAME" 2>/dev/null)" = "true" ]; then
+  docker stop -t 10 "$CPNAME" >/dev/null
+fi
+bewaar_log "$CPNAME"
+docker rm -f "$CPNAME" >/dev/null 2>&1 || true
+docker rename "$NIEUW_CP" "$CPNAME"
+echo "SWAPPED $CPNAME"
+
 echo "=== container status ==="
 docker ps --filter name=bf-prod --format '{{.Names}}  {{.Status}}  {{.Ports}}'
 

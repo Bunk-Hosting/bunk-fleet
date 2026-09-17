@@ -118,7 +118,9 @@ docker run -d --name "$NIEUW" --network "$NET" --network-alias "$ALIAS" \
   --restart unless-stopped \
   --cpu-shares 4096 \
   --log-opt max-size=50m --log-opt max-file=5 \
-  -e BUNK_API_URL=http://bf-prod-cp:4000 \
+  # Via de alias, niet via de containernaam: tijdens een uitrol van het control
+  # plane bestaat die naam even niet. Zie deploy-prod.sh.
+  -e BUNK_API_URL=http://bunk-cp-live:4000 \
   bunk-frontend:latest >/dev/null
 
 # 2. Hij moet zelf antwoorden voordat de oude weggaat. Dit is het verschil
@@ -140,6 +142,18 @@ fi
 #    het bestand dat híér naast dit script ligt. Wijken die af, dan zou een
 #    reload andermans configuratie toepassen en deze uitrol stilzwijgend
 #    overslaan; in dat geval wordt de edge opnieuw opgezet.
+# Wijst de alias waar deze configuratie naartoe stuurt ergens heen? Zo niet, dan
+# zou een reload nginx op een naam zetten die nergens bestaat, en dat is een 502
+# voor alles -- stil, en pas merkbaar bij het eerste bezoek. Dit gebeurt als
+# iemand alleen dit script draait op een machine waar het control plane nog van
+# vóór de alias is. Dan liever een mislukte uitrol met een draaiende site.
+if ! docker run --rm --network "$NET" nginx:1.27-alpine sh -c \
+  "getent hosts bunk-cp-live >/dev/null 2>&1 || nslookup bunk-cp-live >/dev/null 2>&1"; then
+  echo "bunk-cp-live is op netwerk $NET niet te vinden; draai eerst deploy-prod.sh" >&2
+  docker rm -f "$NIEUW" >/dev/null 2>&1 || true
+  exit 1
+fi
+
 MOUNT=$(docker inspect bunk-edge \
   --format '{{range .Mounts}}{{if eq .Destination "/etc/nginx/conf.d/default.conf"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
 
