@@ -504,25 +504,33 @@ defmodule ControlPlaneWeb.VpsController do
 
   defp package_json(%Vps{package_id: nil}), do: nil
 
+  # Het pakket is uit de catalogus gehaald. Dat is iets anders dan gratis: `null`
+  # laat het scherm "onbekend" tonen in plaats van een bedrag dat niet klopt.
+  defp package_json(%Vps{package: nil}), do: nil
+
+  defp package_json(%Vps{package: %Package{} = pkg}), do: pakket_velden(pkg)
+
+  # De relatie is niet geladen. Dat overkomt de paden die een VPS teruggeven die
+  # ze zelf net hebben aangemaakt of gewijzigd in plaats van hem op te halen; één
+  # query is daar niets, en het alternatief -- `nil` teruggeven -- zou betekenen
+  # dat de prijs verdwijnt zodra iemand zijn VPS hernoemt.
   defp package_json(%Vps{package_id: id}) do
     case Repo.get(Package, id) do
-      nil ->
-        # Het pakket is uit de catalogus gehaald. Dat is iets anders dan gratis:
-        # `null` laat het scherm "onbekend" tonen in plaats van een bedrag dat
-        # niet klopt.
-        nil
-
-      pkg ->
-        %{
-          id: pkg.id,
-          name: pkg.name,
-          cpu_cores: pkg.cpu_cores,
-          ram_gb: pkg.ram_gb,
-          disk_gb: pkg.disk_gb,
-          bandwidth_tb: pkg.bandwidth_tb,
-          price_monthly: pkg.price_monthly
-        }
+      nil -> nil
+      pkg -> pakket_velden(pkg)
     end
+  end
+
+  defp pakket_velden(%Package{} = pkg) do
+    %{
+      id: pkg.id,
+      name: pkg.name,
+      cpu_cores: pkg.cpu_cores,
+      ram_gb: pkg.ram_gb,
+      disk_gb: pkg.disk_gb,
+      bandwidth_tb: pkg.bandwidth_tb,
+      price_monthly: pkg.price_monthly
+    }
   end
 
   defp public_host(%Vps{node: %Node{public_host: host}}), do: host

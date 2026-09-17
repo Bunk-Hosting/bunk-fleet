@@ -250,22 +250,27 @@ defmodule ControlPlane.Fleet.Reconciler do
     count = Provisioning.fail_stuck_queued_vpses()
 
     if count > 0 do
-      # Loud, and to a person: each of these is a customer who was charged for a
-      # VPS that was never created. The sweep can end the row's limbo; only
-      # someone looking at the ledger can end theirs.
+      # Hard, en naar een mens: elke rij hier is een klant die betaalde voor een
+      # VPS die nooit is aangemaakt. De sweep haalt de rij uit het ongewisse; of
+      # er iets kapot is dat dit blijft veroorzaken, ziet alleen iemand die kijkt.
       Logger.error("failed #{count} vps(es) that were queued but never dispatched")
 
       ControlPlane.Notifier.deliver_operational_alert(
-        "#{count} VPS(es) were charged for but never created",
+        "#{count} VPS(en) betaald maar nooit aangemaakt",
         """
-        #{count} VPS row(s) sat :queued past the grace period with no command
-        behind them, which means the control plane stopped between persisting
-        them and dispatching them. They have been marked :failed.
+        #{count} VPS-rij(en) stonden voorbij de coulanceperiode op :queued zonder
+        commando erachter. Dat betekent dat de control plane is gestopt tussen
+        het vastleggen en het uitsturen. Ze staan nu op :failed.
 
-        The customer was charged before the create. The ledger records charges
-        against a user rather than a VPS, so the refund cannot be made
-        automatically — find the vps_charge entries near these VPSes' timestamps
-        and reverse them.
+        De afschrijving is automatisch teruggeboekt: sinds het grootboek de
+        vps_id meeschrijft, zoekt de sweep de bijbehorende vps_charge op en
+        draait hem terug. In de log staat per VPS of er een afschrijving is
+        gevonden; staat er "No charge was found for it", dan was er niets om
+        terug te boeken.
+
+        Controleer dus niet het geld maar de oorzaak: dit hoort niet te
+        gebeuren. Kijk naar herstarts van de control plane, geheugengebruik en
+        uitrollen rond de tijdstippen in de log.
         """
       )
     end

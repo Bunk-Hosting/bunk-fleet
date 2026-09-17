@@ -222,3 +222,15 @@ func TestValidateRejectsAnIncompleteEsxiConfig(t *testing.T) {
 		}
 	}
 }
+
+// Nul betekent de standaard, niet "één tegelijk". Dat onderscheid is de reden
+// dat er een methode voor is: een config die in code wordt gebouwd kent deze
+// knop niet, en zou anders stilletjes terugvallen op het trage gedrag.
+func TestParallelCommandsFallsBackToTheDefault(t *testing.T) {
+	if got := (Config{}).ParallelCommands(); got != DefaultParallelCommands {
+		t.Fatalf("ParallelCommands() = %d, want %d", got, DefaultParallelCommands)
+	}
+	if got := (Config{MaxParallelCommands: 1}).ParallelCommands(); got != 1 {
+		t.Fatalf("een expliciete 1 werd %d; wie dit zet wil juist één tegelijk", got)
+	}
+}

@@ -105,7 +105,15 @@ available, while `capacity_total.vcpu` stays the honest physical count.
 ### `Command` — control-plane → agent instruction (channel)
 
 **`cp→agent`** — each command carries a `command_id` (uuid) the agent echoes in
-its `CommandResult`. One of the following payloads:
+its `CommandResult`, plus a `vps_id` (uuid, or absent for a command about the
+node itself such as `inventory` and `update`). The agent uses `vps_id` only to
+decide what may run next to what: commands for different VPSes run in parallel,
+commands for one VPS strictly in the order they were delivered. An agent that
+does not see the field falls back to running everything one at a time, which is
+correct but slow, so an old agent against a new control plane keeps working.
+How many VPSes one agent works on at once is `BUNK_MAX_PARALLEL_COMMANDS`
+(default 4; set it to 1 on slow storage to get the strictly-sequential behaviour
+back). One of the following payloads:
 
 #### `provision`
 

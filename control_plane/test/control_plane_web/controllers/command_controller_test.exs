@@ -102,6 +102,24 @@ defmodule ControlPlaneWeb.CommandControllerTest do
       assert Repo.get!(Command, command.id).status == :delivered
     end
 
+    test "een commando zegt over welke VPS het gaat", %{conn: conn, region: region} do
+      # De agent gebruikt dit om werk te verdelen: commando's voor verschillende
+      # VPS'en mogen naast elkaar lopen, voor dezelfde VPS moeten ze op volgorde.
+      # Zonder dit veld kan hij dat onderscheid niet maken en valt hij terug op
+      # alles strikt na elkaar -- dan wacht de klant die op "stop" drukt op de
+      # uitrol van iemand anders.
+      %{agent_token: agent_token} = enroll_node(region)
+      %{vps: vps} = create_vps(region)
+
+      assert [returned] =
+               conn
+               |> put_req_header("authorization", "Bearer " <> agent_token)
+               |> get(~p"/v1/commands")
+               |> json_response(200)
+
+      assert returned["vps_id"] == vps.id
+    end
+
     test "returns [] when there are no pending commands", %{conn: conn, region: region} do
       %{agent_token: agent_token} = enroll_node(region)
 

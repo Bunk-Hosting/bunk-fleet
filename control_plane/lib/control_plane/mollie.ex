@@ -72,7 +72,23 @@ defmodule ControlPlane.Mollie do
   # are the only difference between what the tests exercise and what runs live —
   # the request building, the status handling and the money parsing are shared.
   defp req do
-    [base_url: @base, auth: {:bearer, api_key()}]
+    [
+      base_url: @base,
+      auth: {:bearer, api_key()},
+      # Een betaling aanmaken gebeurt terwijl een klant naar een laadscherm
+      # kijkt, en de webhook die hier ook langskomt is ongeauthenticeerd. Zonder
+      # eigen grens erft dit Req's standaard: vijftien seconden per poging, en
+      # dan nog een paar keer opnieuw. Eén trage Mollie hield dan bijna een
+      # minuut lang een verbinding uit de pool bezig, en de pool is er tien.
+      #
+      # Niet opnieuw proberen is hier bewust. Deze aanroepen maken betalingen
+      # aan; een herhaling van iets waarvan we niet weten of het is aangekomen
+      # is precies hoe je twee betalingen krijgt voor één bestelling. Mislukt
+      # het, dan zegt dit scherm dat, en dan klikt de klant zelf opnieuw.
+      receive_timeout: 8_000,
+      connect_options: [timeout: 4_000],
+      retry: false
+    ]
     |> Keyword.merge(config(:req_options) || [])
     |> Req.new()
   end

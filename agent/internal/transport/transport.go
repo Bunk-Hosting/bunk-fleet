@@ -157,6 +157,11 @@ type Command struct {
 	ID string `json:"id"`
 	// Kind is the verb (provision, delete, ...).
 	Kind CommandKind `json:"kind"`
+	// VPSID names the machine this command is about; empty for a command about
+	// the node itself (inventory, update) and for a control plane too old to
+	// send it. The agent uses it to decide what may run next to what: see
+	// werkers.go.
+	VPSID string `json:"vps_id"`
 	// Payload is the verb-specific body, decoded by the agent.
 	Payload json.RawMessage `json:"payload"`
 }

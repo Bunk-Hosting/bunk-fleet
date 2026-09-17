@@ -6,16 +6,13 @@ import { Loader2, ArrowLeft, Server, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authApi, ensureCsrfCookie } from "@/lib/api";
+import { authApi } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
 
-  React.useEffect(() => {
-    ensureCsrfCookie();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +40,7 @@ export default function ForgotPasswordPage() {
             <Server className="h-6 w-6 text-accent" />
             <span className="text-lg font-headline font-black tracking-tighter text-foreground uppercase">BUNK HOSTING</span>
           </a>
-          <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+          <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex min-h-11 items-center gap-1">
             <ArrowLeft className="h-4 w-4" />
             Terug naar inloggen
           </Link>

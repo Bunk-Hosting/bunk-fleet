@@ -86,6 +86,19 @@ type Config struct {
 	Esxi EsxiConfig
 	// HeartbeatInterval controls how often capacity is reported.
 	HeartbeatInterval time.Duration
+
+	// MaxParallelCommands caps how many VPSes this agent works on at the same
+	// time. Commands for one VPS always run in order; this only decides how many
+	// different machines may be busy at once. Four is a compromise: it stops a
+	// ten-minute provision from holding up someone else's stop, without letting
+	// a burst turn into ten simultaneous clones on one set of disks. Operators
+	// on slow storage can set BUNK_MAX_PARALLEL_COMMANDS=1 and get exactly the
+	// old, strictly-sequential behaviour back.
+	//
+	// Zero means the default, like the offer-* options below: a config built in
+	// code (a test, an embedder) should not have to know about a knob it does
+	// not care about. Read it through ParallelCommands.
+	MaxParallelCommands int
 	// StateDir is where the agent persists its enrollment so it survives restarts.
 	StateDir string
 	// Offer caps the capacity advertised to the control plane (0 per dimension = all).
@@ -196,6 +209,10 @@ func Load() (Config, error) {
 
 		heartbeat = fs.Duration("heartbeat-interval", envDuration("BUNK_HEARTBEAT_INTERVAL", 30*time.Second, &envErrs), "capacity heartbeat interval")
 
+		parallel = fs.Int("max-parallel-commands",
+			envInt("BUNK_MAX_PARALLEL_COMMANDS", DefaultParallelCommands, &envErrs),
+			"how many VPSes to work on at once (1 = strictly one at a time)")
+
 		stateDir = fs.String("state-dir", envOr("BUNK_STATE_DIR", "/var/lib/bunk-agent"), "directory for persisted enrollment state")
 
 		esxiURL      = fs.String("esxi-url", envOr("BUNK_ESXI_URL", ""), "vSphere/ESXi SDK URL (https://host/sdk)")
@@ -231,13 +248,14 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		ControlPlaneURL:   *controlPlaneURL,
-		EnrollToken:       *enrollToken,
-		OwnerEmail:        *ownerEmail,
-		Hypervisor:        *hypervisor,
-		HeartbeatInterval: *heartbeat,
-		StateDir:          *stateDir,
-		Offer:             OfferConfig{VCPU: *offerVCPU, RAMMB: *offerRAM, DiskGB: *offerDisk},
+		ControlPlaneURL:     *controlPlaneURL,
+		EnrollToken:         *enrollToken,
+		OwnerEmail:          *ownerEmail,
+		Hypervisor:          *hypervisor,
+		HeartbeatInterval:   *heartbeat,
+		MaxParallelCommands: *parallel,
+		StateDir:            *stateDir,
+		Offer:               OfferConfig{VCPU: *offerVCPU, RAMMB: *offerRAM, DiskGB: *offerDisk},
 		VpsNetwork: VpsNetworkConfig{
 			Bridge:     *vpsBridge,
 			VLAN:       *vpsVLAN,
@@ -306,6 +324,12 @@ func (c Config) validate() error {
 	if c.HeartbeatInterval <= 0 {
 		return errors.New("config: heartbeat-interval must be positive")
 	}
+	// Een bovengrens hoort erbij: dit zijn klonen op één set schijven, en wie
+	// hier 500 invult maakt zijn node onbruikbaar in plaats van snel.
+	if c.MaxParallelCommands < 0 || c.MaxParallelCommands > maxParallelCommandsCeiling {
+		return fmt.Errorf("config: max-parallel-commands must be between 1 and %d (0 = default)",
+			maxParallelCommandsCeiling)
+	}
 	return nil
 }
 
@@ -343,4 +367,21 @@ func isInternalHost(host string) bool {
 	}
 	// single-label hostname (no dot), e.g. a docker service name like bf-prod-cp
 	return !strings.Contains(host, ".")
+}
+
+// DefaultParallelCommands is how many VPSes an agent works on at once when the
+// operator says nothing. See the comment on Config.MaxParallelCommands for the
+// reasoning behind the number.
+const DefaultParallelCommands = 4
+
+const maxParallelCommandsCeiling = 32
+
+// ParallelCommands is the effective value: the configured one, or the default
+// when it is zero. One place decides this, so a caller cannot accidentally read
+// a raw zero and end up running everything one at a time.
+func (c Config) ParallelCommands() int {
+	if c.MaxParallelCommands < 1 {
+		return DefaultParallelCommands
+	}
+	return c.MaxParallelCommands
 }

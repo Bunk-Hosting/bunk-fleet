@@ -50,7 +50,12 @@ defmodule ControlPlane.Fleet.Vps do
     # provision result.
     field :provider_vm_id, :string
     field :ip_address, :string
+    # Het pakket waarop deze VPS is besteld. De kolom is een integer en blijft
+    # dat; `define_field: false` hangt er alleen een relatie aan zodat hij mee
+    # kan in een preload. Zonder dat deed het paneel één query per VPS om de
+    # prijs erbij te zoeken.
     field :package_id, :integer
+    belongs_to :package, ControlPlane.Fleet.Package, define_field: false
 
     # Het eigen SSH-sleutelpaar van deze VPS voor de webterminal: de privésleutel
     # versleuteld met de sleutel uit de omgeving, de publieke zoals hij in de

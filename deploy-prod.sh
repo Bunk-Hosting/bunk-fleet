@@ -97,6 +97,7 @@ if ! docker ps -a --format '{{.Names}}' | grep -qx "$PGNAME"; then
   # zonder grens groeit zijn log tot de schijf vol is. Dat is de enige container
   # hier waar dat echt kan gebeuren.
   docker run -d --name "$PGNAME" --network "$NET" --restart unless-stopped \
+    --cpu-shares 4096 \
     --log-opt max-size=50m --log-opt max-file=5 \
     -e POSTGRES_USER=bunkfleet -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB=control_plane \
     -v bf-prod-pgdata:/var/lib/postgresql/data postgres:16-alpine >/dev/null
@@ -142,7 +143,15 @@ docker run --rm --network "$NET" \
 # oude bestaat niet meer.
 bewaar_log "$CPNAME"
 docker rm -f "$CPNAME" >/dev/null 2>&1 || true
+# Gewicht ten opzichte van alles wat er verder op deze machine draait. Het is
+# geen limiet en geen reservering: het telt alleen als er om CPU gevochten
+# wordt, en dan wint productie. Dat is hier nodig omdat de CI-runner op
+# DEZELFDE twee cores bouwt. Tijdens zo'n build liep de loadaverage van 2 naar
+# 34, antwoordde /healthz een derde van de keren met 504 (nginx kapt af op 5s,
+# Ecto op 2), en was de machine acht minuten lang niet eens te bevragen. Een
+# klant hoort niets te merken van het feit dat wij aan het uitrollen zijn.
 docker run -d --name "$CPNAME" --network "$NET" --restart unless-stopped \
+  --cpu-shares 4096 \
   --log-opt max-size=50m --log-opt max-file=5 \
   -p 127.0.0.1:4000:4000 \
   -e PHX_SERVER=true \

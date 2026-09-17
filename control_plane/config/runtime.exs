@@ -40,6 +40,10 @@ if config_env() == :prod do
   config :control_plane, ControlPlane.Repo,
     # ssl: true,
     url: database_url,
+    # Tien is een gekozen getal en geen toeval: op twee cores is de CPU eerder op
+    # dan de pool, en meer verbindingen maken het dan alleen maar drukker bij
+    # Postgres. Komt er hardware bij, dan is dit het getal dat meeschuift --
+    # daarom staat het in de omgeving en niet in de code.
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     socket_options: maybe_ipv6
 

@@ -69,6 +69,7 @@ defmodule ControlPlaneWeb.SecurityController do
     Expires: #{vervalt}T00:00:00.000Z
     Preferred-Languages: nl, en
     Canonical: https://app.bunkhosting.nl/.well-known/security.txt
+    Canonical: https://bunkhosting.nl/.well-known/security.txt
     """
 
     conn

@@ -113,7 +113,7 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		subnet := assignedSubnet(state, cfg.VpsNetwork)
-		go consumeCommands(ctx, logger, prov, cp, cmds, subnet)
+		go consumeCommands(ctx, logger, prov, cp, cmds, subnet, cfg.ParallelCommands())
 		logger.Info("command consumer started")
 
 		// Inbound access for this node's customers. Its own loop rather than a
@@ -344,7 +344,7 @@ func capacityReason(err error) string {
 // consumeCommands drains the command channel until it is closed (on context
 // cancellation or a fatal poll error) and dispatches each command. A panic or
 // failure handling one command must not stop the loop.
-func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command, assigned *net.IPNet) {
+func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Provider, cp *transport.Client, cmds <-chan transport.Command, assigned *net.IPNet, parallel int) {
 	// Replay protection. A MITM on a cleartext channel (or a buggy CP) could
 	// re-deliver a previously-seen command — e.g. replay a delete{vm_id} after
 	// that VMID has been reassigned to another tenant. Each Command.ID is executed
@@ -354,6 +354,19 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 	// commandMemos.
 	const maxSeen = 1024
 	memos := newCommandMemos(maxSeen)
+
+	// Commando's voor verschillende VPS'en lopen naast elkaar, voor dezelfde VPS
+	// op volgorde. Zie werkers.go voor waarom dat onderscheid nodig is.
+	banen := nieuweWerkers(parallel, func(cmd transport.Command) {
+		handleCommand(ctx, logger, prov, cp, memos, cmd)
+	})
+	// Bij het stoppen eerst het lopende werk laten aflopen. Het kost niets: de
+	// context is dan al afgelopen, dus elk commando dat nog draait valt binnen
+	// een tel om en meldt dat het mislukt is. Dat laatste is precies de winst --
+	// een commando dat stilzwijgend verdwijnt laat het control plane wachten tot
+	// de herleverings-TTL.
+	defer banen.wacht()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -386,7 +399,7 @@ func consumeCommands(ctx context.Context, logger *slog.Logger, prov provider.Pro
 				continue
 			}
 
-			handleCommand(ctx, logger, prov, cp, memos, cmd)
+			banen.stuur(cmd)
 		}
 	}
 }

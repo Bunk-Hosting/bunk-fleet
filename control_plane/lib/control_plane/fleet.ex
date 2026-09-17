@@ -528,8 +528,10 @@ defmodule ControlPlane.Fleet do
         where: v.owner_id == ^owner_id and v.status != :deleted,
         order_by: [desc: v.inserted_at],
         # :node and :port_forwards are what turn an unroutable 10.x address into
-        # the endpoint a customer can actually type into ssh.
-        preload: [:region, :node, :port_forwards]
+        # the endpoint a customer can actually type into ssh. :package draagt de
+        # prijs die het paneel toont; die hoort bij de machine en niet bij een
+        # catalogus die de browser toevallig nog in het geheugen heeft.
+        preload: [:region, :node, :port_forwards, :package]
     )
   end
 
@@ -544,7 +546,7 @@ defmodule ControlPlane.Fleet do
     Repo.one(
       from v in Vps,
         where: v.id == ^id and v.owner_id == ^owner_id,
-        preload: [:region, :node, :port_forwards]
+        preload: [:region, :node, :port_forwards, :package]
     )
   end
 

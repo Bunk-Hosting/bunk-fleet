@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import axios from "axios";
-import { authApi, ensureCsrfCookie, parseApiError, toPublicKeyOptions, type PasskeyChallenge } from "@/lib/api";
+import { authApi, parseApiError, toPublicKeyOptions, type PasskeyChallenge } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
 type Step = "credentials" | "totp" | "verify_required";
@@ -43,9 +43,6 @@ function LoginForm() {
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  React.useEffect(() => {
-    ensureCsrfCookie();
-  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -216,9 +213,14 @@ function LoginForm() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Wachtwoord</Label>
+                    {/* min-h-11 = 44px raakhoogte. Deze link was 20px hoog, en
+                        dat is onder de ondergrens van WCAG 2.2 (2.5.8). Het is
+                        ook precies de link die iemand met één duim aantikt op
+                        het moment dat hij al geirriteerd is. De tekst blijft
+                        even groot; alleen het gebied eromheen groeit. */}
                     <Link
                       href="/forgot-password"
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="inline-flex min-h-11 items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                       Wachtwoord vergeten?
                     </Link>

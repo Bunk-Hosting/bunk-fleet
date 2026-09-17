@@ -19,6 +19,11 @@ on:
   # als de CI zelf stuk zit.
   workflow_dispatch:
 
+# Uitrollen leest de repo en praat verder alleen met de machine zelf; naar
+# GitHub hoeft niets terug geschreven te worden.
+permissions:
+  contents: read
+
 # Twee uitrollen tegelijk hebben elkaar hier eerder de das omgedaan: allebei
 # bouwden ze hetzelfde image en de tweede herstartte de control plane terwijl de
 # eerste nog migreerde. Eén tegelijk, en een nieuwe wacht netjes.
@@ -31,7 +36,13 @@ jobs:
     # De self-hosted runner draait op de machine waar de stack staat. Dat is
     # bewust: de secrets liggen daar in .env.prod en hoeven zo nooit in GitHub.
     runs-on: [self-hosted, bunk-fleet]
-    timeout-minutes: 45
+    # Ruim, want een afgekapte uitrol is erger dan een trage. Deze stond op 45
+    # en werd een keer geraakt: de control plane stond toen al uitgerold en de
+    # frontend niet, en dat verschil merk je pas als er wél een wijziging in
+    # allebei zit. De bouw draait op dezelfde twee cores als productie, dus
+    # onder belasting duurt hij veel langer dan de tien minuten die het normaal
+    # is.
+    timeout-minutes: 90
     # Een workflow_run vuurt ook af als de CI faalde of is afgebroken; alleen
     # "success" mag door.
     if: >-

@@ -6,7 +6,7 @@ import { Turnstile } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
+import { authApi, parseApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
 function RegisterForm() {
@@ -22,9 +22,6 @@ function RegisterForm() {
 
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  React.useEffect(() => {
-    ensureCsrfCookie();
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -142,9 +139,19 @@ function RegisterForm() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    /* De server eist twaalf tekens. Dat stond hier nergens, dus
+                       je vulde alles in, loste een captcha op, drukte op
+                       verzenden -- en kreeg dán pas te horen dat het te kort
+                       was, inclusief een nieuwe captcha-ronde. */
+                    minLength={12}
+                    aria-describedby="password-eis"
                     disabled={loading}
                     className="bg-background/60 border-border/60 focus:border-primary/60"
                   />
+                  <p id="password-eis" className="text-xs text-muted-foreground">
+                    Minimaal 12 tekens. Een zin die je onthoudt is veiliger dan een
+                    kort wachtwoord met tekens erdoor.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password_confirm">Wachtwoord bevestigen</Label>

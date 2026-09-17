@@ -35,6 +35,13 @@ defmodule ControlPlaneWeb.CommandController do
         %{
           "id" => command.id,
           "kind" => Atom.to_string(command.kind),
+          # De VPS waar dit commando over gaat, of nil bij een commando over de
+          # node zelf (inventory, update). De agent gebruikt het alleen om werk
+          # te verdelen: commando's voor verschillende VPS'en mogen naast
+          # elkaar, commando's voor dezelfde VPS moeten op volgorde. Het staat
+          # hier en niet in de payload omdat elke soort payload anders is en
+          # er dan zeven plekken zijn om te vergeten.
+          "vps_id" => command.vps_id,
           "payload" => command.payload
         }
       end)

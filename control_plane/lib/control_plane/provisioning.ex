@@ -243,8 +243,16 @@ defmodule ControlPlane.Provisioning do
             )
       )
 
+    # De mislukkingen van alle kandidaten in één query. Stond dit per kandidaat,
+    # dan deed de reconciler elke dertig seconden een query per VPS die op
+    # verwijderen wacht -- en dat is precies de situatie waarin er meer dan een
+    # paar zijn: een node die weg is, met alles erop in :deleting.
+    mislukkingen = mislukte_deletes(Enum.map(candidates, & &1.id))
+
     candidates
-    |> Enum.filter(&due_for_delete_retry?(&1, now, grace_seconds, max_backoff_seconds))
+    |> Enum.filter(
+      &due_for_delete_retry?(&1, mislukkingen, now, grace_seconds, max_backoff_seconds)
+    )
     |> Enum.map(fn vps ->
       Logger.error("retrying the failed teardown of vps #{vps.id}")
       dispatch_delete(vps)
@@ -252,26 +260,34 @@ defmodule ControlPlane.Provisioning do
     |> length()
   end
 
-  defp due_for_delete_retry?(%Vps{} = vps, now, grace_seconds, max_backoff_seconds) do
-    failures =
-      Repo.all(
-        from c in Command,
-          where: c.vps_id == ^vps.id and c.kind == :delete and c.status == :failed,
-          order_by: [desc: c.updated_at],
-          select: c.updated_at
-      )
+  # Per VPS: hoeveel delete-commando's er mislukt zijn en wanneer de laatste dat
+  # deed. Meer heeft de afweging hieronder niet nodig.
+  defp mislukte_deletes([]), do: %{}
 
-    case failures do
-      [] ->
+  defp mislukte_deletes(vps_ids) do
+    Repo.all(
+      from c in Command,
+        where: c.vps_id in ^vps_ids and c.kind == :delete and c.status == :failed,
+        group_by: c.vps_id,
+        select: {c.vps_id, count(c.id), type(max(c.updated_at), :utc_datetime)}
+    )
+    |> Map.new(fn {vps_id, aantal, laatste} -> {vps_id, {aantal, laatste}} end)
+  end
+
+  defp due_for_delete_retry?(%Vps{} = vps, mislukkingen, now, grace_seconds, max_backoff_seconds) do
+    case Map.get(mislukkingen, vps.id) do
+      nil ->
         false
 
-      [last | _] ->
+      {aantal, laatste} ->
         # 5 min, 10, 20, 40… so a genuinely broken teardown stops churning while
-        # still being retried long after a node comes back.
+        # still being retried long after a node comes back. De exponent wordt
+        # afgetopt voordat hij wordt uitgerekend: de uitkomst gaat toch door
+        # `min/2`, en 2^300 uitrekenen om hem daarna weg te gooien is zonde.
         backoff =
-          min(grace_seconds * Integer.pow(2, length(failures) - 1), max_backoff_seconds)
+          min(grace_seconds * Integer.pow(2, min(aantal - 1, 32)), max_backoff_seconds)
 
-        DateTime.diff(now, last, :second) >= backoff
+        DateTime.diff(now, laatste, :second) >= backoff
     end
   end
 
@@ -858,13 +874,6 @@ defmodule ControlPlane.Provisioning do
     }
   end
 
-  # The hypervisor guest name the agent creates AND keys idempotency on
-  # (FindByName). It MUST be globally unique per VPS: the customer-chosen display
-  # name is not (two tenants can both name a VPS "web1" on the same node, and the
-  # agent would then adopt the first tenant's live VM for the second — cross-tenant
-  # takeover). We derive a DNS-safe slug of the display name plus a short slice of
-  # the VPS's UUID, so the name stays readable but is unique and deterministic
-  # across command re-deliveries.
   # De naam waaronder een gast op de hypervisor komt te staan.
   #
   # De agent herkent hieraan of hij een machine al heeft aangemaakt, dus het
@@ -872,6 +881,11 @@ defmodule ControlPlane.Provisioning do
   # naam in, dan nam de tweede klant met dezelfde naam op een node de draaiende
   # VM van de eerste over. `{id}` is daarom verplicht in een patroon, en zonder
   # patroon is het `{naam}-{id}`.
+  #
+  # Het is een slug van de weergavenaam plus een kort stuk van de UUID: leesbaar
+  # voor een mens, uniek per VPS, en bij elke herhaling van hetzelfde commando
+  # dezelfde naam -- dat laatste is precies wat de agent nodig heeft om een
+  # opnieuw afgeleverd provision-commando als "die heb ik al" te herkennen.
   defp guest_name(%Vps{} = vps, %{guest_name_pattern: patroon} = node) when is_binary(patroon) do
     kort = short_vps_id(vps)
 

@@ -27,6 +27,29 @@ defmodule ControlPlaneWeb.Plugs.Bearer do
   def cookie_name, do: @cookie
 
   @doc """
+  De eigenschappen waarmee `bunk_session` gezet én gewist wordt.
+
+  Ze staan hier op één plek omdat ze op drie plekken gebruikt worden (inloggen,
+  uitloggen en de 401 hieronder) en daar uit elkaar liepen: het wissen gebeurde
+  met alleen een pad, zonder Secure en zonder SameSite. Praktisch gevolg had dat
+  niet -- wissen matcht op naam, domein en pad -- maar het is precies het soort
+  verschil waarvan de volgende lezer moet uitzoeken of het ergens anders wél
+  uitmaakt.
+  """
+  def cookie_options do
+    [http_only: true, secure: https?(), same_site: "Lax", path: "/"]
+  end
+
+  # Tijdens ontwikkeling draait dit op http en zou een Secure-cookie nooit
+  # aankomen. In productie staat er https en dan hoort hij er wel op.
+  defp https? do
+    case Application.get_env(:control_plane, :public_url) do
+      "https://" <> _ -> true
+      _ -> false
+    end
+  end
+
+  @doc """
   The session token from the `Authorization: Bearer` header (API clients + agents)
   or, failing that, the HttpOnly `bunk_session` cookie (browser flow). Returns
   `{:ok, token}` or `:error`.
@@ -61,7 +84,7 @@ defmodule ControlPlaneWeb.Plugs.Bearer do
   """
   def unauthorized(conn) do
     conn
-    |> delete_resp_cookie(@cookie, path: "/")
+    |> delete_resp_cookie(@cookie, cookie_options())
     |> put_status(:unauthorized)
     |> json(%{error: "unauthorized"})
     |> halt()

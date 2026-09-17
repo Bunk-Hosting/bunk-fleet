@@ -107,8 +107,16 @@ draait() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "tru
 
 # 1. De nieuwe frontend ernaast.
 docker rm -f "$NIEUW" >/dev/null 2>&1 || true
+# Gewicht ten opzichte van alles wat er verder op deze machine draait. Het is
+# geen limiet en geen reservering: het telt alleen als er om CPU gevochten
+# wordt, en dan wint productie. Dat is hier nodig omdat de CI-runner op
+# DEZELFDE twee cores bouwt. Tijdens zo'n build liep de loadaverage van 2 naar
+# 34, antwoordde /healthz een derde van de keren met 504 (nginx kapt af op 5s,
+# Ecto op 2), en was de machine acht minuten lang niet eens te bevragen. Een
+# klant hoort niets te merken van het feit dat wij aan het uitrollen zijn.
 docker run -d --name "$NIEUW" --network "$NET" --network-alias "$ALIAS" \
   --restart unless-stopped \
+  --cpu-shares 4096 \
   --log-opt max-size=50m --log-opt max-file=5 \
   -e BUNK_API_URL=http://bf-prod-cp:4000 \
   bunk-frontend:latest >/dev/null
@@ -149,6 +157,7 @@ if draait bunk-edge && [ "$MOUNT" = "$CONF" ]; then
     bewaar_log bunk-edge
     docker rm -f bunk-edge >/dev/null 2>&1 || true
     docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
+      --cpu-shares 4096 \
       --log-opt max-size=50m --log-opt max-file=5 \
       -p 3001:80 \
       -v "$CONF":/etc/nginx/conf.d/default.conf:ro \
@@ -166,6 +175,7 @@ else
   bewaar_log bunk-edge
   docker rm -f bunk-edge >/dev/null 2>&1 || true
   docker run -d --name bunk-edge --network "$NET" --restart unless-stopped \
+    --cpu-shares 4096 \
     --log-opt max-size=50m --log-opt max-file=5 \
     -p 3001:80 \
     -v "$CONF":/etc/nginx/conf.d/default.conf:ro \

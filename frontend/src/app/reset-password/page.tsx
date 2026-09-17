@@ -7,7 +7,7 @@ import { Loader2, CheckCircle, XCircle, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authApi, ensureCsrfCookie, parseApiError } from "@/lib/api";
+import { authApi, parseApiError } from "@/lib/api";
 
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
@@ -26,9 +26,6 @@ function ResetPasswordContent() {
     token ? "" : "Geen resettoken gevonden in de link. Vraag een nieuwe resetlink aan.",
   );
 
-  React.useEffect(() => {
-    ensureCsrfCookie();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -225,7 +225,7 @@ defmodule ControlPlaneWeb.AuthController do
     end
 
     conn
-    |> delete_resp_cookie(Bearer.cookie_name(), path: "/")
+    |> delete_resp_cookie(Bearer.cookie_name(), Bearer.cookie_options())
     |> send_resp(:no_content, "")
   end
 
@@ -283,26 +283,12 @@ defmodule ControlPlaneWeb.AuthController do
   # JS reach (an XSS foothold can't read it). Same-site Lax + Secure (over https)
   # for CSRF/transport safety. API clients keep using the returned bearer token.
   defp put_session_cookie(conn, token) do
-    put_resp_cookie(conn, Bearer.cookie_name(), encode_token(token),
-      http_only: true,
-      secure: secure_request?(conn),
-      same_site: "Lax",
-      max_age: @session_cookie_max_age,
-      path: "/"
+    put_resp_cookie(
+      conn,
+      Bearer.cookie_name(),
+      encode_token(token),
+      Keyword.put(Bearer.cookie_options(), :max_age, @session_cookie_max_age)
     )
-  end
-
-  # Whether to mark the session cookie Secure. Derive it from the configured
-  # public origin, NOT X-Forwarded-Proto: the Cloudflare tunnel reaches the edge
-  # over http and the edge sets X-Forwarded-Proto to that internal http scheme, so
-  # trusting the header would ship a NON-Secure session cookie in production even
-  # though the browser<->Cloudflare leg is https. When PUBLIC_URL is https the
-  # cookie is always Secure; in dev/test (http/unset) it is not.
-  defp secure_request?(_conn) do
-    case Application.get_env(:control_plane, :public_url) do
-      "https://" <> _ -> true
-      _ -> false
-    end
   end
 
   defp user_json(user) do

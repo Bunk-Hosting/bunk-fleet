@@ -35,10 +35,6 @@ function resetClientState(): void {
   packagesPromise = null;
 }
 
-// Kept for API compatibility with pages that call it; bunk-fleet has no CSRF
-// cookie to fetch (auth is a same-site HttpOnly cookie).
-export async function ensureCsrfCookie(): Promise<void> {}
-
 // Known bunk-fleet error codes -> friendly Dutch messages. Unknown codes fall
 // back to the caller-supplied contextual message (never a raw code in the UI).
 // Machine codes the control plane sends in `{ error: "..." }`, translated for the
@@ -205,21 +201,21 @@ async function ensurePackages(): Promise<VpsPackage[]> {
   return packagesPromise;
 }
 
-function packageForSpecs(vcpu: number, ramMb: number, diskGb: number): VpsPackage {
-  // Exact match on all three dimensions — rounding RAM or ignoring disk could
-  // surface the wrong package (and wrong price) for non-catalog specs.
-  const match = packageCache.find(
-    (p) => p.cpu_cores === vcpu && p.ram_gb * 1024 === ramMb && p.disk_gb === diskGb,
-  );
-  if (match) return match;
-
-  // Geen match in de catalogus. Dit is de terugval voor een antwoord zonder
-  // `package` (een oudere server); normaal stuurt de server het pakket mee.
-  //
-  // De prijs is hier bewust leeg en niet "0.00". Een VPS waarvan het pakket uit
-  // het aanbod is gehaald is niet gratis, en dat op het scherm zetten is geen
-  // nette terugval maar een onwaarheid over iemands rekening. Het scherm toont
-  // hierop "onbekend".
+// Wat er van een VPS te zeggen valt als de server geen pakket meestuurt: de
+// specs van de machine zelf, en geen prijs.
+//
+// Er wordt hier met opzet NIET in de catalogus gezocht naar een pakket met
+// dezelfde specs. Dat leek een nette terugval en is het niet: dan staat de
+// prijsregel op twee plekken, en de tweede plek kent alleen wat vandaag te koop
+// is. Zet een pakket uit het aanbod, en elke bestaande klant op dat pakket ziet
+// ineens de prijs van een ánder pakket dat toevallig even groot is. Wat iemand
+// betaalt is een feit van de server; weet de server het niet, dan weet dit
+// scherm het ook niet.
+//
+// De prijs is daarom leeg en niet "0.00". Een VPS zonder pakket is niet gratis,
+// en dat op het scherm zetten is geen nette terugval maar een onwaarheid over
+// iemands rekening. Het scherm toont hierop "onbekend".
+function pakketUitSpecs(vcpu: number, ramMb: number, diskGb: number): VpsPackage {
   return {
     id: 0,
     name: "Onbekend pakket",
@@ -270,7 +266,7 @@ function transformVps(v: BunkVps): Vps {
     // machine.
     package: v.package
       ? { ...v.package, description: "" }
-      : packageForSpecs(v.vcpu, v.ram_mb, v.disk_gb),
+      : pakketUitSpecs(v.vcpu, v.ram_mb, v.disk_gb),
     os: "ubuntu-22.04",
     status: vpsStatusFromApi(v.status),
     ip_address: v.ip_address,
