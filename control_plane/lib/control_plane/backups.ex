@@ -103,6 +103,50 @@ defmodule ControlPlane.Backups do
   end
 
   @doc """
+  Start een back-up omdat de klant erom vraagt, buiten het schema om.
+
+  Dit is het moment vóór iets engs: een pakketupgrade, een configuratie die hij
+  zelf niet vertrouwt. Wachten tot vannacht is dan geen antwoord.
+
+  Wat wél geweigerd wordt, en waarom:
+
+    * een VPS die niet draait of nog niet is uitgerold -- er is niets om te
+      archiveren;
+    * een node die niet bereikbaar is -- het commando zou blijven liggen en de
+      klant zou denken dat er een back-up was;
+    * een back-up die al loopt voor deze VPS -- een tweede `vzdump` van dezelfde
+      gast vecht met de eerste om de schijf van de node.
+
+  Het schema kijkt daarnaast naar `interval_seconds`; die grens geldt hier
+  bewust niet. Een handmatige back-up is een uitzondering en de klant weet zelf
+  waarom hij hem nu wil.
+  """
+  @spec start_on_demand(Vps.t()) ::
+          {:ok, VpsBackup.t()}
+          | {:error, :not_provisioned | :already_running | :node_unreachable | term()}
+  def start_on_demand(%Vps{} = vps) do
+    vps = Repo.preload(vps, :node)
+
+    cond do
+      vps.status != :active or is_nil(vps.provider_vm_id) or is_nil(vps.node_id) ->
+        {:error, :not_provisioned}
+
+      is_nil(vps.node) or vps.node.status not in [:online, :draining] ->
+        {:error, :node_unreachable}
+
+      loopt_er_al_een?(vps) ->
+        {:error, :already_running}
+
+      true ->
+        start_backup(vps)
+    end
+  end
+
+  defp loopt_er_al_een?(%Vps{id: id}) do
+    Repo.exists?(from b in VpsBackup, where: b.vps_id == ^id and b.status == :running)
+  end
+
+  @doc """
   Records what the node reported, and prunes anything past the retention count.
 
   A failure is written down rather than dropped: "the last three nightly backups

@@ -50,6 +50,11 @@ function BeveiligingContent() {
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
+  const [huidigWachtwoord, setHuidigWachtwoord] = React.useState("");
+  const [nieuwWachtwoord, setNieuwWachtwoord] = React.useState("");
+  const [herhaal, setHerhaal] = React.useState("");
+  const [pwBezig, setPwBezig] = React.useState(false);
+
   // Passkeys staan los van TOTP: je kunt er meerdere hebben en ze los kwijtraken,
   // dus ze worden als lijst beheerd in plaats van als één aan/uit-schakelaar.
   const [passkeys, setPasskeys] = React.useState<Passkey[] | null>(null);
@@ -185,6 +190,36 @@ function BeveiligingContent() {
     }
   }
 
+  // Wachtwoord wijzigen. Het huidige moet erbij: een geldige sessie is geen
+  // bewijs dat de eigenaar achter het scherm zit. Wie dit doet omdat hij
+  // vermoedt dat iemand meekijkt, blijft zelf ingelogd -- de meekijker niet.
+  async function wijzigWachtwoord(e: React.FormEvent) {
+    e.preventDefault();
+    if (nieuwWachtwoord !== herhaal) {
+      toast({ title: "De twee nieuwe wachtwoorden zijn niet gelijk", variant: "destructive" });
+      return;
+    }
+    setPwBezig(true);
+    try {
+      await authApi.changePassword(huidigWachtwoord, nieuwWachtwoord);
+      setHuidigWachtwoord("");
+      setNieuwWachtwoord("");
+      setHerhaal("");
+      toast({
+        title: "Wachtwoord gewijzigd",
+        description: "Je blijft hier ingelogd; alle andere sessies zijn uitgelogd.",
+      });
+    } catch (err) {
+      toast({
+        title: "Niet gewijzigd",
+        description: parseApiError(err, "Klopt je huidige wachtwoord?"),
+        variant: "destructive",
+      });
+    } finally {
+      setPwBezig(false);
+    }
+  }
+
   function copySecret() {
     navigator.clipboard.writeText(secret).catch(() => undefined);
     setCopied(true);
@@ -199,6 +234,60 @@ function BeveiligingContent() {
         <h1 className="text-2xl font-display font-bold">Beveiliging</h1>
         <p className="text-muted-foreground mt-1">Kies hoe je inlogt: een authenticator-app, een passkey, of allebei.</p>
       </div>
+
+      {/* Wachtwoord wijzigen */}
+      <form onSubmit={wijzigWachtwoord} className="card-gradient-border rounded-xl p-6 bg-card space-y-4">
+        <div className="flex items-center gap-3">
+          <KeyRound className="h-8 w-8 text-muted-foreground shrink-0" />
+          <div>
+            <p className="font-semibold">Wachtwoord</p>
+            <p className="text-sm text-muted-foreground">
+              Je huidige wachtwoord hoort erbij: een open sessie is geen bewijs dat jij het bent.
+              Na het wijzigen worden al je andere sessies uitgelogd, deze niet.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1">
+            <Label htmlFor="huidig">Huidig wachtwoord</Label>
+            <Input
+              id="huidig"
+              type="password"
+              autoComplete="current-password"
+              value={huidigWachtwoord}
+              onChange={(e) => setHuidigWachtwoord(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="nieuw">Nieuw wachtwoord</Label>
+            <Input
+              id="nieuw"
+              type="password"
+              autoComplete="new-password"
+              value={nieuwWachtwoord}
+              onChange={(e) => setNieuwWachtwoord(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="herhaal">Nogmaals</Label>
+            <Input
+              id="herhaal"
+              type="password"
+              autoComplete="new-password"
+              value={herhaal}
+              onChange={(e) => setHerhaal(e.target.value)}
+            />
+          </div>
+        </div>
+        <Button
+          type="submit"
+          disabled={pwBezig || !huidigWachtwoord || !nieuwWachtwoord || !herhaal}
+          className="w-full sm:w-auto"
+        >
+          {pwBezig && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Wachtwoord wijzigen
+        </Button>
+      </form>
 
       {/* MFA-prompt banner — alleen zichtbaar na eerste inlog zonder TOTP */}
       {isMfaPrompt && !user.totp_enabled && (

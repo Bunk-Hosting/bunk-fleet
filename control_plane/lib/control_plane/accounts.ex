@@ -347,6 +347,52 @@ defmodule ControlPlane.Accounts do
   end
 
   @doc """
+  Wijzigt het wachtwoord van iemand die al is ingelogd.
+
+  Het huidige wachtwoord moet er expliciet bij. Een geldige sessie is hier niet
+  genoeg bewijs: wie een sessie in handen krijgt -- een meegelezen cookie, een
+  onbeheerde laptop -- mag daarmee niet het account overnemen door het
+  wachtwoord te wijzigen. Dit is precies de handeling waarvoor je opnieuw wilt
+  weten dat het de eigenaar zelf is.
+
+  Alle andere sessies vallen om, die van de aanvrager blijft staan. Wie zijn
+  wachtwoord wijzigt omdat hij vermoedt dat iemand meekijkt, wordt daar niet
+  voor uitgelogd -- maar de meekijker wel.
+  """
+  @spec change_user_password(User.t(), String.t(), map(), binary() | nil) ::
+          {:ok, User.t()} | {:error, :invalid_current_password | Ecto.Changeset.t()}
+  def change_user_password(%User{} = user, huidig, attrs, behoud_token \\ nil) do
+    if User.valid_password?(user, huidig) do
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
+      |> Ecto.Multi.delete_all(:tokens, andere_sessies(user, behoud_token))
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{user: bijgewerkt}} -> {:ok, bijgewerkt}
+        {:error, :user, changeset, _changes} -> {:error, changeset}
+      end
+    else
+      # Even duur als het goede pad, zodat het antwoord niets verraadt over het
+      # wachtwoord dat er stond.
+      {:error, :invalid_current_password}
+    end
+  end
+
+  defp andere_sessies(%User{} = user, nil) do
+    UserToken.by_user_and_contexts_query(user, ["session"])
+  end
+
+  # Tokens staan gehasht in de database; het token uit het verzoek is de ruwe
+  # waarde. Zonder die hash matcht de vergelijking nooit en valt ook de eigen
+  # sessie om -- wat werkt als "overal uitloggen" en niet als wat hier staat.
+  defp andere_sessies(%User{} = user, behoud_token) do
+    hash = UserToken.hashed(behoud_token)
+
+    from t in UserToken.by_user_and_contexts_query(user, ["session"]),
+      where: t.token != ^hash
+  end
+
+  @doc """
   Sets a user's `role` (`:user`/`:admin`).
 
   This is the authorized, server-side role-elevation path deliberately kept out of

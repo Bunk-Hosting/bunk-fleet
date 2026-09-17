@@ -8,7 +8,9 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
   The token is transported as URL-safe Base64 (no padding) and decoded here before
   lookup via `ControlPlane.Accounts.get_user_by_session_token/1`. On success the
   authenticated `ControlPlane.Accounts.User` is assigned to
-  `conn.assigns.current_user`. On any failure (missing/malformed token, undecodable
+  `conn.assigns.current_user`, en het gedecodeerde token zelf als
+  `conn.assigns.current_session_token` -- dat laatste heeft alleen een handeling
+  nodig die andere sessies opruimt maar de eigen wil laten staan. On any failure (missing/malformed token, undecodable
   or unknown/expired token) the connection is halted with a `401` JSON body
   `{"error": "unauthorized"}`.
   """
@@ -28,7 +30,9 @@ defmodule ControlPlaneWeb.Plugs.ApiAuth do
     with {:ok, encoded} <- Bearer.session_token(conn),
          {:ok, token} <- Base.url_decode64(encoded, padding: false),
          %Accounts.User{} = user <- Accounts.get_user_by_session_token(token) do
-      assign(conn, :current_user, user)
+      conn
+      |> assign(:current_user, user)
+      |> assign(:current_session_token, token)
     else
       _ -> Bearer.unauthorized(conn)
     end

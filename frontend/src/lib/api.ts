@@ -86,6 +86,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   vps_not_active: "Dit kan alleen bij een draaiende VPS.",
   console_unavailable: "De console is nu niet beschikbaar voor deze VPS.",
   backup_not_restorable: "Deze back-up kan niet teruggezet worden.",
+  backup_already_running: "Er loopt al een back-up van deze VPS.",
+  node_unreachable: "De machine waarop deze VPS draait is nu niet bereikbaar.",
 
   // Betalen
   invalid_amount: "Dit bedrag kan niet.",
@@ -359,6 +361,17 @@ export function toPublicKeyOptions(pk: Record<string, unknown>): Record<string, 
 }
 
 export const authApi = {
+  /**
+   * Wijzigt het wachtwoord van wie is ingelogd.
+   *
+   * Het huidige wachtwoord moet erbij: een geldige sessie is geen bewijs dat de
+   * eigenaar achter het scherm zit. Na afloop vallen alle andere sessies om en
+   * blijft deze staan -- wie dit doet omdat hij vermoedt dat iemand meekijkt,
+   * hoort daar niet zelf voor uitgelogd te worden.
+   */
+  changePassword: (currentPassword: string, password: string) =>
+    api.patch("/auth/password", { current_password: currentPassword, password }),
+
   register: async (name: string, email: string, password: string, _passwordConfirm: string, captcha?: string) => {
     // The control plane sets the HttpOnly session cookie on this response; there
     // is no token to store client-side.
@@ -602,6 +615,12 @@ export const vpsApi = {
   /** A VPS's restore points, newest first. Failures are listed too — they are news. */
   backups: async (id: string): Promise<VpsBackup[]> =>
     (await api.get<{ backups: VpsBackup[] }>(`/vpses/${id}/backups`)).data.backups,
+  /**
+   * Start nu een back-up, buiten het nachtelijke schema om. Het moment waarop je
+   * er een wilt is vlak vóór iets engs, en dan is "vannacht" geen antwoord.
+   */
+  backupNow: (id: string) => api.post(`/vpses/${id}/backups`),
+
   /**
    * Roll a VPS back to one of its restore points. Destructive: everything
    * written since that backup is gone.

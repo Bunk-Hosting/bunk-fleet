@@ -54,6 +54,17 @@ defmodule ControlPlane.Accounts.UserToken do
   end
 
   @doc """
+  De vorm waarin een token in de database staat: de hash, nooit het token zelf.
+
+  Wie een rij wil vergelijken met een token uit een verzoek moet dit gebruiken.
+  Het algoritme staat op één plek omdat een tweede `:crypto.hash(:sha256, ...)`
+  ergens anders precies is hoe zoiets uit elkaar groeit -- en een vergelijking
+  die stilletjes nooit matcht valt niet op: hij doet gewoon te veel.
+  """
+  @spec hashed(binary()) :: binary()
+  def hashed(token), do: :crypto.hash(@hash_algorithm, token)
+
+  @doc """
   Builds a session token and its (unpersisted) struct.
 
   Returns `{raw_token, user_token}` where `raw_token` is the value handed to the

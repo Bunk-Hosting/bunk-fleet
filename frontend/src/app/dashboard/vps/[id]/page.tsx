@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
-import { vpsApi } from "@/lib/api";
+import { vpsApi, parseApiError } from "@/lib/api";
 import type { VpsBackup } from "@/lib/api";
 import { formatDate, getOsLabel } from "@/lib/utils";
 import type { Vps, VpsCredentials, VpsStatus } from "@/lib/types";
@@ -57,6 +57,7 @@ export default function VpsDetailPage() {
   const [vps, setVps] = useState<Vps | null>(null);
   const [credentials, setCredentials] = useState<VpsCredentials | null>(null);
   const [backups, setBackups] = useState<VpsBackup[]>([]);
+  const [backupBezig, setBackupBezig] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [credentialsLoading, setCredentialsLoading] = useState(false);
@@ -97,6 +98,28 @@ export default function VpsDetailPage() {
       // should not bury the rest of it under an error.
     }
   }, [id]);
+
+  // Zelf een back-up starten. Het schema draait 's nachts; het moment waarop je
+  // er een wilt is vlak vóór iets engs dat je nu gaat doen.
+  const backupNu = async () => {
+    setBackupBezig(true);
+    try {
+      await vpsApi.backupNow(id);
+      toast({
+        title: "Back-up gestart",
+        description: "Hij draait op de achtergrond; hieronder zie je wanneer hij klaar is.",
+      });
+      await fetchBackups();
+    } catch (e) {
+      toast({
+        title: "Niet gestart",
+        description: parseApiError(e, "Kon de back-up niet starten."),
+        variant: "destructive",
+      });
+    } finally {
+      setBackupBezig(false);
+    }
+  };
 
   const restoreBackup = async (backup: VpsBackup) => {
     setRestoring(backup.id);
@@ -562,13 +585,24 @@ export default function VpsDetailPage() {
               Elke nacht wordt een kopie van je schijf gemaakt; de laatste twee
               bewaren we. Ze staan op dezelfde machine als je VPS — genoeg om
               terug te gaan als je zelf iets sloopt, niet om een kapotte machine
-              te overleven.
+              te overleven. Ga je iets doen wat mis kan gaan, maak er dan nu een.
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mb-4 gap-2"
+              disabled={backupBezig || vps?.status !== "ACTIVE"}
+              onClick={backupNu}
+            >
+              {backupBezig ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
+              Nu een back-up maken
+            </Button>
+
             {backups.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Nog geen back-up. De eerste volgt vannacht.
+                Nog geen back-up. De eerste volgt vannacht, of maak er nu zelf een.
               </p>
             ) : (
               <div className="space-y-2">

@@ -216,6 +216,7 @@ defmodule ControlPlaneWeb.Router do
     get "/auth/me", AuthController, :me
     delete "/auth/logout", AuthController, :logout
     delete "/auth/logout/all", AuthController, :logout_all
+    patch "/auth/password", AuthController, :change_password
 
     # Two-factor (TOTP) — bunk-fleet's own Accounts feature, exposed for the UI.
     get "/auth/totp/setup", AuthController, :totp_setup
@@ -252,6 +253,7 @@ defmodule ControlPlaneWeb.Router do
     post "/vpses/:id/stop", VpsController, :stop
     post "/vpses/:id/console-ticket", ConsoleController, :create_ticket
     get "/vpses/:id/backups", VpsController, :backups
+    post "/vpses/:id/backups", VpsController, :backup_now
     post "/vpses/:id/backups/:backup_id/restore", VpsController, :restore
 
     # The caller's own prepaid wallet: balance, ledger movements, top-ups.

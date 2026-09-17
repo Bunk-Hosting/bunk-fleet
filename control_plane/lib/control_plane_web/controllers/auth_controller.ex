@@ -230,6 +230,43 @@ defmodule ControlPlaneWeb.AuthController do
   end
 
   @doc """
+  Wijzigt het wachtwoord van de ingelogde gebruiker.
+
+  Het huidige wachtwoord moet erbij. Een geldige sessie is hier niet genoeg
+  bewijs: wie een sessie in handen krijgt mag daarmee niet het account overnemen
+  door het wachtwoord te wijzigen.
+
+  Alle andere sessies vallen om; deze blijft staan. Wie zijn wachtwoord wijzigt
+  omdat hij vermoedt dat iemand meekijkt, hoort daar niet zelf voor uitgelogd te
+  worden -- de meekijker wel.
+  """
+  def change_password(conn, %{"current_password" => huidig, "password" => nieuw})
+      when is_binary(huidig) and is_binary(nieuw) do
+    user = conn.assigns.current_user
+
+    case Accounts.change_user_password(
+           user,
+           huidig,
+           %{"password" => nieuw},
+           conn.assigns[:current_session_token]
+         ) do
+      {:ok, _bijgewerkt} ->
+        json(conn, %{detail: "ok"})
+
+      {:error, :invalid_current_password} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_credentials"})
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "invalid_password", errors: changeset_errors(changeset)})
+    end
+  end
+
+  def change_password(conn, _params),
+    do: conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_password"})
+
+  @doc """
   Revokes every session of the authenticated user ("log out everywhere"), giving a
   kill switch for a leaked token without DB surgery.
   """

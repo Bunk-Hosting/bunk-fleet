@@ -163,6 +163,26 @@ defmodule ControlPlaneWeb.VpsController do
   end
 
   @doc """
+  Start nu een back-up van een eigen VPS, buiten het nachtelijke schema om.
+
+  Het moment vóór iets engs -- een upgrade, een configuratie die je zelf niet
+  vertrouwt -- is precies wanneer je er een wilt, en dan is "vannacht" geen
+  antwoord.
+  """
+  def backup_now(conn, %{"id" => id}) do
+    with {:ok, uuid} <- valid_id(id),
+         %Vps{} = vps <- Fleet.get_vps_for_owner(conn.assigns.current_user.id, uuid),
+         {:ok, backup} <- Backups.start_on_demand(vps) do
+      conn |> put_status(:accepted) |> json(%{backup: backup_json(backup)})
+    else
+      {:error, :already_running} -> error(conn, :conflict, "backup_already_running")
+      {:error, :node_unreachable} -> error(conn, :conflict, "node_unreachable")
+      {:error, :not_provisioned} -> error(conn, :conflict, "not_provisioned")
+      _ -> not_found(conn)
+    end
+  end
+
+  @doc """
   Rolls an owned VPS back to one of its own restore points.
 
   Destructive: everything written since that backup is gone. The VPS goes to
