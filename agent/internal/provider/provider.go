@@ -71,6 +71,21 @@ type Provider interface {
 	// StatusVM returns the current observed status of the guest identified by id.
 	StatusVM(ctx context.Context, id string) (VMStatus, error)
 
+	// ListGuestIDs returns every guest this node knows about, by provider-native
+	// id. Not for scheduling -- for comparing the control plane's administration
+	// with what actually runs.
+	//
+	// Both directions matter. A VPS that we bill for and that no longer exists
+	// costs a customer money for nothing; a guest on the node that we do not know
+	// about eats capacity we think we can still sell, and nobody will ever clean
+	// it up because nothing points at it.
+	//
+	// It must FAIL rather than return an empty list when the hypervisor cannot be
+	// reached. "Everything is gone" and "I cannot see anything" look identical in
+	// an empty slice, and acting on the first when it was the second would delete
+	// a fleet.
+	ListGuestIDs(ctx context.Context) ([]string, error)
+
 	// FindByName looks up a guest by its (unique) guest name and returns its
 	// status. The boolean reports whether a matching guest was found: it is
 	// true with a populated VMStatus when a match exists, and false with a zero

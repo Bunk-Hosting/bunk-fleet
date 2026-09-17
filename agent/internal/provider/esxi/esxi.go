@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -374,6 +375,43 @@ func (c *Client) PowerOn(ctx context.Context, id string) error  { return c.power
 func (c *Client) PowerOff(ctx context.Context, id string) error { return c.power(ctx, id, "off") }
 func (c *Client) Suspend(ctx context.Context, id string) error  { return c.power(ctx, id, "suspend") }
 func (c *Client) Resume(ctx context.Context, id string) error   { return c.power(ctx, id, "on") }
+
+// ListGuestIDs implements provider.Provider: elke VM die deze vSphere/ESXi
+// kent, bij zijn managed-object id -- hetzelfde id dat `statusOf` als VMStatus.ID
+// teruggeeft, zodat de vergelijking met de administratie op gelijke waarden gaat.
+//
+// Faalt wanneer vSphere niet bereikbaar is. Een lege lijst zou daar niet van te
+// onderscheiden zijn, en "alles is weg" is een gevaarlijke conclusie om te
+// trekken uit "ik kan even niet kijken".
+func (c *Client) ListGuestIDs(ctx context.Context) ([]string, error) {
+	gc, err := c.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = gc.Logout(ctx) }()
+
+	f, err := c.finder(ctx, gc)
+	if err != nil {
+		return nil, err
+	}
+
+	vms, err := f.VirtualMachineList(ctx, "*")
+	if err != nil {
+		if isNotFound(err) {
+			// Geen VM's is een geldig antwoord van een bereikbare vSphere.
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("esxi: list guests: %w", err)
+	}
+
+	ids := make([]string, 0, len(vms))
+	for _, vm := range vms {
+		ids = append(ids, vm.Reference().Value)
+	}
+	sort.Strings(ids)
+
+	return ids, nil
+}
 
 // Reboot implements provider.Provider: the guest OS is asked to restart, through
 // VMware Tools. Without Tools there is no way to ask politely, and the

@@ -35,6 +35,7 @@ defmodule ControlPlane.Fleet.Reconciler do
   alias ControlPlane.Credits
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.AgentUpdate
+  alias ControlPlane.Fleet.Drift
   alias ControlPlane.Provisioning
   alias ControlPlane.Subscriptions
 
@@ -53,6 +54,11 @@ defmodule ControlPlane.Fleet.Reconciler do
   # than the configured interval — so this cadence bounds how often we ask, not
   # how often a customer's VPS is backed up. Override with `:backup_check_interval_ms`.
   @default_backup_check_interval_ms 15 * 60 * 1000
+
+  # Elk half uur. Drift ontstaat door handwerk op een hypervisor en door
+  # mislukte uitrollen; dat gaat niet sneller dan een mens typt, en vaker vragen
+  # zet alleen commando's in de weg van echt werk.
+  @default_drift_interval_ms 30 * 60 * 1000
 
   @doc """
   Starts the reconciler.
@@ -74,6 +80,8 @@ defmodule ControlPlane.Fleet.Reconciler do
     backup_check_interval_ms =
       Keyword.get(opts, :backup_check_interval_ms, @default_backup_check_interval_ms)
 
+    drift_interval_ms = Keyword.get(opts, :drift_interval_ms, @default_drift_interval_ms)
+
     schedule_tick(interval_ms)
 
     {:ok,
@@ -82,7 +90,9 @@ defmodule ControlPlane.Fleet.Reconciler do
        meter_interval_ms: meter_interval_ms,
        last_meter_ms: nil,
        backup_check_interval_ms: backup_check_interval_ms,
-       last_backup_check_ms: nil
+       last_backup_check_ms: nil,
+       drift_interval_ms: drift_interval_ms,
+       last_drift_ms: nil
      }}
   end
 
@@ -115,7 +125,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     state = maybe_dispatch_backups(state)
     settle_subscriptions()
     roll_out_agent()
-    state
+    maybe_check_drift(state)
   rescue
     exception ->
       Logger.error(
@@ -150,6 +160,36 @@ defmodule ControlPlane.Fleet.Reconciler do
     else
       state
     end
+  end
+
+  # Elke node vragen wat hij werkelijk heeft, en dat met de administratie
+  # vergelijken. Niet elke tik: het antwoord verandert traag, en de agent
+  # verwerkt commando's één voor één -- een inventarisatie die voor een
+  # provision in de rij komt kost een klant wachttijd.
+  defp maybe_check_drift(%{drift_interval_ms: di, last_drift_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= di do
+      check_drift()
+      %{state | last_drift_ms: now}
+    else
+      state
+    end
+  end
+
+  defp maybe_check_drift(state), do: state
+
+  defp check_drift do
+    case Drift.request_all() do
+      0 -> :ok
+      n -> Logger.info("driftcontrole: inventarisatie gevraagd aan #{n} node(s)")
+    end
+  rescue
+    exception ->
+      Logger.error(
+        "fleet reconciler driftcontrole faalde: #{Exception.message(exception)}",
+        crash_reason: {exception, __STACKTRACE__}
+      )
   end
 
   defp maybe_dispatch_backups(%{backup_check_interval_ms: bi, last_backup_check_ms: last} = state) do

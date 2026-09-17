@@ -60,6 +60,12 @@ const (
 	// it is a request to open a connection, delivered on the command poll because
 	// that is the channel the agent is already holding open.
 	CmdConsoleConnect CommandKind = "console_connect"
+	// CmdInventory asks this node which guests it actually has. Het antwoord gaat
+	// niet over één VPS maar over de hele node, zodat het control plane beide
+	// richtingen ziet: wat wij denken te hebben en niet bestaat, en wat er draait
+	// zonder dat wij het weten.
+	CmdInventory CommandKind = "inventory"
+
 	// CmdUpdate asks this node to check whether a newer agent is published and,
 	// if so, install it. The command carries no version: the node compares the
 	// published checksum with its own binary and does nothing when they match,
@@ -170,6 +176,9 @@ type CommandResult struct {
 	// other kind of command.
 	VolID     string `json:"volid,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
+	// Guests is elk gast-id dat deze node kent. Alleen gevuld door een
+	// inventory-commando; leeg bij alle andere.
+	Guests []string `json:"guests,omitempty"`
 }
 
 // Client is the HTTP control-plane client. It is safe for concurrent use.

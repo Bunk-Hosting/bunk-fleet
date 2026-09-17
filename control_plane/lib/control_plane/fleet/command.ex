@@ -41,6 +41,10 @@ defmodule ControlPlane.Fleet.Command do
         # change the VPS — it overwrites its disk — so it finalises into the
         # VPS's status as well as the backup row.
         :restore_backup,
+        # Vraagt een node welke gasten hij werkelijk heeft. Verandert niets; het
+        # bestaat om de administratie tegen de werkelijkheid te houden. Zie
+        # `ControlPlane.Fleet.Drift`.
+        :inventory,
         # Het enige commando dat niet over een VPS gaat maar over de node zelf:
         # ga kijken of er een nieuwe agent klaarstaat. Er zit bewust geen versie
         # in de payload — de node vergelijkt de hash van zijn eigen binary met

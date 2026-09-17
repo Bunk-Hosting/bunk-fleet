@@ -10,10 +10,25 @@ BUNK_LOG_DIR="${BUNK_LOG_DIR:-/var/log/bunk}"
 bewaar_log() {
   naam="$1"
   docker inspect "$naam" >/dev/null 2>&1 || return 0
-  mkdir -p "$BUNK_LOG_DIR" 2>/dev/null || return 0
+
+  # Aanmaken mag mislukken en schrijven mag mislukken: dit script draait zowel
+  # als root (handmatige uitrol) als onder de runner-gebruiker, en de map kan
+  # door de ander zijn aangemaakt. Een uitrol mag NOOIT stukgaan op een logje
+  # dat niet weggeschreven kan worden -- en dat is precies wat er gebeurde: de
+  # map bestond, de runner mocht er niet in, en de uitrol stopte halverwege met
+  # de migraties al gedraaid.
+  #
+  # Group-writable bij het aanmaken, zodat beide partijen erin kunnen.
+  ( umask 002; mkdir -p "$BUNK_LOG_DIR" ) 2>/dev/null || true
+  if [ ! -w "$BUNK_LOG_DIR" ]; then
+    echo "let op: $BUNK_LOG_DIR is niet beschrijfbaar; het log van $naam gaat verloren" >&2
+    return 0
+  fi
+
   docker logs --timestamps "$naam" > "$BUNK_LOG_DIR/$naam-$(date +%Y%m%d-%H%M%S).log" 2>&1 || true
   # Opruimen: tien bestanden per container is genoeg om een dag terug te kijken.
   ls -1t "$BUNK_LOG_DIR/$naam-"*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
+  return 0
 }
 # De map waar deze scripts en de broncode staan. Overschrijfbaar zodat een
 # GitHub Actions-runner ze vanuit zijn eigen checkout kan draaien; standaard de

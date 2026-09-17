@@ -31,6 +31,7 @@ defmodule ControlPlane.Provisioning.Results do
   alias ControlPlane.Credits
   alias ControlPlane.Fleet
   alias ControlPlane.Fleet.Command
+  alias ControlPlane.Fleet.Drift
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Reservation
@@ -311,7 +312,38 @@ defmodule ControlPlane.Provisioning.Results do
 
   # Non-provision/non-delete commands (or those without an associated VPS) only
   # update the command itself.
+  # Een inventarisatie verandert geen enkele rij; hij vergelijkt alleen. Daarom
+  # buiten de Multi: de vergelijking leest en meldt, en een mail versturen hoort
+  # niet in een databasetransactie thuis.
+  defp finalize_vps(multi, %Command{kind: :inventory, node_id: node_id}, :done, result)
+       when not is_nil(node_id) do
+    Multi.run(multi, :drift, fn _repo, _changes ->
+      guests = gasten_uit(result)
+      {:ok, Drift.compare(node_id, guests)}
+    end)
+  end
+
+  defp finalize_vps(multi, %Command{kind: :inventory, node_id: node_id}, :failed, result) do
+    # Geen vergelijking op een mislukte inventarisatie. "Ik kan even niet kijken"
+    # is geen "alles is weg", en dat verschil is hier het hele punt.
+    Logger.warning(
+      "inventarisatie van node #{node_id} mislukte: #{inspect(result["error"])}; " <>
+        "de administratie is niet vergeleken"
+    )
+
+    multi
+  end
+
   defp finalize_vps(multi, _command, _outcome, _result), do: multi
+
+  # De agent stuurt een lijst strings. Alles wat daar niet op lijkt is geen lege
+  # lijst maar een onbruikbaar antwoord, en dan is vergelijken gevaarlijker dan
+  # niets doen.
+  defp gasten_uit(%{"guests" => guests}) when is_list(guests) do
+    Enum.filter(guests, &is_binary/1)
+  end
+
+  defp gasten_uit(_result), do: []
 
   # The VPS row after a successful provision. Three outcomes, because a delete can
   # have been requested while the provision was still in flight.

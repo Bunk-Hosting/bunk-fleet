@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -857,6 +858,24 @@ func (c *Client) PowerOn(ctx context.Context, id string) error {
 		return nil
 	}
 	return c.powerOp(ctx, vmid, "start")
+}
+
+// ListGuestIDs implements provider.Provider. Het gebruikt dezelfde bron als de
+// VMID-toewijzing, zodat "welke nummers zijn bezet" en "welke gasten draaien
+// hier" nooit uit elkaar kunnen lopen.
+func (c *Client) ListGuestIDs(ctx context.Context) ([]string, error) {
+	used, err := c.usedVMIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("proxmox: list guests: %w", err)
+	}
+
+	ids := make([]string, 0, len(used))
+	for vmid := range used {
+		ids = append(ids, strconv.Itoa(vmid))
+	}
+	sort.Strings(ids)
+
+	return ids, nil
 }
 
 // Reboot implements provider.Provider: Proxmox's own reboot, which is a clean

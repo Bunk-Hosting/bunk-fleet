@@ -430,6 +430,9 @@ func handleCommand(parentCtx context.Context, logger *slog.Logger, prov provider
 		transport.CmdReboot:
 		handlePower(c)
 
+	case transport.CmdInventory:
+		handleInventory(c)
+
 	case transport.CmdUpdate:
 		handleUpdate(c)
 
@@ -607,6 +610,29 @@ func handlePower(c command) {
 	}
 	c.logger.Info("power command done", "id", c.cmd.ID, "kind", string(c.cmd.Kind), "vm_id", vmID)
 	c.report(transport.CommandResult{Status: "done", VMID: vmID})
+}
+
+// handleInventory antwoordt met elk gast-id dat deze node kent.
+//
+// Dit is het enige commando dat niets verandert. Het bestaat omdat de
+// administratie en de werkelijkheid uit elkaar kunnen lopen zonder dat iets dat
+// merkt: een VM die met de hand van de hypervisor is verwijderd blijft in de
+// database staan en wordt gefactureerd, en een VM die wij ooit hebben
+// aangemaakt maar kwijt zijn geraakt eet capaciteit die wij denken te kunnen
+// verkopen.
+//
+// Een fout wordt als fout gemeld en niet als een lege lijst. "Alles is weg" en
+// "ik kan even niet kijken" zien er in een lege lijst hetzelfde uit, en het
+// control plane mag op het eerste niet handelen als het het tweede was.
+func handleInventory(c command) {
+	ids, err := c.prov.ListGuestIDs(c.ctx)
+	if err != nil {
+		c.failed("inventory", "", err)
+		return
+	}
+
+	c.logger.Info("inventory reported", "id", c.cmd.ID, "guests", len(ids))
+	c.report(transport.CommandResult{Status: "done", Guests: ids})
 }
 
 // Every command that acts on an existing guest carries its id the same way.
