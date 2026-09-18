@@ -218,9 +218,16 @@ docker rm -f "$NIEUW_CP" >/dev/null 2>&1 || true
 # klant hoort niets te merken van het feit dat wij aan het uitrollen zijn.
 #
 # Geen `-p 127.0.0.1:4000:4000` meer: twee containers kunnen die poort niet
-# allebei publiceren, en niemand buiten deze machine had hem nodig. Wat hem wél
-# gebruikte -- de gezondheidscontrole hieronder en die van de workflow -- gaat nu
-# door de edge, en dat is de weg die een klant ook neemt.
+# allebei publiceren. Wat hem gebruikte gaat nu door de edge op 3001, en dat is
+# de weg die een klant ook neemt.
+#
+# LET OP, dit heeft een keer pijn gedaan: "niemand had die poort nodig" klopte
+# niet. De bunk-agent van deze machine stond in /etc/bunk-agent/agent.env op
+# `http://localhost:4000` en was daarmee van het ene op het andere moment
+# afgesneden van het control plane -- geen heartbeats, dus de node offline, dus
+# geen enkel commando meer uitgevoerd en een verwijdering die bleef hangen. Hij
+# staat nu op `http://localhost:3001`. Wie hier iets aan de poorten verandert:
+# die agent draait BUITEN docker en praat mee.
 docker run -d --name "$NIEUW_CP" --network "$NET" --network-alias "$CP_ALIAS" \
   --restart unless-stopped \
   --cpu-shares 4096 \

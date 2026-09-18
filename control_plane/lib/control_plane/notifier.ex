@@ -32,6 +32,8 @@ defmodule ControlPlane.Notifier do
   """
   require Logger
 
+  alias ControlPlane.RateLimiter
+
   import Swoosh.Email
 
   alias ControlPlane.Accounts.User
@@ -110,16 +112,45 @@ defmodule ControlPlane.Notifier do
   Returns `{:error, :no_ops_email}` when `:ops_email` is unset, which is a
   configuration gap rather than a delivery failure — the caller (a systemd
   OnFailure unit) prints it rather than pretending the alert went out.
+
+  ## Hoogstens drie per onderwerp per uur
+
+  De meeste meldingen komen uit de reconciler, en die tikt elke dertig seconden.
+  Een toestand die blijft bestaan -- een uitrol die vastloopt, een schijf die vol
+  is -- levert dan twee mails per minuut op. Dat is precies wat er is gebeurd:
+  een vastgelopen agent-uitrol heeft in één ochtend het dagquotum van de
+  mailserver opgemaakt, en daarna kwam er GEEN ENKELE melding meer door. Ook niet
+  de melding over een betaling zonder tegoed, die er wel toe doet.
+
+  Vandaar een rem, en hier en niet bij de aanroepers: de volgende melding die
+  iemand toevoegt heeft hem dan vanzelf. Drie per uur per onderwerp, want dat is
+  ruim genoeg voor een gebeurtenis die zich echt herhaalt en te weinig voor een
+  toestand die elke tik terugkomt. Wat wordt afgeknepen gaat nog wel naar de log,
+  zodat er een spoor is.
   """
+  # Drie is geen toverwoord: het is "meer dan één, en zichtbaar minder dan wat
+  # een toestand per uur zou opleveren" (dat zijn er 120).
+  @alerts_per_uur 3
+  @alert_venster_ms 60 * 60 * 1000
+
   def deliver_operational_alert(subject, body) when is_binary(subject) and is_binary(body) do
     case Application.get_env(:control_plane, :ops_email) do
       to when is_binary(to) and to != "" ->
-        deliver(%{to: to, subject: "[Bunk] " <> subject, text: body, html: nil})
+        if mag_melden?(subject) do
+          deliver(%{to: to, subject: "[Bunk] " <> subject, text: body, html: nil})
+        else
+          Logger.warning("melding afgeknepen (al #{@alerts_per_uur}x dit uur): #{subject}")
+          {:error, :throttled}
+        end
 
       _ ->
         Logger.error("operational alert not sent (no OPS_EMAIL configured): #{subject}")
         {:error, :no_ops_email}
     end
+  end
+
+  defp mag_melden?(subject) do
+    RateLimiter.hit("alert:" <> subject, @alerts_per_uur, @alert_venster_ms) == :ok
   end
 
   defp deliver(%{to: to_email, subject: subject, text: text, html: html}) do
