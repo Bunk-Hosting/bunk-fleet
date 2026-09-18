@@ -114,7 +114,7 @@ func TestLifecycle(t *testing.T) {
 		t.Fatalf("Resume: %v", err)
 	}
 
-	if err := c.DeleteVM(ctx, st.ID); err != nil {
+	if err := c.DeleteVM(ctx, st.ID, ""); err != nil {
 		t.Fatalf("DeleteVM: %v", err)
 	}
 	if _, found, _ := c.FindByName(ctx, "bunk-test"); found {
@@ -122,7 +122,7 @@ func TestLifecycle(t *testing.T) {
 	}
 
 	// Deleting an already-gone VM is a no-op success.
-	if err := c.DeleteVM(ctx, st.ID); err != nil {
+	if err := c.DeleteVM(ctx, st.ID, ""); err != nil {
 		t.Errorf("DeleteVM of missing VM should succeed, got %v", err)
 	}
 }

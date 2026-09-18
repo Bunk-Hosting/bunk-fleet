@@ -141,11 +141,52 @@ func New(cfg Config) (*Client, error) {
 	if cfg.TokenID == "" || cfg.TokenSecret == "" {
 		return nil, errors.New("proxmox: TokenID and TokenSecret are required")
 	}
+	host, err := normaliseerHost(cfg.Host)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		cfg:  cfg,
-		base: strings.TrimRight(cfg.Host, "/") + "/api2/json",
+		base: host + "/api2/json",
 		http: httpClient(cfg.VerifySSL),
 	}, nil
+}
+
+// normaliseerHost maakt van wat een mens intypt een adres waar Go mee kan werken.
+//
+// Dit bestaat omdat de fout die eruit komt anders onvindbaar is. Wie
+// `https:10.70.0.14:8006` intypt -- de twee schuine strepen vergeten -- krijgt
+// van Go bij ELKE aanroep "http: no Host in request URL", en dat staat dan in
+// het dashboard als reden waarom de node zijn hypervisor niet kan bevragen. Daar
+// is niet uit op te maken dat er twee tekens ontbreken.
+//
+// Geaccepteerd: "10.0.0.5:8006" (schema erbij), "https://10.0.0.5:8006" (zoals
+// het hoort) en "https:10.0.0.5:8006" (de typefout, gerepareerd). Alles zonder
+// een bruikbaar adres erin wordt geweigerd met een fout die zegt wat er mis is.
+func normaliseerHost(ruw string) (string, error) {
+	host := strings.TrimSpace(strings.TrimRight(ruw, "/"))
+
+	// De typefout: een schema met een dubbele punt maar zonder //.
+	for _, schema := range []string{"https:", "http:"} {
+		if strings.HasPrefix(host, schema) && !strings.HasPrefix(host, schema+"//") {
+			host = schema + "//" + strings.TrimPrefix(host, schema)
+		}
+	}
+
+	// Helemaal geen schema: https, want de PVE-API praat geen platte http.
+	if !strings.Contains(host, "://") {
+		host = "https://" + host
+	}
+
+	ontleed, err := url.Parse(host)
+	if err != nil || ontleed.Host == "" {
+		return "", fmt.Errorf(
+			"proxmox: %q is geen bruikbaar adres voor de API; verwacht iets als https://10.0.0.5:8006",
+			ruw)
+	}
+
+	return host, nil
 }
 
 // httpClient builds an *http.Client whose transport optionally skips TLS
@@ -542,7 +583,7 @@ func (c *Client) CreateVM(ctx context.Context, spec provider.VMSpec) (provider.V
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		if derr := c.DeleteVM(cleanupCtx, strconv.Itoa(newID)); derr != nil {
+		if derr := c.DeleteVM(cleanupCtx, strconv.Itoa(newID), spec.VPSID); derr != nil {
 			return provider.VMStatus{ID: strconv.Itoa(newID), State: "error"},
 				fmt.Errorf("%w (rollback of vm %d failed: %v)", err, newID, derr)
 		}
@@ -590,6 +631,13 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 	}
 	if spec.IPConfig != "" {
 		cfgForm.Set("ipconfig0", spec.IPConfig)
+	}
+	// Wie deze gast is, op de gast zelf. Een VMID wordt hergebruikt zodra een
+	// machine weg is; deze regel is wat een latere delete laat zien of hij de
+	// juiste machine te pakken heeft. Hij staat ook gewoon in het Proxmox-scherm,
+	// wat een operator die door de lijst scrolt precies vertelt wat hij ziet.
+	if spec.VPSID != "" {
+		cfgForm.Set("description", eigenaarsregel(spec.VPSID))
 	}
 	if safeBridge(c.cfg.Bridge) {
 		// firewall=1 zet de Proxmox VM-firewall aan op deze kaart. Zonder deze
@@ -786,12 +834,27 @@ func parseVMID(id string) (int, error) {
 
 // DeleteVM implements provider.Provider. It stops the guest (best effort) and
 // then destroys it. A missing guest is treated as success.
-func (c *Client) DeleteVM(ctx context.Context, id string) error {
+func (c *Client) DeleteVM(ctx context.Context, id string, vpsID string) error {
 	vmid, err := parseVMID(id)
 	if err != nil {
 		return err
 	}
 	node := url.PathEscape(c.cfg.Node)
+
+	// Hoort deze gast bij de machine die we moeten verwijderen? Een VMID wordt
+	// hergebruikt, en een verwijdering die opnieuw wordt afgeleverd nadat dat
+	// nummer aan een andere klant is gegeven, zou diens machine slopen.
+	//
+	// Alleen weigeren bij een aantoonbaar ANDERE eigenaar. Staat er niets op de
+	// gast -- een machine van voor deze controle -- dan is het nummer alles wat
+	// we hebben, en dan doen we wat er gevraagd is.
+	if vpsID != "" {
+		if eigenaar, ok := c.eigenaarVan(ctx, vmid); ok && eigenaar != vpsID {
+			return fmt.Errorf(
+				"proxmox: vmid %d hoort bij vps %s en niet bij %s; niet verwijderd",
+				vmid, eigenaar, vpsID)
+		}
+	}
 
 	// A destroy on a running VM is rejected ("VM is running"). Stop it first
 	// and WAIT for the stop task to finish before deleting.
@@ -1082,4 +1145,34 @@ func proxmoxRate(mbit int) string {
 		return ""
 	}
 	return strconv.FormatFloat(float64(mbit)/8.0, 'f', -1, 64)
+}
+
+// eigenaarsregel is wat er in de beschrijving van de gast komt te staan. Eén
+// regel, herkenbaar, en met de id waar het om gaat.
+func eigenaarsregel(vpsID string) string {
+	return "bunk-vps: " + vpsID
+}
+
+// eigenaarVan leest terug welke VPS op deze gast is gezet. `ok` is false als er
+// niets staat, als de gast niet bestaat, of als de API niet te bereiken is --
+// alle drie zijn "ik weet het niet", en daarop weigeren we niets.
+func (c *Client) eigenaarVan(ctx context.Context, vmid int) (string, bool) {
+	var resp struct {
+		Data struct {
+			Description string `json:"description"`
+		} `json:"data"`
+	}
+
+	path := fmt.Sprintf("/nodes/%s/qemu/%d/config", url.PathEscape(c.cfg.Node), vmid)
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return "", false
+	}
+
+	for _, regel := range strings.Split(resp.Data.Description, "\n") {
+		regel = strings.TrimSpace(regel)
+		if rest, gevonden := strings.CutPrefix(regel, "bunk-vps:"); gevonden {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
 }

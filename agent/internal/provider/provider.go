@@ -32,6 +32,11 @@ type VMSpec struct {
 	// IPConfig is a provider-native network configuration string
 	// (e.g. Proxmox "ip=192.0.2.10/24,gw=192.0.2.1" or "ip=dhcp").
 	IPConfig string `json:"ip_config"`
+	// VPSID is the control plane's id for this machine. It is written onto the
+	// guest (Proxmox: the description) so a later delete can check that it is
+	// destroying the machine it was asked to destroy, and not whatever guest now
+	// happens to carry that VMID. Empty when the control plane did not send one.
+	VPSID string `json:"vps_id"`
 	// RateMbit caps the guest's network interface, in megabits per second, and
 	// is the snelheid that belongs to the customer's package. Zero means no cap:
 	// a VPS created without a package should not get an invented limit.
@@ -74,7 +79,14 @@ type Provider interface {
 
 	// DeleteVM stops (if necessary) and destroys the guest identified by id.
 	// Deleting a non-existent guest should be treated as success.
-	DeleteVM(ctx context.Context, id string) error
+	//
+	// `vpsID` is the control plane's id for the machine that is supposed to be
+	// destroyed. A hypervisor id (a Proxmox VMID) is reused once a guest is gone,
+	// so a delete that is redelivered after that number has been handed to
+	// another customer would destroy THEIR machine. Providers that can see who a
+	// guest belongs to must refuse in that case. Empty means "no claim" -- a
+	// guest from before this check existed -- and then the id is all there is.
+	DeleteVM(ctx context.Context, id string, vpsID string) error
 
 	// StatusVM returns the current observed status of the guest identified by id.
 	StatusVM(ctx context.Context, id string) (VMStatus, error)

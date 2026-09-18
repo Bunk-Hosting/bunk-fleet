@@ -267,13 +267,17 @@ func (c *Client) rollbackClone(name string) string {
 	}
 
 	ref := vm.Reference().Value
-	if derr := c.DeleteVM(ctx, ref); derr != nil {
+	if derr := c.DeleteVM(ctx, ref, ""); derr != nil {
 		return ref
 	}
 	return ""
 }
 
-func (c *Client) DeleteVM(ctx context.Context, id string) error {
+// DeleteVM negeert `vpsID`: op vSphere schrijven we (nog) niet op de gast wie
+// hij is, dus er valt niets te controleren. Dat is een gat en geen keuze -- de
+// Proxmox-provider weigert wél een gast die bij iemand anders hoort. Zolang dat
+// hier niet kan, is de id alles wat we hebben.
+func (c *Client) DeleteVM(ctx context.Context, id string, _ string) error {
 	gc, err := c.connect(ctx)
 	if err != nil {
 		return err

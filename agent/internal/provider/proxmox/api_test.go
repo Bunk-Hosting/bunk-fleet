@@ -322,7 +322,7 @@ func TestDeleteVMStopsARunningGuestFirst(t *testing.T) {
 	r.on("DELETE /nodes/pve/qemu/131", okTask)
 	r.taskSucceeds()
 
-	if err := r.client(t).DeleteVM(context.Background(), "131"); err != nil {
+	if err := r.client(t).DeleteVM(context.Background(), "131", ""); err != nil {
 		t.Fatalf("DeleteVM: %v", err)
 	}
 	if r.count("POST", "/nodes/pve/qemu/131/status/stop") != 1 {
@@ -336,7 +336,7 @@ func TestDeleteVMSkipsTheStopWhenAlreadyStopped(t *testing.T) {
 	r.on("DELETE /nodes/pve/qemu/131", okTask)
 	r.taskSucceeds()
 
-	if err := r.client(t).DeleteVM(context.Background(), "131"); err != nil {
+	if err := r.client(t).DeleteVM(context.Background(), "131", ""); err != nil {
 		t.Fatalf("DeleteVM: %v", err)
 	}
 	if r.count("POST", "/nodes/pve/qemu/131/status/stop") != 0 {
@@ -353,15 +353,63 @@ func TestDeleteVMTreatsAMissingGuestAsDone(t *testing.T) {
 	r.onStatus("DELETE /nodes/pve/qemu/999", http.StatusInternalServerError,
 		`{"errors":"Configuration file 'nodes/pve/qemu-server/999.conf' does not exist"}`)
 
-	if err := r.client(t).DeleteVM(context.Background(), "999"); err != nil {
+	if err := r.client(t).DeleteVM(context.Background(), "999", ""); err != nil {
 		t.Fatalf("DeleteVM on a missing guest = %v, want nil", err)
+	}
+}
+
+// Een VMID wordt hergebruikt zodra een machine weg is. Wordt een verwijdering
+// opnieuw afgeleverd nadat dat nummer aan een andere klant is gegeven -- en dat
+// gebeurt, want het control plane levert opnieuw af als het geen resultaat kreeg
+// -- dan zou zonder deze controle de machine van die ander gesloopt worden.
+func TestDeleteVMWeigertEenGastVanIemandAnders(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/config", `{"data":{"description":"bunk-vps: 11111111-1111-1111-1111-111111111111"}}`)
+
+	err := r.client(t).DeleteVM(context.Background(), "131",
+		"22222222-2222-2222-2222-222222222222")
+	if err == nil {
+		t.Fatal("een gast van een andere vps is verwijderd")
+	}
+	if !strings.Contains(err.Error(), "niet verwijderd") {
+		t.Errorf("de fout zegt niet wat er is gebeurd: %v", err)
+	}
+	if _, geprobeerd := r.seen("DELETE", "/nodes/pve/qemu/131"); geprobeerd {
+		t.Error("er is alsnog een destroy gestuurd")
+	}
+}
+
+func TestDeleteVMVerwijdertZijnEigenGast(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/config", `{"data":{"description":"bunk-vps: 11111111-1111-1111-1111-111111111111"}}`)
+	r.on("GET /nodes/pve/qemu/131/status/current", `{"data":{"status":"stopped"}}`)
+	r.on("DELETE /nodes/pve/qemu/131", okTask)
+	r.taskSucceeds()
+
+	if err := r.client(t).DeleteVM(context.Background(), "131",
+		"11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("DeleteVM: %v", err)
+	}
+}
+
+// Een gast van vóór deze controle draagt geen id. Dan is het nummer alles wat we
+// hebben, en weigeren zou betekenen dat oude machines niet meer weg kunnen.
+func TestDeleteVMGaatDoorZonderIdOpDeGast(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /nodes/pve/qemu/131/config", `{"data":{"description":""}}`)
+	r.on("GET /nodes/pve/qemu/131/status/current", `{"data":{"status":"stopped"}}`)
+	r.on("DELETE /nodes/pve/qemu/131", okTask)
+	r.taskSucceeds()
+
+	if err := r.client(t).DeleteVM(context.Background(), "131", "iets"); err != nil {
+		t.Fatalf("DeleteVM: %v", err)
 	}
 }
 
 func TestDeleteVMRefusesANonNumericID(t *testing.T) {
 	r := newRecorder(t)
 
-	if err := r.client(t).DeleteVM(context.Background(), "131/../../etc"); err == nil {
+	if err := r.client(t).DeleteVM(context.Background(), "131/../../etc", ""); err == nil {
 		t.Fatal("DeleteVM accepted a non-numeric id")
 	}
 	if len(r.requests) != 0 {
@@ -375,7 +423,7 @@ func TestDeleteVMFailsWhenTheDestroyTaskFails(t *testing.T) {
 	r.on("DELETE /nodes/pve/qemu/131", okTask)
 	r.taskFails("destroy failed: volume in use")
 
-	if err := r.client(t).DeleteVM(context.Background(), "131"); err == nil {
+	if err := r.client(t).DeleteVM(context.Background(), "131", ""); err == nil {
 		t.Fatal("a failed destroy task was reported as success")
 	}
 }

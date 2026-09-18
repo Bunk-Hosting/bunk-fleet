@@ -31,7 +31,9 @@ func (stubProvider) Name() string { return "stub" }
 func (stubProvider) CreateVM(context.Context, provider.VMSpec) (provider.VMStatus, error) {
 	panic("not used by a heartbeat")
 }
-func (stubProvider) DeleteVM(context.Context, string) error { panic("not used by a heartbeat") }
+func (stubProvider) DeleteVM(context.Context, string, string) error {
+	panic("not used by a heartbeat")
+}
 func (stubProvider) StatusVM(context.Context, string) (provider.VMStatus, error) {
 	panic("not used by a heartbeat")
 }

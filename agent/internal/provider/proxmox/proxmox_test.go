@@ -571,3 +571,40 @@ func TestProxmoxRate(t *testing.T) {
 		}
 	}
 }
+
+// Wat een mens intypt in het dashboard, en wat daarvan gemaakt moet worden.
+//
+// De aanleiding: iemand typte `https:10.70.0.14:8006` -- de twee schuine strepen
+// vergeten -- en kreeg bij elke aanroep "http: no Host in request URL". Die
+// melding stond vervolgens in het dashboard als reden waarom de node zijn
+// hypervisor niet kon bevragen, en daar is niet uit op te maken dat er twee
+// tekens ontbreken.
+func TestNormaliseerHost(t *testing.T) {
+	goed := []struct{ in, want string }{
+		{"https://10.0.0.5:8006", "https://10.0.0.5:8006"},
+		{"https://10.0.0.5:8006/", "https://10.0.0.5:8006"},
+		{"10.0.0.5:8006", "https://10.0.0.5:8006"},
+		{"pve.intern", "https://pve.intern"},
+		// De typefout van vandaag.
+		{"https:10.70.0.14:8006", "https://10.70.0.14:8006"},
+		{"http:10.70.0.14:8006", "http://10.70.0.14:8006"},
+		{"  https://10.0.0.5:8006  ", "https://10.0.0.5:8006"},
+	}
+
+	for _, g := range goed {
+		got, err := normaliseerHost(g.in)
+		if err != nil {
+			t.Errorf("normaliseerHost(%q) gaf een fout: %v", g.in, err)
+			continue
+		}
+		if got != g.want {
+			t.Errorf("normaliseerHost(%q) = %q, want %q", g.in, got, g.want)
+		}
+	}
+
+	for _, slecht := range []string{"", "   ", "https://", "://8006"} {
+		if _, err := normaliseerHost(slecht); err == nil {
+			t.Errorf("normaliseerHost(%q) werd geaccepteerd", slecht)
+		}
+	}
+}

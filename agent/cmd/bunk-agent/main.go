@@ -486,6 +486,12 @@ func handleProvision(c command) {
 		c.failed("provision: bad payload", "", err)
 		return
 	}
+	// De payload draagt hem ook, maar het commando is de bron: daar staat over
+	// welke VPS dit gaat, ongeacht wat er in de payload is meegestuurd.
+	if c.cmd.VPSID != "" {
+		spec.VPSID = c.cmd.VPSID
+	}
+
 	c.logger.Info("provisioning vm", "id", c.cmd.ID, "name", spec.Name)
 
 	// Idempotency: the control plane may re-deliver a provision command (e.g.
@@ -549,7 +555,9 @@ func handleDelete(c command) {
 	}
 
 	c.logger.Info("deleting vm", "id", c.cmd.ID, "vm_id", vmID)
-	if err := c.prov.DeleteVM(c.ctx, vmID); err != nil {
+	// De VPS-id gaat mee zodat de provider kan weigeren als dit VMID intussen
+	// aan een andere klant toebehoort. Zie Provider.DeleteVM.
+	if err := c.prov.DeleteVM(c.ctx, vmID, c.cmd.VPSID); err != nil {
 		c.failed("delete failed", vmID, err)
 		return
 	}
