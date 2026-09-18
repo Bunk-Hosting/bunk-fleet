@@ -40,6 +40,11 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     outstanding =
       Repo.one(from e in LedgerEntry, select: coalesce(sum(e.amount_cents), 0)) || 0
 
+    # Hetzelfde bedrag, maar uitgesplitst. Eén getal maakt handmatig toegekend
+    # testsaldo net zo echt als geld dat een klant heeft overgemaakt, en juist
+    # dat verschil is wat iemand die naar dit paneel kijkt moet zien.
+    herkomst = Credits.saldo_naar_herkomst()
+
     json(conn, %{
       users: %{
         total: map_total(by_role),
@@ -57,7 +62,8 @@ defmodule ControlPlaneWeb.Admin.PanelController do
         total: map_total(by_node_status),
         online: Map.get(by_node_status, :online, 0)
       },
-      credit_outstanding_cents: outstanding
+      credit_outstanding_cents: outstanding,
+      credit_breakdown: herkomst
     })
   end
 

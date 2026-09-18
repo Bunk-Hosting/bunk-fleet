@@ -111,16 +111,42 @@ function Overview() {
                 <Wallet className="h-4 w-4" /> Tegoed (openstaande verplichting)
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Stat
                 label="Totaal klant-tegoed"
                 value={formatEuro(stats.credit_outstanding_cents / 100)}
                 sub="Som van alle wallet-saldi"
               />
+              <div className="space-y-1 border-t pt-3 text-sm">
+                <Regel label="Bijgeboekt uit betalingen" cents={stats.credit_breakdown.betaald} />
+                <Regel label="Welkomstkrediet" cents={stats.credit_breakdown.weggegeven} />
+                <Regel label="Handmatig door een beheerder" cents={stats.credit_breakdown.handmatig} />
+                <Regel label="Verbruikt door VPS&apos;en" cents={stats.credit_breakdown.verbruikt} />
+                {stats.credit_breakdown.overig !== 0 && (
+                  <Regel label="Nog niet ingedeeld" cents={stats.credit_breakdown.overig} />
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Alleen de eerste regel is geld dat daadwerkelijk is binnengekomen. Handmatige
+                boekingen verhogen wel wat een klant kan uitgeven, maar er staat geen betaling
+                achter &mdash; ze tellen dan ook niet mee in de omzet of de btw-aangifte.
+              </p>
             </CardContent>
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Eén bedrag op een label, met het teken dat het in het grootboek heeft. */
+function Regel({ label, cents }: { label: string; cents: number }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cents < 0 ? "font-medium text-muted-foreground" : "font-medium"}>
+        {formatEuro(cents / 100)}
+      </span>
     </div>
   );
 }

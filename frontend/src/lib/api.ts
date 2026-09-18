@@ -695,6 +695,17 @@ export interface AdminStats {
   vpses: { total: number; active: number; stopped: number; provisioning: number; failed: number };
   nodes: { total: number; online: number; datacenter: number; community: number };
   credit_outstanding_cents: number;
+  /**
+   * Hetzelfde bedrag, uitgesplitst naar waar het vandaan komt. De onderdelen
+   * tellen op tot het totaal; `verbruikt` is negatief.
+   */
+  credit_breakdown: {
+    betaald: number;
+    weggegeven: number;
+    handmatig: number;
+    verbruikt: number;
+    overig: number;
+  };
 }
 export interface AdminUser {
   id: string;

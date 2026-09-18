@@ -32,6 +32,50 @@ defmodule ControlPlane.Credits do
     ) || 0
   end
 
+  # Waar een euro tegoed vandaan komt. Niet elke bijboeking is hetzelfde waard:
+  # voor een `topup` is er geld binnengekomen, een `signup_bonus` hebben we
+  # weggegeven, en een handmatige boeking is een beheerder die een getal
+  # bijstelt. Ze staan in hetzelfde grootboek omdat ze alle drie bepalen wat een
+  # klant kan uitgeven, maar ze bij elkaar optellen tot één bedrag maakt
+  # testsaldo net zo echt als betaald saldo.
+  @herkomst %{
+    "topup" => :betaald,
+    "signup_bonus" => :weggegeven,
+    "admin_topup" => :handmatig,
+    "admin_adjustment" => :handmatig,
+    "correction" => :handmatig,
+    "vps_charge" => :verbruikt,
+    "vps_charge_refunded" => :verbruikt,
+    "vps_refund" => :verbruikt
+  }
+
+  @doc """
+  Het openstaande tegoed, uitgesplitst naar waar het vandaan komt.
+
+  De som van de onderdelen is het totaal -- `:verbruikt` is negatief -- zodat het
+  overzicht optelt tot hetzelfde bedrag dat er als verplichting op de balans
+  staat.
+
+  Een soort die hier niet in staat komt onder `:overig` terecht en niet in een
+  bak waar hij toevallig op lijkt. Dat is het verschil tussen een overzicht dat
+  een nieuwe boekingssoort laat zien en een overzicht dat hem stilzwijgend als
+  betaald geld meetelt.
+  """
+  @spec saldo_naar_herkomst() :: %{atom() => integer()}
+  def saldo_naar_herkomst do
+    leeg = %{betaald: 0, weggegeven: 0, handmatig: 0, verbruikt: 0, overig: 0}
+
+    Repo.all(
+      from e in LedgerEntry,
+        group_by: e.kind,
+        select: {e.kind, coalesce(sum(e.amount_cents), 0)}
+    )
+    |> Enum.reduce(leeg, fn {kind, cents}, acc ->
+      bak = Map.get(@herkomst, kind, :overig)
+      Map.update!(acc, bak, &(&1 + cents))
+    end)
+  end
+
   @doc "Most recent ledger entries, newest first."
   def list_entries(user_id, limit \\ 20) do
     Repo.all(
