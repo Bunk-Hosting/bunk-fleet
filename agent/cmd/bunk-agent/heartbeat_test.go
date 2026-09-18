@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/config"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
@@ -123,19 +124,6 @@ func TestHeartbeatIsStillSentWhenTheHypervisorCannotBeReached(t *testing.T) {
 	}
 }
 
-func TestCapacityReasonIsBoundedAndNeverEmpty(t *testing.T) {
-	// De kolom is begrensd, en een lege melding zou in het paneel een lege regel
-	// opleveren waar de reden hoort te staan.
-	if got := capacityReason(errors.New("   ")); got == "" {
-		t.Error("een lege fout hoort alsnog iets te zeggen")
-	}
-
-	lang := capacityReason(errors.New(strings.Repeat("x", 500)))
-	if len(lang) > 200 {
-		t.Errorf("reden niet afgekapt: %d tekens", len(lang))
-	}
-}
-
 // instelbareProvider legt vast wat er via ApplySettings binnenkomt.
 type instelbareProvider struct {
 	stubProvider
@@ -211,5 +199,37 @@ func TestEenVeranderdeInstellingWordtGelogd(t *testing.T) {
 
 	if uit.Len() != 0 {
 		t.Errorf("ongewijzigde instellingen werden opnieuw gelogd: %q", uit.String())
+	}
+}
+
+// Een reden die niet in de kolom van het control plane past laat de hele
+// heartbeat afketsen -- en dan staat de node dood in het paneel om een
+// foutmelding die te lang was. Afkappen moet dus, maar op een tekengrens: een
+// half afgesneden rune is geen geldige UTF-8 meer en wordt net zo goed geweigerd.
+func TestCapaciteitsredenAfkappen(t *testing.T) {
+	kort := capacityReason(errors.New("proxmox: node onbereikbaar"))
+	if kort != "proxmox: node onbereikbaar" {
+		t.Errorf("korte reden veranderd: %q", kort)
+	}
+
+	// Een lege melding zou in het paneel een lege regel opleveren waar de reden
+	// hoort te staan.
+	if leeg := capacityReason(errors.New("   ")); leeg == "" {
+		t.Error("een lege fout hoort nog steeds iets te zeggen")
+	}
+
+	if ascii := capacityReason(errors.New(strings.Repeat("x", 500))); len(ascii) > 255 {
+		t.Errorf("reden niet afgekapt: %d bytes", len(ascii))
+	}
+
+	lang := capacityReason(errors.New(strings.Repeat("é", 400)))
+	if len(lang) > 255 {
+		t.Errorf("afgekapte reden is %d bytes; past niet in de kolom", len(lang))
+	}
+	if !utf8.ValidString(lang) {
+		t.Error("afgekapte reden is geen geldige UTF-8; Postgres weigert hem")
+	}
+	if !strings.HasSuffix(lang, "…") {
+		t.Errorf("afgekapte reden eindigt op %q; verwacht een beletselteken", lang[len(lang)-4:])
 	}
 }

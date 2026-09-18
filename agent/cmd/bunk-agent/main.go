@@ -18,6 +18,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/config"
 	"github.com/Bunk-Hosting/bunk-fleet/agent/internal/provider"
@@ -338,14 +339,25 @@ func sendHeartbeat(ctx context.Context, logger *slog.Logger, prov provider.Provi
 // in the panel. It is trimmed because the column is bounded and a wall of text
 // is not more useful than its first line -- the agent's own log has the rest.
 func capacityReason(err error) string {
-	const maxLen = 200
+	// Ruim onder de kolombreedte in het control plane. Een reden die daar niet
+	// in past laat de hele heartbeat afketsen, en dan staat de node dood in het
+	// paneel om een foutmelding die te lang was.
+	const maxLen = 240
 
 	reason := strings.TrimSpace(err.Error())
 	if reason == "" {
 		reason = "onbekende fout bij het opvragen van de capaciteit"
 	}
 	if len(reason) > maxLen {
-		reason = reason[:maxLen]
+		// Op een tekengrens en niet op een byte. Een afgesneden rune is geen
+		// geldige UTF-8 meer, en Postgres weigert dat -- waarmee dezelfde
+		// heartbeat alsnog omvalt. Het beletselteken maakt zichtbaar dat er
+		// iets is weggelaten.
+		afgekapt := reason[:maxLen]
+		for len(afgekapt) > 0 && !utf8.ValidString(afgekapt) {
+			afgekapt = afgekapt[:len(afgekapt)-1]
+		}
+		reason = strings.TrimRight(afgekapt, " ") + "\u2026"
 	}
 	return reason
 }

@@ -560,11 +560,15 @@ func (c *Client) magBridgeGebruiken(ctx context.Context) error {
 			return nil
 		}
 	}
+	// Kort genoeg om heel in het paneel te belanden: het control plane kapt een
+	// reden af, en juist het commando is het deel dat iemand nodig heeft. Het
+	// token-id staat er bewust niet in -- dat weet de eigenaar, en het hoeft niet
+	// in een database te belanden waar het niet thuishoort.
 	return fmt.Errorf(
-		"proxmox: het API-token mag geen VM aan bridge %s hangen (SDN.Use ontbreekt op %s). "+
-			"Toekennen met: pveum role add BunkSDNUse -privs SDN.Use && "+
-			"pveum acl modify /sdn/zones/localnetwork --tokens '%s' --roles BunkSDNUse",
-		bridge, pad, c.cfg.TokenID)
+		"proxmox: token mag geen kaart aan bridge %s hangen; SDN.Use ontbreekt. Op de host: "+
+			"pveum role add BunkSDNUse -privs SDN.Use && pveum acl modify "+
+			"/sdn/zones/localnetwork --tokens JOUW-TOKEN-ID --roles BunkSDNUse",
+		bridge)
 }
 
 // --- Lifecycle ------------------------------------------------------------
