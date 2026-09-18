@@ -26,12 +26,25 @@ function RegioRij({
 }) {
   const [naam, setNaam] = useState(regio.name);
   const [code, setCode] = useState(regio.code);
-  const gewijzigd = naam.trim() !== regio.name || code.trim().toLowerCase() !== regio.code;
+
+  // De velden volgen de server zodra die iets anders zegt. Zonder dit blijft een
+  // rij na "Vernieuwen" de oude tekst tonen, en dan lijkt een geslaagde
+  // wijziging niet aangekomen.
+  useEffect(() => {
+    setNaam(regio.name);
+    setCode(regio.code);
+  }, [regio.name, regio.code]);
 
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <form
+          className="flex flex-wrap items-center gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onOpslaan(naam, code);
+          }}
+        >
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Input
             className="max-w-[16rem]"
@@ -47,7 +60,16 @@ function RegioRij({
             onChange={(e) => setCode(e.target.value)}
             aria-label="Code"
           />
-          <Button size="sm" variant="outline" disabled={busy || !gewijzigd} onClick={() => onOpslaan(naam, code)}>
+          {/* Niet uitgeschakeld zolang er niets gewijzigd is. Dat leek netjes en
+              het is een val: staat de knop uit terwijl jij denkt dat je iets hebt
+              veranderd, dan gebeurt er niets en zegt niets waarom. Nu klikt hij
+              altijd, en zegt de melding of er iets te doen viel. */}
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={busy || !naam.trim() || !code.trim()}
+          >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Opslaan"}
           </Button>
           <div className="ml-auto flex items-center gap-2">
@@ -79,7 +101,7 @@ function RegioRij({
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-        </div>
+        </form>
         <p className="text-xs text-muted-foreground">
           {regio.node_count === 0
             ? "geen nodes — deze locatie kan niets leveren en staat niet in het bestelscherm"
@@ -142,11 +164,26 @@ function RegiosInner() {
   const opslaan = async (r: AdminRegion, naam: string, code: string) => {
     const nieuweNaam = naam.trim();
     const nieuweCode = code.trim().toLowerCase();
-    if (!nieuweNaam || !nieuweCode) return;
-    if (nieuweNaam === r.name && nieuweCode === r.code) return;
+    if (!nieuweNaam || !nieuweCode) {
+      toast({ title: "Naam en code zijn allebei nodig", variant: "destructive" });
+      return;
+    }
+
+    // Vergelijken met dezelfde bewerking aan beide kanten. Stond er ooit een
+    // hoofdletter of een spatie in de opgeslagen code, dan verschilde hij altijd
+    // van wat jij intypt -- en dan vroeg het scherm bij élke naamswijziging om
+    // de codewijziging te bevestigen. Wie daar "nee" zegt, ziet niets gebeuren
+    // en heeft geen idee waarom.
+    const huidigeCode = (r.code ?? "").trim().toLowerCase();
+    const huidigeNaam = (r.name ?? "").trim();
+
+    if (nieuweNaam === huidigeNaam && nieuweCode === huidigeCode) {
+      toast({ title: "Niets gewijzigd", description: "Naam en code staan al zo." });
+      return;
+    }
 
     if (
-      nieuweCode !== r.code &&
+      nieuweCode !== huidigeCode &&
       !window.confirm(
         `De code van "${r.name}" wordt ${r.code} → ${nieuweCode}.\n\n` +
           "Bestaande nodes en VPS'en blijven werken; die verwijzen niet op code. " +
