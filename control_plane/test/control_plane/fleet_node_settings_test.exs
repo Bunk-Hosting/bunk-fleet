@@ -130,7 +130,6 @@ defmodule ControlPlane.FleetNodeSettingsTest do
         cpu_cores: 1,
         ram_gb: 1,
         disk_gb: 20,
-        bandwidth_tb: 1,
         price_monthly: Decimal.new("1.00"),
         template_id: 4500
       })

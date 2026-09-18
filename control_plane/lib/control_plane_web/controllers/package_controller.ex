@@ -21,7 +21,6 @@ defmodule ControlPlaneWeb.PackageController do
       cpu_cores: package.cpu_cores,
       ram_gb: package.ram_gb,
       disk_gb: package.disk_gb,
-      bandwidth_tb: package.bandwidth_tb,
       bandwidth_mbit: package.bandwidth_mbit,
       price_monthly: Decimal.to_string(package.price_monthly),
       description: package.description

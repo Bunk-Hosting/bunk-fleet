@@ -539,7 +539,6 @@ defmodule ControlPlaneWeb.VpsController do
       cpu_cores: pkg.cpu_cores,
       ram_gb: pkg.ram_gb,
       disk_gb: pkg.disk_gb,
-      bandwidth_tb: pkg.bandwidth_tb,
       bandwidth_mbit: pkg.bandwidth_mbit,
       price_monthly: pkg.price_monthly
     }

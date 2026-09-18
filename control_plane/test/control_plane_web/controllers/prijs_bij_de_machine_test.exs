@@ -36,7 +36,6 @@ defmodule ControlPlaneWeb.PrijsBijDeMachineTest do
         cpu_cores: 2,
         ram_gb: 4,
         disk_gb: 50,
-        bandwidth_tb: 1,
         price_monthly: Decimal.new("12.00"),
         is_available: true
       })

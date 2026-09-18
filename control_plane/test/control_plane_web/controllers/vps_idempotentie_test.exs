@@ -56,7 +56,6 @@ defmodule ControlPlaneWeb.VpsIdempotentieTest do
         cpu_cores: 1,
         ram_gb: 1,
         disk_gb: 20,
-        bandwidth_tb: 1,
         price_monthly: Decimal.new("5.00"),
         is_available: true
       })
