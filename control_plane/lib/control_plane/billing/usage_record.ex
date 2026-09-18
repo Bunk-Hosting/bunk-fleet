@@ -21,10 +21,8 @@ defmodule ControlPlane.Billing.UsageRecord do
   # `(vps_id, metered_at)` -- dezelfde combinatie die een dubbele meting
   # tegenhoudt -- en daar staat al een unieke index op.
   #
-  # De kolom `id` staat nog wel in de database, met een default sinds
-  # `UsageRecordsIdDefault`. Dat is met opzet: zolang er nog een versie kan
-  # draaien die hem meestuurt, moet hij bestaan. Hij verdwijnt in de migratie
-  # daarna, als niemand hem meer vult.
+  # De kolom `id` bestaat sinds `UsageRecordsSleutel` niet meer; die combinatie
+  # ís nu de primaire sleutel.
   @primary_key false
   @foreign_key_type :binary_id
   schema "usage_records" do
@@ -64,8 +62,12 @@ defmodule ControlPlane.Billing.UsageRecord do
     # meter tick stamps a fixed `metered_at`, so a duplicate insert for the same
     # (vps, tick) collides on this key.
     #
-    |> unique_constraint([:vps_id, :metered_at],
-      name: :usage_records_vps_id_metered_at_index
-    )
+    #
+    # De naam is `usage_records_pkey` en niet meer die van de losse unieke index:
+    # die index ís de primaire sleutel geworden. Dezelfde regel, dezelfde
+    # bescherming, andere naam -- en de naam is precies wat Ecto nodig heeft om
+    # een databasefout in een nette changesetfout te vertalen in plaats van in
+    # een exception.
+    |> unique_constraint([:vps_id, :metered_at], name: :usage_records_pkey)
   end
 end
