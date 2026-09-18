@@ -24,6 +24,8 @@ function naarFormulier(s: NodeSettings): Formulier {
     vmid_max: s.vmid_max?.toString() ?? "",
     vcpu_oversubscribe: s.vcpu_oversubscribe?.toString() ?? "",
     guest_name_pattern: s.guest_name_pattern ?? "",
+    vps_bridge: s.vps_bridge ?? "",
+    vps_vlan: s.vps_vlan?.toString() ?? "",
   };
 }
 
@@ -40,6 +42,10 @@ function naarInstellingen(f: Formulier): Partial<NodeSettings> {
     vmid_max: getal(f.vmid_max),
     vcpu_oversubscribe: getal(f.vcpu_oversubscribe),
     guest_name_pattern: f.guest_name_pattern.trim() === "" ? null : f.guest_name_pattern.trim(),
+    vps_bridge: f.vps_bridge.trim() === "" ? null : f.vps_bridge.trim(),
+    // Leeg is hier niet 0: untagged is een keuze, en die moet de agent kunnen
+    // onderscheiden van "hier is niets over gezegd, houd wat je had".
+    vps_vlan: getal(f.vps_vlan),
   };
 }
 
@@ -252,6 +258,34 @@ function NodeKaart({
             <Veld id="offer_vcpu" label="vCPU-cores" hint={LEEG_BETEKENT} waarde={form.offer_vcpu} onChange={zet("offer_vcpu")} placeholder="alles" />
             <Veld id="offer_ram_mb" label="RAM (MB)" hint={LEEG_BETEKENT} waarde={form.offer_ram_mb} onChange={zet("offer_ram_mb")} placeholder="alles" />
             <Veld id="offer_disk_gb" label="Schijf (GB)" hint={LEEG_BETEKENT} waarde={form.offer_disk_gb} onChange={zet("offer_disk_gb")} placeholder="alles" />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-medium">Netwerk van de VPS&apos;en</h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            De bridge waar klant-VPS&apos;en aan hangen. Die stond eerder alleen in het
+            configuratiebestand op de machine zelf; hier kun je hem zien en wijzigen. Een
+            wijziging geldt voor VPS&apos;en die hierna worden aangemaakt &mdash; een draaiende
+            machine wordt niet onder een klant vandaan verhangen.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Veld
+              id="vps_bridge"
+              label="Bridge"
+              hint="letters en cijfers, bijvoorbeeld vmbr2; leeg = van de template overnemen"
+              waarde={form.vps_bridge}
+              onChange={zet("vps_bridge")}
+              placeholder="vmbr2"
+            />
+            <Veld
+              id="vps_vlan"
+              label="VLAN-tag"
+              hint="0 = untagged; leeg = niet ingesteld"
+              waarde={form.vps_vlan}
+              onChange={zet("vps_vlan")}
+              placeholder="—"
+            />
           </div>
         </div>
 

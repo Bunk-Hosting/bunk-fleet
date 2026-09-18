@@ -16,12 +16,14 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,6 +116,26 @@ func (c *Client) oversubscribe() int {
 	return c.cfg.VCPUOversubscribe
 }
 
+// netwerk geeft de bridge en het VLAN voor een nieuwe VPS-kaart. Wat de
+// eigenaar in het dashboard zet wint van waarmee de agent gestart is; dat is de
+// hele reden dat het daar staat. Het raakt alleen machines die hierna gemaakt
+// worden -- een bestaande VPS verhangen zou hem van het net halen zonder dat
+// iemand daarom vroeg.
+func (c *Client) netwerk() (string, int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	bridge := c.cfg.Bridge
+	if c.settings.Bridge != "" {
+		bridge = c.settings.Bridge
+	}
+	vlan := c.cfg.VLAN
+	if c.settings.VLANIngesteld {
+		vlan = c.settings.VLAN
+	}
+	return bridge, vlan
+}
+
 func (c *Client) vmidRange() (int, int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -160,6 +182,9 @@ func New(cfg Config) (*Client, error) {
 	afdruk, err := normaliseerAfdruk(cfg.Fingerprint)
 	if err != nil {
 		return nil, err
+	}
+	if afdruk == "" {
+		afdruk = afdrukVanEigenNode(host)
 	}
 
 	return &Client{
@@ -221,6 +246,60 @@ func normaliseerHost(ruw string) (string, error) {
 	}
 
 	return host, nil
+}
+
+// pveCertPad is waar Proxmox het certificaat van deze node neerzet. Variabel
+// gemaakt zodat de test er een eigen bestand voor in de plaats kan zetten.
+var pveCertPad = "/etc/pve/local/pve-ssl.pem"
+
+// afdrukVanEigenNode pint het certificaat van de Proxmox op DEZE machine, en
+// alleen dan.
+//
+// Een verse Proxmox is zelfondertekend. De ketencontrole kan daar niet op
+// slagen, en het enige dat overbleef was verificatie uitzetten -- op elke node
+// die zonder eigen CA wordt toegevoegd, met een token dat root is op die node.
+//
+// Praat de agent met de API op zijn eigen machine, dan is dat onnodig: het
+// certificaat ligt ernaast op schijf. Dat van schijf lezen is geen
+// vertrouwen-bij-eerste-gebruik maar het echte certificaat, en het pinnen ervan
+// is strenger dan de ketencontrole ooit was.
+//
+// Alleen bij een loopback-adres, want alleen dan is "de API op dit adres" en
+// "de Proxmox waarvan dit bestand is" gegarandeerd dezelfde machine.
+func afdrukVanEigenNode(host string) string {
+	ontleed, err := url.Parse(host)
+	if err != nil {
+		return ""
+	}
+	naam := ontleed.Hostname()
+	if naam != "localhost" {
+		ip := net.ParseIP(naam)
+		if ip == nil || !ip.IsLoopback() {
+			return ""
+		}
+	}
+
+	pem, err := os.ReadFile(pveCertPad)
+	if err != nil {
+		return ""
+	}
+	blok, _ := pemDecode(pem)
+	if blok == nil {
+		return ""
+	}
+	som := sha256.Sum256(blok)
+	return hex.EncodeToString(som[:])
+}
+
+// pemDecode haalt de DER-bytes uit het eerste CERTIFICATE-blok. Teruggegeven
+// wordt wat er ondertekend is, zodat de som gelijk is aan die van het
+// certificaat dat over de lijn komt.
+func pemDecode(data []byte) ([]byte, []byte) {
+	blok, rest := pem.Decode(data)
+	if blok == nil || blok.Type != "CERTIFICATE" {
+		return nil, rest
+	}
+	return blok.Bytes, rest
 }
 
 // httpClient builds an *http.Client for the PVE API. Three cases, in order of
@@ -439,7 +518,53 @@ func (c *Client) Capacity(ctx context.Context) (provider.Capacity, error) {
 		}
 		guests = append(guests, gl.Data...)
 	}
+	if err := c.magBridgeGebruiken(ctx); err != nil {
+		return provider.Capacity{}, err
+	}
 	return parseCapacity(ns, guests, c.oversubscribe()), nil
+}
+
+// magBridgeGebruiken controleert of het API-token een kaart aan de ingestelde
+// bridge mag hangen.
+//
+// Sinds Proxmox 8.1 valt een gewone Linux-bridge onder de SDN-rechten. Een token
+// met alle VM-rechten van de wereld maar zonder SDN.Use op
+// /sdn/zones/localnetwork krijgt bij het klonen een 403 -- en dat is het eerste
+// moment waarop iemand het merkt, want inschrijven en capaciteit melden gaan
+// gewoon door. De node staat dan groen, de scheduler kiest hem, en de klant die
+// besteld heeft krijgt de storing.
+//
+// Liever hier: dit maakt de node rood met de reden erbij, zoals elke andere
+// hypervisor die iets niet kan. Het kost een GET per capaciteitsronde en het
+// antwoord verandert zodra het recht wordt toegekend, dus het herstelt zichzelf
+// zonder herstart.
+func (c *Client) magBridgeGebruiken(ctx context.Context) error {
+	bridge, _ := c.netwerk()
+	if !safeBridge(bridge) {
+		// Geen bridge afgedwongen: de kaart komt van de template en dit recht
+		// speelt geen rol.
+		return nil
+	}
+
+	pad := "/sdn/zones/localnetwork/" + bridge
+	var out struct {
+		Data map[string]map[string]int `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/access/permissions?path="+url.QueryEscape(pad), nil, &out); err != nil {
+		// Niet kunnen kijken is geen bewijs van niet mogen. Oudere versies
+		// kennen dit pad niet, en daar bestaat het recht ook niet.
+		return nil //nolint:nilerr // zie hierboven
+	}
+	for _, rechten := range out.Data {
+		if rechten["SDN.Use"] == 1 {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"proxmox: het API-token mag geen VM aan bridge %s hangen (SDN.Use ontbreekt op %s). "+
+			"Toekennen met: pveum role add BunkSDNUse -privs SDN.Use && "+
+			"pveum acl modify /sdn/zones/localnetwork --tokens '%s' --roles BunkSDNUse",
+		bridge, pad, c.cfg.TokenID)
 }
 
 // --- Lifecycle ------------------------------------------------------------
@@ -695,13 +820,13 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 	if spec.VPSID != "" {
 		cfgForm.Set("description", eigenaarsregel(spec.VPSID))
 	}
-	if safeBridge(c.cfg.Bridge) {
+	if bridge, vlan := c.netwerk(); safeBridge(bridge) {
 		// firewall=1 zet de Proxmox VM-firewall aan op deze kaart. Zonder deze
 		// vlag doen alle regels en filters hieronder niets: Proxmox hangt de
 		// filterketen per interface op aan precies deze optie.
-		net0 := "virtio,bridge=" + c.cfg.Bridge + ",firewall=1"
-		if c.cfg.VLAN > 0 && c.cfg.VLAN <= 4094 {
-			net0 += ",tag=" + strconv.Itoa(c.cfg.VLAN)
+		net0 := "virtio,bridge=" + bridge + ",firewall=1"
+		if vlan > 0 && vlan <= 4094 {
+			net0 += ",tag=" + strconv.Itoa(vlan)
 		}
 		if rate := proxmoxRate(spec.RateMbit); rate != "" {
 			net0 += ",rate=" + rate

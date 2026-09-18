@@ -320,6 +320,12 @@ type NodeSettings struct {
 	VMIDMin           int `json:"vmid_min"`
 	VMIDMax           int `json:"vmid_max"`
 	VCPUOversubscribe int `json:"vcpu_oversubscribe"`
+	// Bridge en VLAN zijn pointers omdat "niet ingesteld" hier niet samenvalt
+	// met de nulwaarde: een lege bridge betekent "neem over van de template" en
+	// VLAN 0 betekent "untagged". Beide zijn geldige keuzes, dus alleen null
+	// mag "laat mijn eigen config staan" betekenen.
+	Bridge *string `json:"vps_bridge"`
+	VLAN   *int    `json:"vps_vlan"`
 }
 
 // HeartbeatResponse is the control plane's answer to a heartbeat.

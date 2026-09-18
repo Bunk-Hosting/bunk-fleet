@@ -84,9 +84,16 @@ defmodule ControlPlane.Fleet.Node do
     # `owner`, dat zegt wie hem beheert.
     field :owner_email, :string
 
-    # Per-node VPS network (optional; nil = use the global default range). Bridge
-    # and VLAN stay agent-local; the control plane only needs the IP range to hand
-    # out non-conflicting addresses on this worker's subnet.
+    # Per-node VPS network (optional; nil = use the global default range).
+    #
+    # Bridge en VLAN stonden hier eerst niet: die waren agent-lokaal, want het
+    # control plane heeft alleen de IP-range nodig om adressen uit te delen die
+    # niet botsen. Het gevolg was dat de eigenaar van een node de rest van zijn
+    # instellingen in het dashboard zag staan en juist deze twee alleen kon
+    # wijzigen door op die machine in te loggen. nil = niet ingesteld: de agent
+    # houdt dan wat in zijn eigen config staat.
+    field :vps_bridge, :string
+    field :vps_vlan, :integer
     field :vps_gateway, :string
     field :vps_cidr_prefix, :integer
     field :vps_range_start, :string
@@ -112,6 +119,8 @@ defmodule ControlPlane.Fleet.Node do
   end
 
   @settings_fields [
+    :vps_bridge,
+    :vps_vlan,
     :offer_vcpu,
     :offer_ram_mb,
     :offer_disk_gb,
@@ -158,6 +167,22 @@ defmodule ControlPlane.Fleet.Node do
     )
     |> validate_vmid_range(template_ids)
     |> validate_guest_name_pattern()
+    |> validate_bridge()
+    # 0 is untagged en een geldige keuze; 4095 is gereserveerd.
+    |> validate_number(:vps_vlan, greater_than_or_equal_to: 0, less_than_or_equal_to: 4094)
+  end
+
+  # Dezelfde eis als de agent stelt voordat hij een bridge in de net0-regel zet
+  # (safeBridge): alleen letters en cijfers. Een naam met een komma of een
+  # gelijkteken erin zou daar extra opties worden in plaats van een bridge, en
+  # een naam die de agent toch weigert levert een node op die stil niets doet.
+  # Vijftien tekens is wat Linux maximaal aan een interfacenaam geeft.
+  defp validate_bridge(changeset) do
+    changeset
+    |> validate_format(:vps_bridge, ~r/^[a-zA-Z0-9]+$/,
+      message: "mag alleen letters en cijfers bevatten (bijvoorbeeld vmbr2)"
+    )
+    |> validate_length(:vps_bridge, max: 15)
   end
 
   defp validate_vmid_range(changeset, template_ids) do
@@ -306,6 +331,8 @@ defmodule ControlPlane.Fleet.Node do
       :public_key,
       :owner_email,
       :owner_id,
+      :vps_bridge,
+      :vps_vlan,
       :vps_gateway,
       :vps_cidr_prefix,
       :vps_range_start,

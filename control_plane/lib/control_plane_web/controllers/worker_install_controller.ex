@@ -444,6 +444,40 @@ defmodule ControlPlaneWeb.WorkerInstallController do
       read -r -p "  Laatste bruikbare IP (bv. 192.168.1.150): " VPS_REND </dev/tty
     fi
 
+    # SDN.Use op de bridge. Sinds Proxmox 8.1 valt een gewone Linux-bridge onder
+    # de SDN-rechten: een token met alle VM-rechten van de wereld mag nog steeds
+    # geen kaart aan vmbr2 hangen zonder SDN.Use op /sdn/zones/localnetwork.
+    #
+    # Dat merk je niet bij het inschrijven en ook niet aan de capaciteit -- de
+    # node staat groen en meldt ruimte. Het komt pas naar boven bij de eerste
+    # bestelling, als "clone template 9000: status 403: Permission check failed
+    # (/sdn/zones/localnetwork/vmbr2, SDN.Use)", en dan is er al een klant die
+    # wacht. Daarom hier, waar we root op de machine zijn en het token kennen.
+    if [ "$ON_PVE_HOST" = "true" ] && [ -n "$VPS_BRIDGE" ] && [ -n "$PXTID" ] && command -v pveum >/dev/null 2>&1; then
+      echo
+      echo "  Proxmox 8.1+ eist SDN.Use op de bridge voordat een token er een VM aan"
+      echo "  mag hangen. Zonder dat recht schrijft deze node zich netjes in, meldt"
+      echo "  capaciteit, en weigert pas de eerste bestelling met een 403."
+      read -r -p "  Dat recht nu toekennen aan $PXTID? (J/n): " SDNOK </dev/tty
+      case "$SDNOK" in
+        n|N)
+          echo "  -> Overgeslagen. Draai dit zelf voordat je bestellingen verwacht:"
+          echo "     pveum role add BunkSDNUse -privs SDN.Use"
+          echo "     pveum acl modify /sdn/zones/localnetwork --tokens '$PXTID' --roles BunkSDNUse"
+          ;;
+        *)
+          pveum role add BunkSDNUse -privs "SDN.Use" >/dev/null 2>&1 || true
+          if pveum acl modify /sdn/zones/localnetwork --tokens "$PXTID" --roles BunkSDNUse >/dev/null 2>&1; then
+            echo "  -> SDN.Use toegekend op /sdn/zones/localnetwork."
+          else
+            echo "  !! Toekennen lukte niet. Draai dit zelf:"
+            echo "     pveum role add BunkSDNUse -privs SDN.Use"
+            echo "     pveum acl modify /sdn/zones/localnetwork --tokens '$PXTID' --roles BunkSDNUse"
+          fi
+          ;;
+      esac
+    fi
+
     # Het VMID komt uit de control plane: dat is het template dat bij een
     # bestelling wordt meegestuurd wanneer een pakket er zelf geen noemt. Een
     # ander nummer hier zou een node opleveren die groen staat en niets kan.

@@ -71,7 +71,13 @@ defmodule ControlPlaneWeb.HeartbeatController do
       offer_disk_gb: node.offer_disk_gb,
       vmid_min: node.vmid_min,
       vmid_max: node.vmid_max,
-      vcpu_oversubscribe: node.vcpu_oversubscribe
+      vcpu_oversubscribe: node.vcpu_oversubscribe,
+      # null en niet 0/"" : bij een bridge is leeg ook een keuze ("neem over van
+      # de template") en bij een VLAN is 0 er een ("untagged"). De agent moet
+      # "niet ingesteld" kunnen onderscheiden van allebei, anders overschrijft
+      # een node die niemand heeft aangeraakt zijn eigen config met niets.
+      vps_bridge: node.vps_bridge,
+      vps_vlan: node.vps_vlan
     }
   end
 end

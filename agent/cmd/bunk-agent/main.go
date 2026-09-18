@@ -247,6 +247,12 @@ func applySettings(logger *slog.Logger, prov provider.Provider, offer *offerHold
 			VMIDMin:           s.VMIDMin,
 			VMIDMax:           s.VMIDMax,
 		}
+		if s.Bridge != nil {
+			nieuw.Bridge = *s.Bridge
+		}
+		if s.VLAN != nil {
+			nieuw.VLAN, nieuw.VLANIngesteld = *s.VLAN, true
+		}
 		// Ook loggen als er niets aan het aanbod verandert. Zonder deze regel is
 		// "heeft die node zijn instellingen nou opgepakt?" een vraag die niemand
 		// kan beantwoorden: een VMID-bereik of een overboekingsfactor landde stil.
@@ -254,7 +260,9 @@ func applySettings(logger *slog.Logger, prov provider.Provider, offer *offerHold
 			logger.Info("instellingen opgehaald uit het dashboard",
 				"vmid_min", nieuw.VMIDMin,
 				"vmid_max", nieuw.VMIDMax,
-				"vcpu_per_core", nieuw.VCPUOversubscribe)
+				"vcpu_per_core", nieuw.VCPUOversubscribe,
+				"bridge", nieuw.Bridge,
+				"vlan", nieuw.VLAN)
 			vorigeProviderSettings = nieuw
 		}
 		c.ApplySettings(nieuw)

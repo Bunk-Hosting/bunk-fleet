@@ -15,7 +15,20 @@ browser console are all the agent dialling out over HTTPS.
 - **Proxmox VE**, reachable at an address the agent can use.
 - **An API token** for it: Datacenter → Permissions → API Tokens. The agent needs
   enough rights to clone, configure, start, stop and destroy VMs
-  (`PVEVMAdmin` on `/` is the blunt version).
+  (`PVEVMAdmin` on `/` is the blunt version) **and `SDN.Use` on the bridge**.
+
+  That second one is not optional and not included in `PVEVMAdmin`. Since Proxmox
+  8.1 a plain Linux bridge lives under the SDN permission tree, so a token with
+  every VM right there is still refuses to attach a NIC to `vmbr2`. Nothing says
+  so until the first order: the node enrols, reports capacity, sits green, and
+  then answers `clone template 9000: status 403: Permission check failed
+  (/sdn/zones/localnetwork/vmbr2, SDN.Use)`. The installer offers to grant it; by
+  hand it is:
+
+  ```sh
+  pveum role add BunkSDNUse -privs SDN.Use
+  pveum acl modify /sdn/zones/localnetwork --tokens 'user@realm!tokenid' --roles BunkSDNUse
+  ```
 - **A cloud-init template** to clone. On a Proxmox host the installer builds one
   for you if the VMID the control plane provisions with does not exist yet: it
   pulls Ubuntu's own cloud image, verifies its published checksum, and turns it

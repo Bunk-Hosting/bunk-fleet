@@ -738,6 +738,10 @@ export interface NodeSettings {
   vcpu_oversubscribe: number | null;
   /** Hoe een gast op de hypervisor heet. Moet {id} bevatten. */
   guest_name_pattern: string | null;
+  /** De bridge waar de netwerkkaart van een nieuwe VPS aan komt te hangen. */
+  vps_bridge: string | null;
+  /** 802.1q-tag op die bridge. 0 is untagged en iets anders dan niet ingesteld. */
+  vps_vlan: number | null;
 }
 
 /** Een node zoals de eigenaar hem ziet: zijn eigen machine, niet de hele vloot. */

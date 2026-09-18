@@ -185,6 +185,13 @@ type Settings struct {
 	VCPUOversubscribe int
 	VMIDMin           int
 	VMIDMax           int
+	// Bridge is de bridge waar de NIC van een nieuwe VPS aan komt te hangen.
+	// Leeg = niet ingesteld: de provider houdt wat er bij het starten stond.
+	Bridge string
+	// VLAN met een aparte vlag, want 0 is hier een geldige waarde (untagged) en
+	// dus niet te gebruiken als "niet ingesteld".
+	VLAN          int
+	VLANIngesteld bool
 }
 
 // Configurable is implemented by providers that accept settings at runtime.
