@@ -190,6 +190,8 @@ func TestCreateVMHappyPath(t *testing.T) {
 		// firewall=1 hoort erbij: zonder die vlag hangt Proxmox geen
 		// filterketen aan deze interface en doen ipfilter en de
 		// isolatieregels niets. Zie isoleerGast.
+		// Geen rate= erin: deze spec heeft geen RateMbit, en dan hoort er geen
+		// limiet op de kaart te komen. Zie TestCreateVMZetDeSnelheidVanHetPakket.
 		"net0":       "virtio,bridge=vmbr1,firewall=1,tag=42",
 		"ciuser":     "bunk",
 		"cipassword": "pw",
@@ -197,6 +199,39 @@ func TestCreateVMHappyPath(t *testing.T) {
 		if cfg.form.Get(field) != want {
 			t.Errorf("config %s = %q, want %q", field, cfg.form.Get(field), want)
 		}
+	}
+}
+
+// De snelheid die bij het pakket hoort, komt als `rate=` op de netwerkkaart van
+// de gast. Dat is de enige plek waar die belofte wordt waargemaakt: zonder deze
+// regel is "tot 500 Mbit" een zin op een pagina.
+func TestCreateVMZetDeSnelheidVanHetPakket(t *testing.T) {
+	r := newRecorder(t)
+	r.on("GET /cluster/nextid", `{"data":"131"}`)
+	r.on("POST /nodes/pve/qemu/9000/clone", okTask)
+	r.on("PUT /nodes/pve/qemu/131/resize", okTask)
+	r.on("POST /nodes/pve/qemu/131/config", `{"data":null}`)
+	r.on("POST /nodes/pve/qemu/131/status/start", okTask)
+	r.taskSucceeds()
+
+	c := r.client(t, func(cfg *Config) { cfg.Bridge = "vmbr1" })
+
+	if _, err := c.CreateVM(context.Background(), provider.VMSpec{
+		Name:       "web-1",
+		TemplateID: 9000,
+		VCPU:       2,
+		RAMMB:      2048,
+		DiskGB:     40,
+		// Basic: 500 Mbit. Voor Proxmox is dat 62,5 MB/s -- geen heel getal, en
+		// afronden zou een halve procent weggeven of afpakken.
+		RateMbit: 500,
+	}); err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+
+	cfg, _ := r.seen("POST", "/nodes/pve/qemu/131/config")
+	if got, want := cfg.form.Get("net0"), "virtio,bridge=vmbr1,firewall=1,rate=62.5"; got != want {
+		t.Errorf("net0 = %q, want %q", got, want)
 	}
 }
 
