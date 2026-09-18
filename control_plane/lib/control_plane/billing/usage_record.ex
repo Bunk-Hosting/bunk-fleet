@@ -17,11 +17,10 @@ defmodule ControlPlane.Billing.UsageRecord do
 
   @type t :: %__MODULE__{}
 
-  # Geen eigen sleutelkolom in dit schema. De natuurlijke sleutel is
-  # `(vps_id, metered_at)` -- dezelfde combinatie die een dubbele meting
-  # tegenhoudt. De `id`-kolom staat in de database nog wel, met een default, en
-  # verdwijnt in een tweede stap; zie de opmerking bij de unique_constraint.
-  @primary_key false
+  # De sleutelkolom staat er nog. Hij wordt nergens opgezocht en verdwijnt in een
+  # tweede stap; zolang de kolom in de database staat moet dit schema hem vullen,
+  # want hij heeft geen default aan de databasekant.
+  @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "usage_records" do
     field :owner_email, :string

@@ -114,6 +114,7 @@ defmodule ControlPlane.Fleet.Reconciler do
        last_drift_ms: nil,
        purge_interval_ms: purge_interval_ms,
        last_purge_ms: nil,
+       last_scrub_ms: nil,
        schijf_interval_ms: schijf_interval_ms,
        last_schijf_ms: nil,
        last_schijf_alarm_ms: nil
@@ -149,6 +150,7 @@ defmodule ControlPlane.Fleet.Reconciler do
     state = maybe_meter_usage(state)
     state = maybe_dispatch_backups(state)
     state = maybe_purge_commands(state)
+    state = maybe_scrub_vpses(state)
     state = maybe_check_schijf(state)
     settle_subscriptions()
     roll_out_agent()
@@ -221,6 +223,31 @@ defmodule ControlPlane.Fleet.Reconciler do
   end
 
   defp maybe_purge_commands(state), do: state
+
+  # Wat er van een verwijderde VPS niet bewaard hoeft te blijven. Dezelfde
+  # cadans als het opruimen van commando's: het gaat om rijen van een maand oud,
+  # dus vier keer per dag kijken is ruim genoeg.
+  defp maybe_scrub_vpses(%{purge_interval_ms: pi, last_scrub_ms: last} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if is_nil(last) or now - last >= pi do
+      scrub_vpses()
+      %{state | last_scrub_ms: now}
+    else
+      state
+    end
+  end
+
+  defp maybe_scrub_vpses(state), do: state
+
+  defp scrub_vpses do
+    case Fleet.scrub_deleted_vpses() do
+      0 -> :ok
+      n -> Logger.info("persoonsgegevens gewist van verwijderde vps'en", count: n)
+    end
+  rescue
+    e -> Logger.error("opschonen van verwijderde vps'en mislukt: #{Exception.message(e)}")
+  end
 
   # Hoe vol de schijf zit. Loopt hij vol, dan stopt Postgres met schrijven en
   # ligt alles plat -- en het eerste signaal zou anders een klant zijn.
