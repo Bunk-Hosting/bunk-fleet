@@ -17,10 +17,15 @@ defmodule ControlPlane.Billing.UsageRecord do
 
   @type t :: %__MODULE__{}
 
-  # De sleutelkolom staat er nog. Hij wordt nergens opgezocht en verdwijnt in een
-  # tweede stap; zolang de kolom in de database staat moet dit schema hem vullen,
-  # want hij heeft geen default aan de databasekant.
-  @primary_key {:id, :binary_id, autogenerate: true}
+  # Geen sleutelkolom in dit schema. De natuurlijke sleutel is
+  # `(vps_id, metered_at)` -- dezelfde combinatie die een dubbele meting
+  # tegenhoudt -- en daar staat al een unieke index op.
+  #
+  # De kolom `id` staat nog wel in de database, met een default sinds
+  # `UsageRecordsIdDefault`. Dat is met opzet: zolang er nog een versie kan
+  # draaien die hem meestuurt, moet hij bestaan. Hij verdwijnt in de migratie
+  # daarna, als niemand hem meer vult.
+  @primary_key false
   @foreign_key_type :binary_id
   schema "usage_records" do
     field :owner_email, :string
