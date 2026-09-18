@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MapPin, Plus, RefreshCw } from "lucide-react";
+import { Loader2, MapPin, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,11 +16,13 @@ function RegioRij({
   busy,
   onOpslaan,
   onSchakel,
+  onVerwijderen,
 }: {
   regio: AdminRegion;
   busy: boolean;
   onOpslaan: (naam: string, code: string) => void;
   onSchakel: () => void;
+  onVerwijderen: () => void;
 }) {
   const [naam, setNaam] = useState(regio.name);
   const [code, setCode] = useState(regio.code);
@@ -56,6 +58,25 @@ function RegioRij({
             )}
             <Button variant="ghost" size="sm" disabled={busy} onClick={onSchakel}>
               {regio.enabled ? "Sluiten" : "Openen"}
+            </Button>
+            {/* Alleen aan te klikken als er geen nodes in staan. De server
+                controleert het opnieuw en kijkt strenger -- ook een allang
+                verwijderde VPS houdt zijn verwijzing naar deze locatie vast --
+                maar een knop die zichtbaar uitstaat scheelt de klik die toch
+                niets doet. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={busy || regio.node_count > 0}
+              title={
+                regio.node_count > 0
+                  ? "Er staan nodes in deze locatie"
+                  : "Locatie verwijderen"
+              }
+              onClick={onVerwijderen}
+            >
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -170,6 +191,27 @@ function RegiosInner() {
     }
   };
 
+  const verwijderen = async (r: AdminRegion) => {
+    if (!window.confirm(`Locatie "${r.name}" verwijderen? Dit kan alleen als er nooit iets in heeft gedraaid.`)) {
+      return;
+    }
+
+    setBusy(r.id);
+    try {
+      await adminApi.deleteRegion(r.id);
+      setRegions((huidig) => (huidig ?? []).filter((x) => x.id !== r.id));
+      toast({ title: "Locatie verwijderd", description: `"${r.name}" bestaat niet meer.` });
+    } catch (e) {
+      toast({
+        title: "Kan niet verwijderen",
+        description: parseApiError(e, "Kon de locatie niet verwijderen."),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (regions === null) {
     return (
       <div className="flex justify-center py-20">
@@ -223,6 +265,7 @@ function RegiosInner() {
             busy={busy === r.id}
             onOpslaan={(naam, code) => opslaan(r, naam, code)}
             onSchakel={() => zetAan(r, !r.enabled)}
+            onVerwijderen={() => verwijderen(r)}
           />
         ))}
       </div>

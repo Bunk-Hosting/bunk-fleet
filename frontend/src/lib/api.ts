@@ -63,6 +63,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   insufficient_credits: "Je tegoed is niet toereikend voor deze VPS.",
   quota_exceeded: "Je hebt het maximum aantal VPS'en bereikt.",
   no_capacity: "Er is op dit moment geen capaciteit vrij in deze regio.",
+
+  // Een locatie verwijderen. Drie redenen waarom het niet kan, en ze vragen om
+  // iets anders van degene die het probeert.
+  has_nodes: "Er staan nog nodes in deze locatie. Verplaats die eerst.",
+  has_vpses:
+    "In deze locatie heeft een VPS gedraaid. Die geschiedenis blijft bewaard, dus de locatie kan niet weg — sluiten kan wel.",
+  has_enroll_tokens:
+    "Er staat nog een uitnodiging open voor deze locatie. Trek die eerst in.",
   no_matching_package: "Deze combinatie van cpu, geheugen en schijf is niet te bestellen.",
   invalid_vps: "Deze specificatie kan niet.",
   region_not_found: "Deze regio bestaat niet.",
@@ -1016,6 +1024,10 @@ export const adminApi = {
 
   createRegion: async (code: string, name: string): Promise<AdminRegion> =>
     (await api.post<{ region: AdminRegion }>("/beheer/regions", { code, name })).data.region,
+
+  deleteRegion: async (id: string): Promise<void> => {
+    await api.delete(`/beheer/regions/${id}`);
+  },
 
   updateRegion: async (
     id: string,

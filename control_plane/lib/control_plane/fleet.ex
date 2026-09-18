@@ -87,6 +87,84 @@ defmodule ControlPlane.Fleet do
   end
 
   @doc """
+  Verwijdert een locatie die niets meer bevat.
+
+  "Niets meer" is strenger dan "geen nodes", en dat komt door de database zelf:
+  nodes, VPS'en en uitnodigingen verwijzen naar een regio met `on_delete:
+  :restrict`. Ook een VPS die allang verwijderd is houdt die verwijzing vast,
+  want de rij blijft staan voor de administratie. Een locatie waar ooit iets in
+  heeft gedraaid is dus niet meer weg te gooien, en dat is juist: de
+  geschiedenis zou dan naar een locatie wijzen die niemand meer kan opzoeken.
+
+  Wat er wél weg kan is een locatie die nooit gebruikt is -- een typefout, een
+  regio die voor een node was bedoeld die er nooit kwam.
+
+  De reden waarom het niet kan komt terug als aparte fout, want ze vragen om
+  iets anders van degene die het probeert: nodes kun je verplaatsen, een
+  openstaande uitnodiging kun je intrekken, en aan een VPS-geschiedenis valt
+  niets te doen. "Verwijderen mislukt" zou hem laten raden.
+
+  Uitzetten blijft het alternatief voor een locatie die wordt afgebouwd: zie
+  `update_region/2`. Dan blijft draaien wat draait en komt er niets nieuws bij.
+  """
+  @spec delete_region(Ecto.UUID.t()) ::
+          :ok | {:error, :not_found | :has_nodes | :has_vpses | :has_enroll_tokens}
+  def delete_region(region_id) do
+    case Repo.get(Region, region_id) do
+      nil ->
+        {:error, :not_found}
+
+      region ->
+        # Eerst zelf tellen, want dat geeft een bruikbaar antwoord. De
+        # constraints hieronder zijn het vangnet voor wat er tussen tellen en
+        # verwijderen bij komt.
+        cond do
+          telt?(Node, region.id) -> {:error, :has_nodes}
+          telt?(Vps, region.id) -> {:error, :has_vpses}
+          true -> verwijder_regio(region)
+        end
+    end
+  end
+
+  defp telt?(schema, region_id) do
+    Repo.exists?(from r in schema, where: r.region_id == ^region_id)
+  end
+
+  defp verwijder_regio(%Region{} = region) do
+    region
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.foreign_key_constraint(:id,
+      name: :nodes_region_id_fkey,
+      message: "has_nodes"
+    )
+    |> Ecto.Changeset.foreign_key_constraint(:id,
+      name: :vpses_region_id_fkey,
+      message: "has_vpses"
+    )
+    |> Ecto.Changeset.foreign_key_constraint(:id,
+      name: :enroll_tokens_region_id_fkey,
+      message: "has_enroll_tokens"
+    )
+    |> Repo.delete()
+    |> case do
+      {:ok, _} ->
+        :ok
+
+      {:error, %Ecto.Changeset{errors: errors}} ->
+        {:error, reden_uit_errors(errors)}
+    end
+  end
+
+  defp reden_uit_errors(errors) do
+    case Keyword.get(errors, :id) do
+      {"has_nodes", _} -> :has_nodes
+      {"has_vpses", _} -> :has_vpses
+      {"has_enroll_tokens", _} -> :has_enroll_tokens
+      _ -> :has_vpses
+    end
+  end
+
+  @doc """
   Fetches a single region by id, raising `Ecto.NoResultsError` if none exists.
   """
   def get_region!(id), do: Repo.get!(Region, id)

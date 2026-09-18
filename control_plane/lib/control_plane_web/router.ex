@@ -319,6 +319,7 @@ defmodule ControlPlaneWeb.Router do
     get "/regions", PanelController, :regions
     post "/regions", PanelController, :create_region
     patch "/regions/:id", PanelController, :update_region
+    delete "/regions/:id", PanelController, :delete_region
     get "/nodes", PanelController, :nodes
     # Een node toevoegen hoort hier en niet alleen onder /admin/v1: dat pad wordt
     # door Cloudflare's WAF geblokkeerd voor het de origin bereikt, waardoor het

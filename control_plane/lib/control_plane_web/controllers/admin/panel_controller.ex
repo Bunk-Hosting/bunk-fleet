@@ -639,6 +639,29 @@ defmodule ControlPlaneWeb.Admin.PanelController do
     end
   end
 
+  @doc """
+  Verwijdert een locatie die niets meer bevat.
+
+  Waarom dit vaker "nee" zegt dan je zou denken: ook een allang verwijderde VPS
+  houdt zijn verwijzing naar de locatie vast, want die rij blijft staan voor de
+  administratie. Een locatie waar ooit iets in heeft gedraaid is dus niet meer
+  weg te gooien -- de geschiedenis zou naar iets wijzen dat niemand kan opzoeken.
+  Wat er wél weg kan is een locatie die nooit is gebruikt.
+
+  Voor een locatie die wordt afgebouwd is uitzetten het antwoord: dan blijft
+  draaien wat draait en komt er niets nieuws bij.
+  """
+  def delete_region(conn, %{"id" => id}) do
+    with {:ok, region_id} <- Ecto.UUID.cast(id) |> ok_or(:not_found),
+         :ok <- Fleet.delete_region(region_id) do
+      send_resp(conn, :no_content, "")
+    else
+      :not_found -> error(conn, :not_found, "not_found")
+      {:error, :not_found} -> error(conn, :not_found, "not_found")
+      {:error, reden} -> error(conn, :conflict, Atom.to_string(reden))
+    end
+  end
+
   # Twee dingen kunnen er met een code misgaan en ze vragen om iets anders van
   # degene die het intypt: hij bestaat al, of hij heeft niet de vorm die in een
   # URL past. "invalid" zou hem laten raden welke van de twee.

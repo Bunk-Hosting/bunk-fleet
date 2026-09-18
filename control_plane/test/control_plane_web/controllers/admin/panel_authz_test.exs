@@ -52,6 +52,7 @@ defmodule ControlPlaneWeb.Admin.PanelAuthzTest do
       {:get, "/api/v1/beheer/regions"},
       {:post, "/api/v1/beheer/regions"},
       {:patch, "/api/v1/beheer/regions/#{@uuid}"},
+      {:delete, "/api/v1/beheer/regions/#{@uuid}"},
       {:get, "/api/v1/beheer/users"},
       {:get, "/api/v1/beheer/users/#{@uuid}"},
       {:get, "/api/v1/beheer/subscriptions"},
