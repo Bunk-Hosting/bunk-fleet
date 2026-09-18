@@ -15,8 +15,11 @@ defmodule ControlPlane.RegioVerwijderenTest do
   use ControlPlane.DataCase, async: true
 
   import ControlPlane.Fixtures
+  import Ecto.Query, only: [from: 2]
 
+  alias ControlPlane.Clock
   alias ControlPlane.Fleet
+  alias ControlPlane.Fleet.EnrollToken
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Region
   alias ControlPlane.Fleet.Vps
@@ -94,6 +97,51 @@ defmodule ControlPlane.RegioVerwijderenTest do
     |> Repo.insert!()
 
     assert Fleet.delete_region(r.id) == {:error, :has_vpses}
+    assert Repo.get(Region, r.id)
+  end
+
+  test "een gebruikte of verlopen uitnodiging houdt niets tegen" do
+    # Dit stond in de weg zonder dat er iets te zien was: een uitnodiging die al
+    # is ingewisseld of allang is verlopen blijft als rij staan, en die telde mee
+    # als "er staat nog een uitnodiging open". Een melding die niet klopt met wat
+    # iemand op het scherm ziet, is erger dan geen melding.
+    r = regio()
+
+    %EnrollToken{}
+    |> EnrollToken.changeset(%{
+      token_hash: "gebruikt-#{System.unique_integer([:positive])}",
+      region_id: r.id,
+      expires_at: Clock.shift(3600),
+      used_at: Clock.now()
+    })
+    |> Repo.insert!()
+
+    %EnrollToken{}
+    |> EnrollToken.changeset(%{
+      token_hash: "verlopen-#{System.unique_integer([:positive])}",
+      region_id: r.id,
+      expires_at: Clock.shift(-3600)
+    })
+    |> Repo.insert!()
+
+    assert Fleet.delete_region(r.id) == :ok
+    refute Repo.get(Region, r.id)
+    # En ze zijn meegegaan: een token wijst naar een locatie die niet meer bestaat.
+    assert Repo.aggregate(from(t in EnrollToken, where: t.region_id == ^r.id), :count) == 0
+  end
+
+  test "een uitnodiging die iemand nog kan gebruiken houdt de locatie wel tegen" do
+    r = regio()
+
+    %EnrollToken{}
+    |> EnrollToken.changeset(%{
+      token_hash: "open-#{System.unique_integer([:positive])}",
+      region_id: r.id,
+      expires_at: Clock.shift(3600)
+    })
+    |> Repo.insert!()
+
+    assert Fleet.delete_region(r.id) == {:error, :has_enroll_tokens}
     assert Repo.get(Region, r.id)
   end
 

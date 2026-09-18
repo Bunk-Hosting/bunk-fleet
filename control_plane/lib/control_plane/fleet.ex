@@ -7,6 +7,7 @@ defmodule ControlPlane.Fleet do
 
   alias ControlPlane.Accounts.User
   alias ControlPlane.Clock
+  alias ControlPlane.Fleet.EnrollToken
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.Node
   alias ControlPlane.Fleet.Package
@@ -123,6 +124,7 @@ defmodule ControlPlane.Fleet do
         cond do
           telt?(Node, region.id) -> {:error, :has_nodes}
           draaiende_vps?(region.id) -> {:error, :has_vpses}
+          open_uitnodiging?(region.id) -> {:error, :has_enroll_tokens}
           true -> verwijder_regio(region)
         end
     end
@@ -141,7 +143,43 @@ defmodule ControlPlane.Fleet do
     Repo.exists?(from v in Vps, where: v.region_id == ^region_id and v.status != :deleted)
   end
 
+  # Alleen een uitnodiging die iemand nog kan gebruiken telt: ongebruikt én niet
+  # verlopen. Een token dat al is ingewisseld of allang is verlopen blijft als
+  # rij staan, en die rijen hielden een locatie tegen met de melding "er staat
+  # nog een uitnodiging open" -- terwijl er niets openstond en er in het scherm
+  # ook niets te zien was. Een melding die niet klopt met wat iemand ziet is
+  # erger dan geen melding.
+  defp open_uitnodiging?(region_id) do
+    nu = Clock.now()
+
+    Repo.exists?(
+      from t in EnrollToken,
+        where: t.region_id == ^region_id and is_nil(t.used_at) and t.expires_at > ^nu
+    )
+  end
+
   defp verwijder_regio(%Region{} = region) do
+    # In één transactie: de dode uitnodigingen eruit en dan de locatie zelf.
+    # Apart zou betekenen dat een mislukte verwijdering de tokens al heeft
+    # weggegooid van een locatie die blijft bestaan.
+    Repo.transaction(fn ->
+      # Uitnodigingen die niemand meer kan gebruiken gaan mee. Ze verwijzen naar
+      # een locatie die zo meteen niet meer bestaat, en een ingewisseld of
+      # verlopen token heeft geen waarde meer -- het is eenmalig en tijdgebonden.
+      Repo.delete_all(from t in EnrollToken, where: t.region_id == ^region.id)
+
+      case verwijder_rij(region) do
+        :ok -> :ok
+        {:error, reden} -> Repo.rollback(reden)
+      end
+    end)
+    |> case do
+      {:ok, :ok} -> :ok
+      {:error, reden} -> {:error, reden}
+    end
+  end
+
+  defp verwijder_rij(%Region{} = region) do
     region
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.foreign_key_constraint(:id,
