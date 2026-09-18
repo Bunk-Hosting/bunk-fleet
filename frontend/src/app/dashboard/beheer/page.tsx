@@ -126,6 +126,13 @@ function Overview() {
                   <Regel label="Nog niet ingedeeld" cents={stats.credit_breakdown.overig} />
                 )}
               </div>
+              {stats.credit_breakdown.verbruikt > 0 && (
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  Er is meer terugbetaald dan er ooit is afgeschreven. Verbruik hoort een
+                  negatief getal te zijn; staat het in de plus, dan is er ergens dubbel
+                  terugbetaald.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 Alleen de eerste regel is geld dat daadwerkelijk is binnengekomen. Handmatige
                 boekingen verhogen wel wat een klant kan uitgeven, maar er staat geen betaling
