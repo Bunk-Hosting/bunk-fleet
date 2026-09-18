@@ -11,7 +11,10 @@ package proxmox
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +44,15 @@ type Config struct {
 	// VerifySSL toggles TLS certificate verification. Many homelab PVE nodes
 	// use self-signed certs, so this may be false in practice.
 	VerifySSL bool
+	// Fingerprint is the SHA-256 fingerprint of the certificate the PVE API is
+	// expected to present, as 64 hex characters (colons allowed). It exists
+	// because a stock Proxmox serves a self-signed certificate: verifying it
+	// against the system roots fails ("certificate signed by unknown authority")
+	// and the only advice left is to switch verification off entirely. Pinning
+	// is the third answer -- it needs no CA and still notices when someone else
+	// answers on that address. When set it replaces the chain check; VerifySSL
+	// is then irrelevant.
+	Fingerprint string
 	// Bridge, when set, is forced as the VPS NIC bridge (else the template's NIC
 	// is inherited). VLAN > 0 adds an 802.1q tag for a dedicated VPS network.
 	Bridge string
@@ -145,12 +157,34 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	afdruk, err := normaliseerAfdruk(cfg.Fingerprint)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Client{
 		cfg:  cfg,
 		base: host + "/api2/json",
-		http: httpClient(cfg.VerifySSL),
+		http: httpClient(cfg.VerifySSL, afdruk),
 	}, nil
+}
+
+// normaliseerAfdruk maakt van een ingetypte SHA-256-vingerafdruk de vorm waarin
+// hij vergeleken wordt: kleine letters, zonder dubbele punten. Proxmox toont hem
+// zelf met dubbele punten, dus die moeten erin mogen staan.
+func normaliseerAfdruk(ruw string) (string, error) {
+	afdruk := strings.ToLower(strings.NewReplacer(":", "", " ", "", "-", "").Replace(strings.TrimSpace(ruw)))
+	if afdruk == "" {
+		return "", nil
+	}
+	if len(afdruk) != sha256.Size*2 {
+		return "", fmt.Errorf(
+			"proxmox: %q is geen SHA-256-vingerafdruk; verwacht 64 hex-tekens (dubbele punten mogen)", ruw)
+	}
+	if _, err := hex.DecodeString(afdruk); err != nil {
+		return "", fmt.Errorf("proxmox: vingerafdruk %q bevat iets dat geen hex is", ruw)
+	}
+	return afdruk, nil
 }
 
 // normaliseerHost maakt van wat een mens intypt een adres waar Go mee kan werken.
@@ -189,14 +223,36 @@ func normaliseerHost(ruw string) (string, error) {
 	return host, nil
 }
 
-// httpClient builds an *http.Client whose transport optionally skips TLS
-// verification (for self-signed PVE certificates).
-func httpClient(verifySSL bool) *http.Client {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !verifySSL, //nolint:gosec // our own nodes, self-signed Proxmox certs
-		},
+// httpClient builds an *http.Client for the PVE API. Three cases, in order of
+// preference: a pinned fingerprint (verification zonder CA), the normal chain
+// check, or no check at all.
+func httpClient(verifySSL bool, afdruk string) *http.Client {
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: !verifySSL, //nolint:gosec // our own nodes, self-signed Proxmox certs
+		MinVersion:         tls.VersionTLS12,
 	}
+	if afdruk != "" {
+		// De keten kan niet kloppen -- het certificaat is zelfondertekend -- dus
+		// die controle gaat uit en de vingerafdruk komt ervoor in de plaats. Dat
+		// is strenger dan wat eronder staat, niet losser: elk ander certificaat
+		// op dat adres valt hier om.
+		tlsCfg.InsecureSkipVerify = true //nolint:gosec // vervangen door de controle hieronder
+		tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return errors.New("proxmox: de server stuurde geen certificaat")
+			}
+			gezien := sha256.Sum256(rawCerts[0])
+			if hex.EncodeToString(gezien[:]) != afdruk {
+				return fmt.Errorf(
+					"proxmox: het certificaat van de API hoort niet bij deze node "+
+						"(verwacht %s, gezien %s); is het vernieuwd, geef dan de nieuwe "+
+						"vingerafdruk op in BUNK_PROXMOX_TLS_FINGERPRINT",
+					afdruk, hex.EncodeToString(gezien[:]))
+			}
+			return nil
+		}
+	}
+	tr := &http.Transport{TLSClientConfig: tlsCfg}
 	return &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: tr,

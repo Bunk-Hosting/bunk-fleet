@@ -22,6 +22,10 @@ type ProxmoxConfig struct {
 	TokenID     string
 	TokenSecret string
 	VerifySSL   bool
+	// Fingerprint pins the SHA-256 of the PVE certificate. Stock Proxmox is
+	// self-signed, so the chain check can only fail; pinning verifies without a
+	// CA instead of switching verification off.
+	Fingerprint string
 	// VCPUOversubscribe is how many vCPUs may be handed out per physical core;
 	// 0 means the provider's default. RAM and disk are never oversubscribed.
 	VCPUOversubscribe int
@@ -193,6 +197,8 @@ func Load() (Config, error) {
 		// not be sent over an unverified connection. Operators with self-signed
 		// certs must explicitly opt out via BUNK_PROXMOX_VERIFY_SSL=false.
 		pveVerify = fs.Bool("proxmox-verify-ssl", envBool("BUNK_PROXMOX_VERIFY_SSL", true, &envErrs), "verify Proxmox TLS certificate")
+		pveAfdruk = fs.String("proxmox-tls-fingerprint", envOr("BUNK_PROXMOX_TLS_FINGERPRINT", ""),
+			"SHA-256 fingerprint of the PVE certificate (64 hex chars); pins the self-signed cert instead of disabling verification")
 
 		pveBackupStorage = fs.String("proxmox-backup-storage",
 			envOr("BUNK_PROXMOX_BACKUP_STORAGE", ""),
@@ -271,6 +277,7 @@ func Load() (Config, error) {
 			TokenID:           *pveTokID,
 			TokenSecret:       *pveSecret,
 			VerifySSL:         *pveVerify,
+			Fingerprint:       *pveAfdruk,
 			BackupStorage:     *pveBackupStorage,
 			VCPUOversubscribe: *pveVCPUOver,
 			VMIDMin:           *pveVMIDMin,

@@ -280,27 +280,81 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     # Normalise so "ESXi", " esxi ", "vSphere", "PVE" etc. all match.
     HYP="$(printf '%s' "$HYP" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$HYP" in pve) HYP=proxmox;; vmware|vsphere|vcenter) HYP=esxi;; esac
-    PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false
+    PXHOST=""; PXNODE=""; PXTID=""; PXSEC=""; VSSL=false; PXFP=""
     ESXI_URL=""; ESXI_USER=""; ESXI_PASS=""; ESXI_INSECURE=false; ESXI_DC=""; ESXI_DS=""; ESXI_RP=""; ESXI_FOLDER=""; ESXI_TMPL=""
     if [ "$HYP" = "proxmox" ]; then
       read -r -p "Proxmox API host (https://IP:8006): " PXHOST </dev/tty
+      # Repareer wat een mens intypt. De ESXi-tak hieronder deed dit al; hier
+      # ontbrak het, en de twee vormen die daardoor doorkwamen waren niet te
+      # herkennen aan de fout die eruit kwam. "https:10.0.0.5:8006" -- de twee
+      # schuine strepen vergeten -- geeft bij elke aanroep "http: no Host in
+      # request URL", en dat stond dan in het dashboard als de reden waarom de
+      # node zijn hypervisor niet kon bevragen.
+      case "$PXHOST" in
+        https://*|http://*) : ;;
+        https:*) PXHOST="https://${PXHOST#https:}" ;;
+        http:*)  PXHOST="http://${PXHOST#http:}" ;;
+        *)       PXHOST="https://$PXHOST" ;;
+      esac
+      PXHOST="${PXHOST%/}"
+      # Geen poort erbij? De API luistert op 8006.
+      case "${PXHOST#*://}" in *:*) : ;; *) PXHOST="$PXHOST:8006" ;; esac
+      echo "   -> gebruik API: $PXHOST"
       read -r -p "Proxmox node-naam (bv. pve): " PXNODE </dev/tty
       read -r -p "Proxmox API token-id (user@realm!tokenid): " PXTID </dev/tty
       read -r -s -p "Proxmox API token-secret: " PXSEC </dev/tty; echo
-      # Standaard AAN. Een API-token voor Proxmox is root-equivalent; wie het
-      # verkeer ernaartoe kan onderscheppen heeft daarmee elke VM op die node.
-      # De vraag stond eerder op "j/N" en daarmee stond verificatie standaard
-      # uit: één keer enter drukken was genoeg om het weg te geven.
+
+      # TLS. Een API-token voor Proxmox is root-equivalent: wie het verkeer
+      # ernaartoe kan onderscheppen heeft elke VM op die node. Verificatie moet
+      # dus aan staan.
       #
-      # Wie een zelfondertekend certificaat gebruikt moet nu bewust "n" typen,
-      # en krijgt te zien wat dat betekent.
-      echo
-      echo "  TLS-certificaat van de Proxmox-API verifiëren?"
-      echo "  Zeg alleen NEE bij een zelfondertekend certificaat op een netwerk dat je"
-      echo "  vertrouwt: zonder verificatie kan iemand tussen deze machine en Proxmox"
-      echo "  het API-token meelezen, en dat token is root op die node."
-      read -r -p "  Verifiëren? (J/n): " VS </dev/tty
-      case "$VS" in n|N) VSSL=false;; *) VSSL=true;; esac
+      # Alleen: een verse Proxmox draait op een zelfondertekend certificaat. De
+      # ketencontrole kan daar per definitie niet op slagen ("certificate signed
+      # by unknown authority"), en het enige antwoord dat overbleef was
+      # verificatie helemaal uitzetten. Daarom pinnen we in plaats daarvan de
+      # vingerafdruk: dat heeft geen CA nodig en merkt nog steeds wanneer er
+      # iemand anders op dat adres antwoordt.
+      #
+      # De vingerafdruk komt van de verbinding zelf. Draait dit op de
+      # Proxmox-machine, dan ligt het echte certificaat ernaast en vergelijken
+      # we ermee -- klopt het, dan hoeft er niets gevraagd te worden.
+      PXFP=""
+      PXHP="${PXHOST#*://}"; PXHP="${PXHP%%/*}"
+      if command -v openssl >/dev/null 2>&1; then
+        PXFP=$(echo | openssl s_client -connect "$PXHP" -servername "${PXHP%%:*}" 2>/dev/null \
+          | openssl x509 -noout -fingerprint -sha256 2>/dev/null \
+          | sed -e 's/.*=//' -e 's/://g' | tr 'A-Z' 'a-z')
+      fi
+      if [ -n "$PXFP" ]; then
+        PXLOCAL=""
+        if [ -r /etc/pve/local/pve-ssl.pem ]; then
+          PXLOCAL=$(openssl x509 -in /etc/pve/local/pve-ssl.pem -noout -fingerprint -sha256 2>/dev/null \
+            | sed -e 's/.*=//' -e 's/://g' | tr 'A-Z' 'a-z')
+        fi
+        if [ -n "$PXLOCAL" ] && [ "$PXLOCAL" = "$PXFP" ]; then
+          echo "   -> certificaat komt overeen met dat van deze Proxmox; vastgezet."
+        else
+          echo
+          echo "  Certificaat van $PXHP:"
+          echo "    SHA-256: $PXFP"
+          echo "  Vergelijk dit met wat Proxmox zelf toont onder Node -> Certificates,"
+          echo "  of met: openssl x509 -in /etc/pve/local/pve-ssl.pem -noout -fingerprint -sha256"
+          read -r -p "  Hoort deze vingerafdruk bij jouw node? (J/n): " FPOK </dev/tty
+          case "$FPOK" in n|N) PXFP="" ;; esac
+        fi
+      fi
+      if [ -n "$PXFP" ]; then
+        VSSL=true
+      else
+        echo
+        echo "  Geen vingerafdruk om vast te zetten."
+        echo "  Verifieer het TLS-certificaat van de Proxmox-API? Zeg alleen NEE bij een"
+        echo "  zelfondertekend certificaat op een netwerk dat je vertrouwt: zonder"
+        echo "  verificatie kan iemand tussen deze machine en Proxmox het API-token"
+        echo "  meelezen, en dat token is root op die node."
+        read -r -p "  Verifiëren? (J/n): " VS </dev/tty
+        case "$VS" in n|N) VSSL=false;; *) VSSL=true;; esac
+      fi
     elif [ "$HYP" = "esxi" ]; then
       read -r -p "vSphere/ESXi adres (bv. 192.168.1.50 of vcenter.school.nl): " ESXI_URL </dev/tty
       # Accept a bare IP/hostname: add the scheme + /sdk path govmomi expects,
@@ -491,6 +545,7 @@ defmodule ControlPlaneWeb.WorkerInstallController do
     BUNK_PROXMOX_TOKEN_ID=$PXTID
     BUNK_PROXMOX_TOKEN_SECRET=$PXSEC
     BUNK_PROXMOX_VERIFY_SSL=$VSSL
+    BUNK_PROXMOX_TLS_FINGERPRINT=${PXFP}
     BUNK_VMID_MIN=${VMID_MIN:-0}
     BUNK_VMID_MAX=${VMID_MAX:-0}
     BUNK_ESXI_URL=${ESXI_URL}

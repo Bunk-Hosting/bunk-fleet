@@ -171,6 +171,7 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 			TokenID:           cfg.Proxmox.TokenID,
 			TokenSecret:       cfg.Proxmox.TokenSecret,
 			VerifySSL:         cfg.Proxmox.VerifySSL,
+			Fingerprint:       cfg.Proxmox.Fingerprint,
 			Bridge:            cfg.VpsNetwork.Bridge,
 			VLAN:              cfg.VpsNetwork.VLAN,
 		})
