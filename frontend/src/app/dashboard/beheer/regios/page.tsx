@@ -27,13 +27,9 @@ function RegioRij({
   const [naam, setNaam] = useState(regio.name);
   const [code, setCode] = useState(regio.code);
 
-  // De velden volgen de server zodra die iets anders zegt. Zonder dit blijft een
-  // rij na "Vernieuwen" de oude tekst tonen, en dan lijkt een geslaagde
-  // wijziging niet aangekomen.
-  useEffect(() => {
-    setNaam(regio.name);
-    setCode(regio.code);
-  }, [regio.name, regio.code]);
+  // Geen effect dat de staat spiegelt: de rij krijgt van de ouder een `key`
+  // waar naam en code in zitten, dus React bouwt hem opnieuw op zodra de server
+  // iets anders zegt en beginnen deze velden vanzelf bij de nieuwe waarde.
 
   return (
     <Card>
@@ -297,7 +293,10 @@ function RegiosInner() {
       <div className="space-y-3">
         {regions.map((r) => (
           <RegioRij
-            key={r.id}
+            // Naam en code zitten in de sleutel: verandert er iets aan de
+            // serverkant, dan is dit een andere rij en beginnen de invoervelden
+            // bij de nieuwe waarde in plaats van bij wat er ooit stond.
+            key={`${r.id}:${r.name}:${r.code}`}
             regio={r}
             busy={busy === r.id}
             onOpslaan={(naam, code) => opslaan(r, naam, code)}
