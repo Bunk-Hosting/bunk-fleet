@@ -171,6 +171,26 @@ jobs:
       - name: Shellcheck
         run: shellcheck -S warning *.sh tools/*.sh provisioning/*/*.sh
 
+  # De e2e-suite draait niet in de CI -- hij heeft een live omgeving nodig en
+  # die zetten we niet op voor elke push. Wat hier wel kan is kijken of hij nog
+  # compileert: een suite die pas stukgaat op het moment dat je hem nodig hebt,
+  # is geen suite.
+  e2e-typecheck:
+    name: E2E-suite (typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

@@ -1,0 +1,7 @@
+# Wat een run oplevert hoort niet in de repo: de resultaten zeggen iets over het
+# moment waarop je draaide, niet over de suite.
+node_modules/
+test-results/
+playwright-report/
+results.json
+run.log
