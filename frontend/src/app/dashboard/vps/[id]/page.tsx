@@ -365,8 +365,15 @@ export default function VpsDetailPage() {
         Terug naar overzicht
       </Button>
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Header.
+          De knoppen staan op hun EIGEN regel en niet meer naast de titel. Met
+          vijf acties (terminal, starten, herstarten, stoppen, verwijderen) is de
+          rij ongeveer 650px breed; naast een titel die net zo goed een lange
+          zelfgekozen naam kan zijn, past dat op een normale laptop niet meer en
+          vielen ze uiteen over twee rommelige regels. Op een eigen regel is de
+          volle breedte beschikbaar en staan ze weer naast elkaar -- ook als er
+          ooit een zesde knop bij komt. */}
+      <div className="flex flex-col gap-4">
         <div>
           {hernoemen ? (
             <form
@@ -421,7 +428,7 @@ export default function VpsDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {/* Terminal button */}
           <Link href={`/dashboard/vps/${id}/terminal`}>
             <Button variant="outline" disabled={vps.status !== "ACTIVE"}>
