@@ -147,6 +147,14 @@ defmodule ControlPlaneWeb.MollieController do
   # de betaling die we zojuist bij Mollie hebben opgehaald, en we kijken er pas
   # naar nadat die betaling op "paid" stond.
   defp bijschrijven(payment_id, amount, metadata) do
+    if Mollie.live_sleutel?() do
+      bijschrijven_echt(payment_id, amount, metadata)
+    else
+      {:error, :testsleutel}
+    end
+  end
+
+  defp bijschrijven_echt(payment_id, amount, metadata) do
     case Credits.mark_topup_paid_by_mollie_id(payment_id, amount) do
       {:error, :not_found} ->
         case metadata do
@@ -167,6 +175,33 @@ defmodule ControlPlaneWeb.MollieController do
   end
 
   defp credited(_payment_id, {:ok, _}), do: :ok
+
+  # Een betaling in Mollie's testmodus ziet er in elk antwoord identiek uit aan
+  # een echte, inclusief "paid". Het enige verschil is de sleutel waarmee hij is
+  # aangemaakt. Zou dit tegoed opleveren, dan komt er geld uit het niets -- en
+  # dat is in de eerste weken ook echt gebeurd: er stond duizenden euro's aan
+  # saldo waar nooit iets voor is betaald.
+  #
+  # De opwaardering blijft op :pending staan. Dat is eerlijker dan hem op betaald
+  # zetten zonder bij te schrijven: er is niets betaald.
+  defp credited(payment_id, {:error, :testsleutel}) do
+    Logger.error(
+      "mollie webhook: betaling #{payment_id} kwam binnen op een TESTSLEUTEL; er is niets bijgeschreven"
+    )
+
+    ControlPlane.Notifier.deliver_operational_alert(
+      "Mollie draait op een testsleutel",
+      """
+      Er kwam een betaalde webhook binnen (#{payment_id}), maar MOLLIE_API_KEY is
+      geen live-sleutel. Er is dus niets bijgeschreven, en dat is de bedoeling:
+      een testbetaling die echt tegoed oplevert is geld uit het niets.
+
+      Draait dit op productie, dan staat de verkeerde sleutel in .env.prod en kan
+      op dit moment niemand opwaarderen. Draait het ergens anders, dan klopt het.
+      """
+    )
+  end
+
   defp credited(_payment_id, {:error, :not_pending}), do: :ok
 
   # A verified *paid* payment with no matching topup row means a real customer

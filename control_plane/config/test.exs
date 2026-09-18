@@ -56,8 +56,12 @@ config :control_plane, ControlPlane.Mailer, adapter: Swoosh.Adapters.Test
 # The Mollie client talks to a Req stub instead of api.mollie.com. An api_key has
 # to be present or `Mollie.configured?/0` turns the endpoints off and the tests
 # would be asserting against a disabled feature rather than the real one.
+# `live_` en niet `test_`: sinds een testbetaling geen tegoed meer oplevert, zou
+# een testsleutel hier betekenen dat de hele betaalflow in de testsuite een pad
+# neemt dat op productie niet bestaat. Dat een testsleutel niets bijschrijft
+# heeft zijn eigen test.
 config :control_plane, :mollie,
-  api_key: "test_stub_key",
+  api_key: "live_stub_key",
   req_options: [plug: {Req.Test, ControlPlane.Mollie}]
 
 # Per-VPS consolesleutels staan in de testsuite AAN, met een vaste sleutel. Zo

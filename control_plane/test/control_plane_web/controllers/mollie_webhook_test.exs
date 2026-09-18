@@ -122,6 +122,33 @@ defmodule ControlPlaneWeb.MollieWebhookTest do
     assert balance(user) == before
   end
 
+  test "een betaling op een testsleutel schrijft niets bij", %{conn: conn, user: user} do
+    # Een betaling in Mollie's testmodus ziet er in elk antwoord identiek uit aan
+    # een echte, inclusief "paid". Het enige verschil is de sleutel waarmee hij
+    # is aangemaakt. Zou dit tegoed opleveren, dan komt er geld uit het niets --
+    # en dat is precies wat er in de eerste weken is gebeurd: duizenden euro's
+    # saldo waar nooit iets voor is betaald.
+    eerder = Application.get_env(:control_plane, :mollie)
+    Application.put_env(:control_plane, :mollie, Keyword.put(eerder, :api_key, "test_stub_key"))
+    on_exit(fn -> Application.put_env(:control_plane, :mollie, eerder) end)
+
+    id = "tr_#{System.unique_integer([:positive])}"
+    tr = pending_topup(user, 2500, id)
+    before = balance(user)
+
+    mollie_says(%{
+      "id" => id,
+      "status" => "paid",
+      "amount" => %{"currency" => "EUR", "value" => "25.00"}
+    })
+
+    assert %{status: 200} = post(conn, @path, %{"id" => id})
+    assert balance(user) == before
+    # En de opwaardering blijft openstaan: er is niets betaald, dus hem op
+    # betaald zetten zou een leugen in de administratie zijn.
+    assert Repo.get!(TopupRequest, tr.id).status == :pending
+  end
+
   test "a forged webhook for a payment Mollie calls open credits nothing", %{
     conn: conn,
     user: user

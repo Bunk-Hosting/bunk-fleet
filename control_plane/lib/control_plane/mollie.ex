@@ -15,6 +15,26 @@ defmodule ControlPlane.Mollie do
   def configured?, do: is_binary(api_key()) and api_key() != ""
 
   @doc """
+  Of de sleutel waarmee we praten een LIVE-sleutel is.
+
+  Mollie heeft twee werelden met dezelfde API: een betaling in testmodus ziet er
+  in elk antwoord identiek uit aan een echte, inclusief `"status": "paid"`. Het
+  enige verschil is de sleutel waarmee je hem aanmaakte -- `live_...` of
+  `test_...`.
+
+  Dat onderscheid hoort hier gemaakt te worden en niet in het hoofd van degene
+  die de omgeving inricht: een testbetaling die echt tegoed oplevert is geld dat
+  uit het niets komt, en dat is precies wat er in de eerste weken is gebeurd.
+  """
+  @spec live_sleutel?() :: boolean()
+  def live_sleutel? do
+    case api_key() do
+      k when is_binary(k) -> String.starts_with?(k, "live_")
+      _ -> false
+    end
+  end
+
+  @doc """
   Creates a payment. `params` requires :amount_cents, :description, :redirect_url,
   :webhook_url and may include :metadata. Returns {:ok, %{id, checkout_url,
   status}}.
