@@ -247,6 +247,39 @@ defmodule ControlPlane.Fleet.Node do
     |> Enum.find(&(&1 not in @placeholders))
   end
 
+  @doc """
+  Beperkt een query tot de nodes waarvan de capaciteit gefactureerd mag worden.
+
+  Drie voorwaarden, en de derde is er niet altijd geweest. Een node is
+  factureerbaar als hij `:online` staat, als we hem sinds `cutoff` hebben
+  gehoord, én als hij zijn hypervisor kan bevragen.
+
+  Die laatste is een reparatie van een bijwerking die niemand had opgeschreven.
+  Vóór `capacity_error` bestond, viel een node waarvan de hypervisor-API
+  onbereikbaar was vanzelf na twee minuten offline en stopte de facturatie
+  daarmee ook. Toen de agent bij zo'n storing een heartbeat mét foutmelding ging
+  sturen -- om de goede reden dat stilte dubbelzinnig is -- bleef de node
+  `:online` met een verse `last_heartbeat_at`, en bleef de klant dus betalen
+  voor machines waarvan niemand meer kon zien of ze draaiden. Het veld had per
+  ongeluk het vangnet uitgezet dat er was.
+
+  Dat dit hier als functie staat en niet als drie losse `where`-regels in de
+  meteringquery is de eigenlijke les: het volgende veld dat "de node leeft maar
+  anders" betekent hoort hier te worden afgewogen, op de plek waar staat wat
+  factureerbaar betekent.
+
+  Niet factureren is bewust de veilige kant. Een klant te weinig rekenen tijdens
+  een storing van een uur kost ons een paar cent; een klant rekenen voor een
+  machine waarvan wij niet kunnen zien of hij bestaat, kost vertrouwen.
+  """
+  @spec factureerbaar(Ecto.Queryable.t(), DateTime.t()) :: Ecto.Query.t()
+  def factureerbaar(query, %DateTime{} = cutoff) do
+    from n in query,
+      where: n.status == :online,
+      where: n.last_heartbeat_at >= ^cutoff,
+      where: is_nil(n.capacity_error) or n.capacity_error == ""
+  end
+
   @doc false
   def changeset(node, attrs) do
     node

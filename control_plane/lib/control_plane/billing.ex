@@ -158,14 +158,19 @@ defmodule ControlPlane.Billing do
     # VPS. We resolve it here unlocked, then re-validate each VPS under a row lock
     # below. Don't accrue usage while the node is offline or has gone silent: a
     # VPS on a dead node isn't actually being delivered, so metering it would
-    # overstate the capacity that node really provided. Require the node currently
-    # :online AND heard from within the staleness window.
+    # overstate the capacity that node really provided.
     node_cutoff = DateTime.add(now, -@meter_node_staleness_seconds, :second)
+
+    # Welke nodes gefactureerd mogen worden staat in `Node.factureerbaar/2` en
+    # niet hier: online, recent gehoord, en in staat zijn eigen hypervisor te
+    # bevragen. Die laatste voorwaarde is de reparatie van een node die blind
+    # doorfactureerde; de afweging staat daar.
+    factureerbaar = Node.factureerbaar(Node, node_cutoff)
 
     owner_by_vps =
       Repo.all(
         from v in Vps,
-          join: n in Node,
+          join: n in subquery(factureerbaar),
           on: n.id == v.node_id,
           # Every node is our own capacity now, so every node is metered. The
           # cost centre is the node's owner_email when set (which team/person
@@ -173,7 +178,6 @@ defmodule ControlPlane.Billing do
           # without an owner still reports its consumption instead of vanishing
           # from the cost picture.
           where: v.status == :active and not is_nil(v.node_id),
-          where: n.status == :online and n.last_heartbeat_at >= ^node_cutoff,
           where: v.id not in subquery(teardown_in_flight),
           select: {v.id, fragment("coalesce(nullif(?, ''), ?)", n.owner_email, n.name)}
       )
@@ -281,7 +285,7 @@ defmodule ControlPlane.Billing do
             vcpu_seconds: coalesce(sum(fragment("? * ?", u.seconds, u.vcpu)), 0),
             ram_mb_seconds: coalesce(sum(fragment("? * ?", u.seconds, u.ram_mb)), 0),
             disk_gb_seconds: coalesce(sum(fragment("? * ?", u.seconds, u.disk_gb)), 0),
-            records: count(u.id)
+            records: count(u.vps_id)
           }
       )
 
@@ -351,7 +355,7 @@ defmodule ControlPlane.Billing do
           sr: sum(fragment("?::bigint * ?::bigint", u.seconds, u.ram_mb)),
           sd: sum(fragment("?::bigint * ?::bigint", u.seconds, u.disk_gb)),
           seconds: sum(u.seconds),
-          records: count(u.id)
+          records: count(u.vps_id)
         }
     )
     |> Enum.map(fn row ->

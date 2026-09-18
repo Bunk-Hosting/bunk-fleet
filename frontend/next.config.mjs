@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 
 // Fallbacks are the live origin; api.bunkhosting.nl has no DNS/tunnel.
+//
+// LET OP: alles met `NEXT_PUBLIC_` wordt bij het BOUWEN in de clientbundel
+// gebakken, niet bij het starten gelezen. Deze waarde is dus geen
+// omgevingsvariabele maar een constante die per image vastligt. Verhuist het
+// domein, of komt er een tweede omgeving bij, dan is dat een herbouw van de
+// frontend en niet een `-e` erbij in het uitrolscript. Dat is geen fout -- zo
+// werkt Next -- maar het is precies het soort ding waarvan je op het verkeerde
+// moment ontdekt dat het zo werkt.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://app.bunkhosting.nl";
 const WS_URL  = (process.env.NEXT_PUBLIC_WS_URL  || "wss://app.bunkhosting.nl").replace(/^http/, "ws");
 // No trailing slash: that was a Django-era path, and the endpoint it pointed at
@@ -34,7 +42,23 @@ const securityHeaders = [
 
 const nextConfig = {
   typescript: { ignoreBuildErrors: false },
+
+  // Lint niet tijdens de build. De CI draait `eslint --max-warnings 0` als eigen
+  // stap en die moet groen zijn voordat er iets wordt uitgerold, dus de controle
+  // is er wel degelijk. Hem hier ook aanzetten zou betekenen dat een stijlfout
+  // een UITROL laat klappen op een moment dat de code al door de CI is gekomen.
+  // Wat je ervoor terugkrijgt: een lokale `npm run build` is groen terwijl lint
+  // rood staat. Dat is het waard, maar weet het.
   eslint: { ignoreDuringBuilds: true },
+
+  // ALLEEN voor `next dev`. In productie staat nginx ervoor en die pakt
+  // `/api/v1/` af voordat Next het ooit ziet (zie edge.conf), dus deze regel
+  // doet daar niets.
+  //
+  // Hij blijft staan omdat hij lokaal ontwikkelen zonder nginx mogelijk maakt.
+  // Hij krijgt dit commentaar omdat hij anders een val is: wie over een half
+  // jaar een routeringsprobleem in de API zoekt, vindt deze regel als eerste,
+  // past hem aan, rolt uit, en er verandert niets.
   async rewrites() {
     const target = process.env.BUNK_API_URL || "http://bf-prod-cp:4000";
     return [{ source: "/api/v1/:path*", destination: `${target}/api/v1/:path*` }];

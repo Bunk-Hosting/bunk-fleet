@@ -156,12 +156,12 @@ defmodule ControlPlane.Fleet.ReconcilerTest do
       {:ok, pid} = Reconciler.start_link(interval_ms: 5, meter_interval_ms: 3_600_000)
       Sandbox.allow(Repo, self(), pid)
 
-      before = Repo.aggregate(UsageRecord, :count, :id)
+      before = Repo.aggregate(UsageRecord, :count, :vps_id)
       Process.sleep(60)
 
       # The first tick meters (catching up any elapsed runtime); no later tick in
       # this window may add another record.
-      assert Repo.aggregate(UsageRecord, :count, :id) == before
+      assert Repo.aggregate(UsageRecord, :count, :vps_id) == before
     end
   end
 

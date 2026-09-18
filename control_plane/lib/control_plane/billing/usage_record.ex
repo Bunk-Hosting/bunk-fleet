@@ -17,7 +17,12 @@ defmodule ControlPlane.Billing.UsageRecord do
 
   @type t :: %__MODULE__{}
 
-  @primary_key {:id, :binary_id, autogenerate: true}
+  # Geen eigen sleutelkolom. De natuurlijke sleutel is `(vps_id, metered_at)` --
+  # dezelfde combinatie die een dubbele meting tegenhoudt -- en die is in de
+  # database de primaire sleutel. Een willekeurige UUID erbij was een index die
+  # nergens werd opgezocht en die, doordat hij willekeurig is, elke chronologisch
+  # geschreven rij op een willekeurige bladpagina liet landen.
+  @primary_key false
   @foreign_key_type :binary_id
   schema "usage_records" do
     field :owner_email, :string
@@ -54,10 +59,13 @@ defmodule ControlPlane.Billing.UsageRecord do
     |> assoc_constraint(:node)
     # Backstop against double-billing the same VPS for the same time slice: each
     # meter tick stamps a fixed `metered_at`, so a duplicate insert for the same
-    # (vps, tick) collides on this unique index. Matches the DB index added in
-    # `UniqueUsageRecordSlice`.
-    |> unique_constraint([:vps_id, :metered_at],
-      name: :usage_records_vps_id_metered_at_index
-    )
+    # (vps, tick) collides on this key.
+    #
+    # De naam is `usage_records_pkey` en niet meer die van de losse unieke index:
+    # sinds `UsageRecordsSchrijfkosten` ís die combinatie de primaire sleutel.
+    # Dezelfde regel, dezelfde bescherming, andere naam -- en de naam is wat Ecto
+    # nodig heeft om een databasefout in een nette changesetfout te vertalen in
+    # plaats van in een exception.
+    |> unique_constraint([:vps_id, :metered_at], name: :usage_records_pkey)
   end
 end
