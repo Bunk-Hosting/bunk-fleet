@@ -223,6 +223,7 @@ function pakketUitSpecs(vcpu: number, ramMb: number, diskGb: number): VpsPackage
     ram_gb: Math.round(ramMb / 1024),
     disk_gb: diskGb,
     bandwidth_tb: 1,
+    bandwidth_mbit: 0,
     price_monthly: "",
     description: "",
   };
@@ -253,6 +254,7 @@ interface BunkVps {
     ram_gb: number;
     disk_gb: number;
     bandwidth_tb: number;
+    bandwidth_mbit: number;
     price_monthly: string;
   } | null;
 }

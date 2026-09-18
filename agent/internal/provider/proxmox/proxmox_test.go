@@ -549,3 +549,25 @@ func TestIPConfigOntleden(t *testing.T) {
 		}
 	}
 }
+
+// De omrekening van megabit naar wat Proxmox wil. Acht keer verschil, en dat is
+// precies het soort fout dat pas opvalt als een klant klaagt dat zijn 1
+// Gbit-pakket een achtste doet.
+func TestProxmoxRate(t *testing.T) {
+	gevallen := []struct {
+		mbit int
+		want string
+	}{
+		{200, "25"},   // Starter
+		{500, "62.5"}, // Basic -- geen heel getal, dus niet afronden
+		{1000, "125"}, // Pro
+		{0, ""},       // geen pakket: geen limiet
+		{-1, ""},      // onzin: ook geen limiet
+	}
+
+	for _, g := range gevallen {
+		if got := proxmoxRate(g.mbit); got != g.want {
+			t.Errorf("proxmoxRate(%d) = %q, want %q", g.mbit, got, g.want)
+		}
+	}
+}

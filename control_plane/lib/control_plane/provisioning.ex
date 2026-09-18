@@ -22,6 +22,7 @@ defmodule ControlPlane.Provisioning do
   alias ControlPlane.Fleet.Events
   alias ControlPlane.Fleet.IpPool
   alias ControlPlane.Fleet.Node
+  alias ControlPlane.Fleet.Package
   alias ControlPlane.Fleet.PortPool
   alias ControlPlane.Fleet.Scheduler
   alias ControlPlane.Fleet.Vps
@@ -911,8 +912,29 @@ defmodule ControlPlane.Provisioning do
       "template_id" => field(attrs, :template_id) || default_template_id(),
       "cloud_init" => field(attrs, :cloud_init) || %{},
       "ssh_keys" => (field(attrs, :ssh_keys) || []) ++ console_keys_voor(vps),
-      "ip_config" => field(attrs, :ip_config)
+      "ip_config" => field(attrs, :ip_config),
+      "rate_mbit" => snelheid_van_pakket(vps)
     }
+  end
+
+  # De snelheid die bij het pakket hoort, in megabit per seconde. De agent zet
+  # hem op de netwerkkaart van de gast; dat is een bovengrens die de hypervisor
+  # afdwingt, geen gegarandeerde doorvoer.
+  #
+  # `nil` als er geen pakket aan hangt (een VPS die intern is aangemaakt). De
+  # agent laat de kaart dan ongemoeid: geen limiet is beter dan een verzonnen
+  # limiet.
+  #
+  # Dit geldt alleen bij het aanmaken. Een bestaande VPS houdt wat hij heeft --
+  # een draaiende machine krijgt niet ineens een rem omdat de catalogus is
+  # veranderd.
+  defp snelheid_van_pakket(%Vps{package_id: nil}), do: nil
+
+  defp snelheid_van_pakket(%Vps{package_id: id}) do
+    case Repo.get(Package, id) do
+      %Package{bandwidth_mbit: mbit} when is_integer(mbit) and mbit > 0 -> mbit
+      _ -> nil
+    end
   end
 
   # De naam waaronder een gast op de hypervisor komt te staan.

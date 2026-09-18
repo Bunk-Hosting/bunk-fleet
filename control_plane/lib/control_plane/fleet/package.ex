@@ -10,7 +10,14 @@ defmodule ControlPlane.Fleet.Package do
     field :cpu_cores, :integer
     field :ram_gb, :integer
     field :disk_gb, :integer
+    # Het maandvolume dat nergens werd gemeten. Hij staat er nog omdat de vorige
+    # versie van de frontend hem leest; hij verdwijnt zodra dat niet meer zo is.
     field :bandwidth_tb, :integer, default: 1
+
+    # De snelheid van de netwerkkaart van de gast, in megabit per seconde. Dit is
+    # een bovengrens die de hypervisor afdwingt en geen gegarandeerde doorvoer:
+    # de uplink is gedeeld. Daarom "tot" in de teksten.
+    field :bandwidth_mbit, :integer, default: 200
     field :price_monthly, :decimal
     field :description, :string
     field :is_available, :boolean, default: true
@@ -28,6 +35,7 @@ defmodule ControlPlane.Fleet.Package do
       :ram_gb,
       :disk_gb,
       :bandwidth_tb,
+      :bandwidth_mbit,
       :price_monthly,
       :description,
       :is_available,

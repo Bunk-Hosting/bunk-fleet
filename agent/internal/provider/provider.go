@@ -32,6 +32,14 @@ type VMSpec struct {
 	// IPConfig is a provider-native network configuration string
 	// (e.g. Proxmox "ip=192.0.2.10/24,gw=192.0.2.1" or "ip=dhcp").
 	IPConfig string `json:"ip_config"`
+	// RateMbit caps the guest's network interface, in megabits per second, and
+	// is the snelheid that belongs to the customer's package. Zero means no cap:
+	// a VPS created without a package should not get an invented limit.
+	//
+	// It is a ceiling enforced by the hypervisor, not guaranteed throughput --
+	// the uplink is shared. Only applied when the guest is created; an existing
+	// VPS keeps what it has.
+	RateMbit int `json:"rate_mbit"`
 }
 
 // VMStatus is the observed state of a virtual machine.

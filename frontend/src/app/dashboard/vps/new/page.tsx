@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { packagesApi, vpsApi, billingApi, regionsApi, parseApiError } from "@/lib/api";
 import type { BunkRegion } from "@/lib/api";
-import { cn, formatEuro, formatBalance } from "@/lib/utils";
+import { cn, formatEuro, formatBalance, formatBandbreedte } from "@/lib/utils";
 import type { VpsPackage } from "@/lib/types";
 
 export default function NewVpsPage() {
@@ -158,7 +158,7 @@ export default function NewVpsPage() {
                   <p>{pkg.cpu_cores} vCPU</p>
                   <p>{pkg.ram_gb} GB RAM</p>
                   <p>{pkg.disk_gb} GB NVMe opslag</p>
-                  <p>{pkg.bandwidth_tb} TB bandbreedte</p>
+                  <p>{formatBandbreedte(pkg.bandwidth_mbit)} netwerk</p>
                 </div>
                 <p className="mt-3 text-lg font-bold text-primary">
                   {formatEuro(pkg.price_monthly)}/maand

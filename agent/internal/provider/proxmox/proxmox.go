@@ -599,6 +599,9 @@ func (c *Client) configureAndStart(ctx context.Context, node string, newID int, 
 		if c.cfg.VLAN > 0 && c.cfg.VLAN <= 4094 {
 			net0 += ",tag=" + strconv.Itoa(c.cfg.VLAN)
 		}
+		if rate := proxmoxRate(spec.RateMbit); rate != "" {
+			net0 += ",rate=" + rate
+		}
 		cfgForm.Set("net0", net0)
 	}
 	if user, ok := spec.CloudInit["user"]; ok {
@@ -1060,4 +1063,23 @@ func firstIPv4(ifaces vmAgentIfaces) string {
 func encodeProxmoxSSHKeys(keys []string) string {
 	joined := strings.TrimSpace(strings.Join(keys, "\n"))
 	return strings.ReplaceAll(url.QueryEscape(joined), "+", "%20")
+}
+
+// proxmoxRate vertaalt de snelheid van het pakket naar wat Proxmox op `net0`
+// verwacht. Wij rekenen in megabit per seconde, want dat is wat een klant koopt;
+// Proxmox rekent in MEGABYTE per seconde. Acht keer verschil, en het is precies
+// het soort verschil dat je pas ontdekt als iemand klaagt dat zijn 1 Gbit-pakket
+// 125 megabit doet.
+//
+// Lege string bij nul of negatief: geen limiet. Een VPS zonder pakket hoort geen
+// verzonnen rem te krijgen.
+//
+// De waarde gaat met één decimaal mee, want 500 Mbit is 62,5 MB/s en afronden
+// naar 62 of 63 is een halve procent die niemand hoeft te cadeau te krijgen of
+// kwijt te raken.
+func proxmoxRate(mbit int) string {
+	if mbit <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(float64(mbit)/8.0, 'f', -1, 64)
 }

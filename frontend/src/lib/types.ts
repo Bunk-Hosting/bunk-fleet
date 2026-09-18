@@ -39,6 +39,8 @@ export interface VpsPackage {
   ram_gb: number;
   disk_gb: number;
   bandwidth_tb: number;
+  /** Bovengrens op de netwerkkaart van de gast, in megabit per seconde. */
+  bandwidth_mbit: number;
   price_monthly: string;
   description: string;
 }

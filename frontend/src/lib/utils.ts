@@ -68,3 +68,14 @@ export function getOsLabel(os: string): string {
   };
   return labels[os] || os;
 }
+
+// De netwerksnelheid van een pakket, zoals een klant hem hoort te lezen.
+//
+// "tot", want het is een bovengrens die de hypervisor afdwingt op de
+// netwerkkaart van de gast en geen gegarandeerde doorvoer: de uplink is
+// gedeeld. Vanaf 1000 Mbit in Gbit, omdat niemand "1000 Mbit" zegt.
+export function formatBandbreedte(mbit: number | null | undefined): string {
+  if (!mbit || mbit <= 0) return "—";
+  if (mbit % 1000 === 0) return `tot ${mbit / 1000} Gbit/s`;
+  return `tot ${mbit} Mbit/s`;
+}

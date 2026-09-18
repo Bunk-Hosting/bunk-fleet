@@ -702,7 +702,7 @@ export default function VpsDetailPage() {
                 <p className="text-sm text-muted-foreground">Bandbreedte</p>
                 <div className="flex items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
-                  <p className="font-medium">{vps.package.bandwidth_tb} TB</p>
+                  <p className="font-medium">{formatBandbreedte(vps.package.bandwidth_mbit)}</p>
                 </div>
               </div>
             </div>
