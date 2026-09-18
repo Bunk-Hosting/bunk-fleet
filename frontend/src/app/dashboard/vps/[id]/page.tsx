@@ -366,13 +366,17 @@ export default function VpsDetailPage() {
       </Button>
 
       {/* Header.
-          De knoppen staan op hun EIGEN regel en niet meer naast de titel. Met
-          vijf acties (terminal, starten, herstarten, stoppen, verwijderen) is de
-          rij ongeveer 650px breed; naast een titel die net zo goed een lange
-          zelfgekozen naam kan zijn, past dat op een normale laptop niet meer en
-          vielen ze uiteen over twee rommelige regels. Op een eigen regel is de
-          volle breedte beschikbaar en staan ze weer naast elkaar -- ook als er
-          ooit een zesde knop bij komt. */}
+          Twee dingen houden de knoppenrij bij elkaar sinds het er vijf zijn
+          (terminal, starten, herstarten, stoppen, verwijderen):
+
+          1. De rij staat op een EIGEN regel en niet meer naast de titel. Met
+             tekst erbij is hij ongeveer 650px; naast een titel die net zo goed
+             een lange zelfgekozen naam kan zijn, past dat op een normale laptop
+             niet en vielen ze uiteen over twee rommelige regels.
+          2. Onder de sm-grens tonen ze alleen hun icoon. Vijf knoppen mét tekst
+             krijg je op een telefoon van 390px nooit naast elkaar; vijf iconen
+             wel, met ruimte over. De tekst zit dan in aria-label, dus een
+             schermlezer leest nog steeds "Herstarten". */}
       <div className="flex flex-col gap-4">
         <div>
           {hernoemen ? (
@@ -431,9 +435,9 @@ export default function VpsDetailPage() {
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {/* Terminal button */}
           <Link href={`/dashboard/vps/${id}/terminal`}>
-            <Button variant="outline" disabled={vps.status !== "ACTIVE"}>
-              <Terminal className="mr-2 h-4 w-4" />
-              Terminal
+            <Button variant="outline" disabled={vps.status !== "ACTIVE"} aria-label="Terminal">
+              <Terminal className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Terminal</span>
             </Button>
           </Link>
 
@@ -442,9 +446,9 @@ export default function VpsDetailPage() {
             open={startDialogOpen}
             onOpenChange={setStartDialogOpen}
             trigger={
-              <Button disabled={!canStart}>
-                <Play className="mr-2 h-4 w-4" />
-                Starten
+              <Button disabled={!canStart} aria-label="Starten">
+                <Play className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Starten</span>
               </Button>
             }
             title="VPS starten"
@@ -459,9 +463,13 @@ export default function VpsDetailPage() {
             open={rebootDialogOpen}
             onOpenChange={setRebootDialogOpen}
             trigger={
-              <Button variant="outline" disabled={vps.status !== "ACTIVE" || actionLoading}>
-                <RotateCw className="mr-2 h-4 w-4" />
-                Herstarten
+              <Button
+                variant="outline"
+                disabled={vps.status !== "ACTIVE" || actionLoading}
+                aria-label="Herstarten"
+              >
+                <RotateCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Herstarten</span>
               </Button>
             }
             title="VPS herstarten"
@@ -476,9 +484,9 @@ export default function VpsDetailPage() {
             open={stopDialogOpen}
             onOpenChange={setStopDialogOpen}
             trigger={
-              <Button variant="outline" disabled={!canStop}>
-                <Square className="mr-2 h-4 w-4" />
-                Stoppen
+              <Button variant="outline" disabled={!canStop} aria-label="Stoppen">
+                <Square className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Stoppen</span>
               </Button>
             }
             title="VPS stoppen"
@@ -494,9 +502,9 @@ export default function VpsDetailPage() {
             open={deleteDialogOpen}
             onOpenChange={setDeleteDialogOpen}
             trigger={
-              <Button variant="destructive" disabled={!canDelete}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Verwijderen
+              <Button variant="destructive" disabled={!canDelete} aria-label="Verwijderen">
+                <Trash2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Verwijderen</span>
               </Button>
             }
             title="VPS verwijderen"
