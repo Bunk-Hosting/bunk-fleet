@@ -169,10 +169,33 @@ export default function NewVpsPage() {
         </div>
       </div>
 
-      {/* Locatie — only worth asking once there is more than one answer */}
-      {regions.length > 1 && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Locatie</h2>
+      {/* Locatie.
+          Dit blok stond er alleen bij twee of meer locaties, met als gedachte
+          "een keuze van één is geen keuze". Dat klopt voor de keuze en niet voor
+          de vraag: wie een server bestelt wil wéten waar hij komt te staan, ook
+          als er niets te kiezen valt. */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">Locatie</h2>
+
+        {regions.length === 0 && (
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Er is op dit moment geen locatie met vrije capaciteit. Bestellen lukt
+            pas als er weer ruimte is.
+          </p>
+        )}
+
+        {regions.length === 1 && (
+          <div className="max-w-sm space-y-1 text-sm">
+            <p>
+              Je VPS draait in <span className="font-medium">{regions[0].name}</span>.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Dat is op dit moment de enige locatie met vrije capaciteit.
+            </p>
+          </div>
+        )}
+
+        {regions.length > 1 && (
           <div className="max-w-sm space-y-2">
             <Label htmlFor="region">Waar moet je VPS draaien?</Label>
             <select
@@ -193,8 +216,8 @@ export default function NewVpsPage() {
               komt dan op de machine met de meeste vrije capaciteit.
             </p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Naam */}
       <div className="space-y-4">

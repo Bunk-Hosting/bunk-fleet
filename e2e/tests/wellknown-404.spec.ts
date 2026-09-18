@@ -1,6 +1,5 @@
 import { test, expect, pwRequest } from "../lib/fixtures";
 import { APP, WWW } from "../lib/targets";
-import { openstaand } from "../lib/openstaand";
 
 /**
  * 8. /healthz, /robots.txt, /sitemap.xml, /.well-known/security.txt
@@ -72,12 +71,6 @@ const CHECKS: Expectation[] = [
 for (const c of CHECKS) {
   const label = `${c.host.replace("https://", "")}${c.path}`;
   test(`${label} (${c.why})`, async ({}, testInfo) => {
-    if (c.host === WWW && c.path === "/.well-known/security.txt") {
-      openstaand(
-        "het bestand staat klaar in de bunkhosting-website repo (src/.well-known/security.txt) " +
-          "maar die site is nog niet uitgerold; dat wacht op ander onafgemaakt werk in diezelfde repo.",
-      );
-    }
 
     const ctx = await pwRequest.newContext();
     const res = await ctx.get(`${c.host}${c.path}`);

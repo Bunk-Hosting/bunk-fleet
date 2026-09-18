@@ -44,20 +44,50 @@ defmodule ControlPlane.RegioVerwijderenTest do
     assert Repo.get(Region, r.id)
   end
 
-  test "met een verwijderde VPS in de geschiedenis ook niet" do
-    # Dit is het geval dat verrast. De VPS is weg voor de klant, maar zijn rij
-    # staat er nog voor de administratie -- en die wijst naar deze locatie.
+  test "een verwijderde VPS houdt de locatie niet tegen, maar laat hem wel los" do
+    # De VPS is weg voor de klant; zijn rij staat er nog voor de administratie.
+    # Die rij mag de locatie niet gijzelen -- anders is elke locatie die ooit is
+    # gebruikt onverwijderbaar. Wat hij kwijtraakt is het label van de locatie;
+    # het grootboek en het abonnement verwijzen naar de VPS en niet naar de regio.
+    r = regio()
+    user = confirmed_user_fixture()
+
+    vps =
+      %Vps{}
+      |> Vps.changeset(%{
+        name: "oud",
+        region_id: r.id,
+        vcpu: 1,
+        ram_mb: 1024,
+        disk_gb: 10,
+        status: :deleted,
+        owner_id: user.id,
+        owner_email: user.email
+      })
+      |> Repo.insert!()
+
+    assert Fleet.delete_region(r.id) == :ok
+    refute Repo.get(Region, r.id)
+
+    opnieuw = Repo.get!(Vps, vps.id)
+    assert is_nil(opnieuw.region_id)
+    assert opnieuw.status == :deleted
+  end
+
+  test "een VPS die nog draait houdt de locatie wel tegen" do
+    # Hier zou verwijderen betekenen dat een machine die iemand gebruikt niet
+    # meer bij een locatie hoort.
     r = regio()
     user = confirmed_user_fixture()
 
     %Vps{}
     |> Vps.changeset(%{
-      name: "oud",
+      name: "draait",
       region_id: r.id,
       vcpu: 1,
       ram_mb: 1024,
       disk_gb: 10,
-      status: :deleted,
+      status: :active,
       owner_id: user.id,
       owner_email: user.email
     })

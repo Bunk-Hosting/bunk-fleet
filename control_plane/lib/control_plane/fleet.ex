@@ -89,15 +89,17 @@ defmodule ControlPlane.Fleet do
   @doc """
   Verwijdert een locatie die niets meer bevat.
 
-  "Niets meer" is strenger dan "geen nodes", en dat komt door de database zelf:
-  nodes, VPS'en en uitnodigingen verwijzen naar een regio met `on_delete:
-  :restrict`. Ook een VPS die allang verwijderd is houdt die verwijzing vast,
-  want de rij blijft staan voor de administratie. Een locatie waar ooit iets in
-  heeft gedraaid is dus niet meer weg te gooien, en dat is juist: de
-  geschiedenis zou dan naar een locatie wijzen die niemand meer kan opzoeken.
+  "Niets meer" betekent: geen node, geen draaiende VPS, en geen openstaande
+  uitnodiging. Een VPS die allang verwijderd is houdt niets tegen -- die laat
+  zijn locatie los zodra de locatie wordt opgeruimd. Wat daarmee verdwijnt is
+  het label "deze verwijderde machine draaide in Landhorst"; alles waar de
+  administratie aan hangt (grootboek, abonnement, verbruik) verwijst naar de VPS
+  en niet naar de regio.
 
-  Wat er wél weg kan is een locatie die nooit gebruikt is -- een typefout, een
-  regio die voor een node was bedoeld die er nooit kwam.
+  Dat was eerst anders: `vpses.region_id` was verplicht met `restrict`, en
+  daarmee was een locatie waar ooit iets in had gedraaid nooit meer weg te
+  gooien. In de praktijk is dat elke locatie die ooit gebruikt is, dus bleef een
+  typefout voor altijd in het beheerscherm staan.
 
   De reden waarom het niet kan komt terug als aparte fout, want ze vragen om
   iets anders van degene die het probeert: nodes kun je verplaatsen, een
@@ -120,7 +122,7 @@ defmodule ControlPlane.Fleet do
         # verwijderen bij komt.
         cond do
           telt?(Node, region.id) -> {:error, :has_nodes}
-          telt?(Vps, region.id) -> {:error, :has_vpses}
+          draaiende_vps?(region.id) -> {:error, :has_vpses}
           true -> verwijder_regio(region)
         end
     end
@@ -128,6 +130,15 @@ defmodule ControlPlane.Fleet do
 
   defp telt?(schema, region_id) do
     Repo.exists?(from r in schema, where: r.region_id == ^region_id)
+  end
+
+  # Alleen een VPS die er nog is houdt een locatie tegen. Een verwijderde VPS
+  # laat zijn locatie los zodra de locatie wordt opgeruimd (`ON DELETE SET
+  # NULL`): wat daarmee verdwijnt is het label "deze verwijderde machine draaide
+  # in Landhorst", en alles waar de administratie aan hangt verwijst naar de VPS
+  # en niet naar de regio.
+  defp draaiende_vps?(region_id) do
+    Repo.exists?(from v in Vps, where: v.region_id == ^region_id and v.status != :deleted)
   end
 
   defp verwijder_regio(%Region{} = region) do

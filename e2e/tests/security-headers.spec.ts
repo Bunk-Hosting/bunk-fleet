@@ -1,6 +1,5 @@
 import { test, expect, pwRequest } from "../lib/fixtures";
 import { APP, WWW } from "../lib/targets";
-import { openstaand } from "../lib/openstaand";
 
 /**
  * 2. Securityheaders, TLS en cookievlaggen op beide domeinen.
@@ -27,13 +26,6 @@ for (const [label, base] of [
   ["www", WWW],
 ] as const) {
   test(`${label}: verplichte securityheaders staan er`, async ({}, testInfo) => {
-    if (label === "www") {
-      openstaand(
-        "de marketingsite (eigen repo, LXC 104) stuurt HSTS zonder includeSubDomains, " +
-          "een CSP met script-src 'unsafe-inline' en X-Frame-Options SAMEORIGIN. Het paneel " +
-          "doet alle drie strenger. Aanpassen in bunkhosting-website + het HSTS-vinkje in Cloudflare.",
-      );
-    }
 
     const { headers } = await headersOf(`${base}/`);
     testInfo.attach(`${label}-headers.json`, {

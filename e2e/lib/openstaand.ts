@@ -14,6 +14,13 @@ import { test } from "@playwright/test";
  *
  * `reden` hoort te zeggen wat er moet gebeuren en waar dat thuishoort, niet dat
  * het "nog niet af" is.
+ *
+ * Op dit moment gebruikt niemand hem: de vijf punten die er stonden -- de
+ * securityheaders, de contrastfouten, de security.txt en de te kleine
+ * menulinks op de marketingsite -- zijn opgelost. Hij blijft staan omdat dat
+ * precies het patroon is dat je wilt op het moment dat er wéér iets buiten deze
+ * repo kapot is, en omdat de uitleg erboven dan niet opnieuw bedacht hoeft te
+ * worden.
  */
 export function openstaand(reden: string): void {
   test.fail(true, `Openstaand: ${reden}`);

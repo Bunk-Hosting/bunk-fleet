@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 // Het Page-type zoals axe het kent; zie de opmerking bij het gebruik hieronder.
 type AxePage = ConstructorParameters<typeof AxeBuilder>[0]["page"];
 import { APP, WWW } from "../lib/targets";
-import { openstaand, alleenEchteBrowser } from "../lib/openstaand";
+import { alleenEchteBrowser } from "../lib/openstaand";
 
 /**
  * 7. Toegankelijkheid op de publieke pagina's.
@@ -22,12 +22,6 @@ const PAGES = [
 
 for (const { name, url } of PAGES) {
   test(`${name}: axe-core WCAG 2.1 A/AA`, async ({ page }, testInfo) => {
-    if (name === "marketingsite") {
-      openstaand(
-        "vier contrastfouten in de voettekst en een mailto-link zonder toegankelijke naam, " +
-          "allebei in de bunkhosting-website repo (LXC 104) en niet in deze.",
-      );
-    }
 
     await page.goto(url, { waitUntil: "networkidle" });
     await page.waitForTimeout(2000);
@@ -58,9 +52,16 @@ for (const { name, url } of PAGES) {
     const serious = results.violations.filter(
       (v) => v.impact === "critical" || v.impact === "serious",
     );
+
+    // De selector van het eerste element staat in de melding zelf. Een rapport
+    // dat zegt "één contrastfout" en niet waar, dwingt degene die het leest tot
+    // precies het werk dat de test al gedaan heeft.
     expect
       .soft(
-        serious.map((v) => `${v.id} (${v.nodes.length}x): ${v.help}`),
+        serious.map(
+          (v) =>
+            `${v.id} (${v.nodes.length}x): ${v.help} — eerste: ${v.nodes[0]?.target.join(" ")}`,
+        ),
         `${name}: ernstige toegankelijkheidsfouten`,
       )
       .toEqual([]);

@@ -1,6 +1,5 @@
 import { test, expect } from "../lib/fixtures";
 import { APP, WWW } from "../lib/targets";
-import { openstaand } from "../lib/openstaand";
 
 /**
  * 6. Mobiel, 390px breed. Twee dingen:
@@ -60,13 +59,6 @@ for (const { name, url } of PAGES) {
   });
 
   test(`${name} @390px: knoppen en links zijn groot genoeg om aan te raken`, async ({ page }, testInfo) => {
-    if (name === "marketingsite") {
-      openstaand(
-        "twaalf menulinks op bunkhosting.nl zijn 147x16 px; 16 hoog is onder de 24 die " +
-          "WCAG 2.5.8 (niveau AA) eist. Dat is het menu dat iemand met één duim in de trein " +
-          "gebruikt. Repareren in de bunkhosting-website repo (LXC 104), niet in deze.",
-      );
-    }
 
     await page.goto(url, { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
