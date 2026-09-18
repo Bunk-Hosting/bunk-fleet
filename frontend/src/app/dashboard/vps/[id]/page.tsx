@@ -36,7 +36,7 @@ import { StatusBadge } from "@/components/vps/status-badge";
 import { useToast } from "@/components/ui/use-toast";
 import { vpsApi, parseApiError } from "@/lib/api";
 import type { VpsBackup } from "@/lib/api";
-import { formatDate, getOsLabel } from "@/lib/utils";
+import { formatDate, getOsLabel, formatBandbreedte } from "@/lib/utils";
 import type { Vps, VpsCredentials, VpsStatus } from "@/lib/types";
 
 const TRANSITIONAL_STATUSES: VpsStatus[] = [
