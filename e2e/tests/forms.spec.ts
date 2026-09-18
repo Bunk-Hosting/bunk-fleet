@@ -1,6 +1,7 @@
 import { test, expect } from "../lib/fixtures";
 import { APP } from "../lib/targets";
 import { alleenEchteBrowser } from "../lib/openstaand";
+import { ga } from "../lib/navigatie";
 
 /**
  * 4. Clientvalidatie op login en registratie.
@@ -37,7 +38,7 @@ test("login: e-mailveld en wachtwoordveld zijn verplicht en correct getypeerd", 
 });
 
 test("login: een submit met een leeg formulier gaat niet over het net", async ({ page }) => {
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
 
   const calls: string[] = [];
   page.on("request", (r) => {
@@ -79,7 +80,7 @@ test("login: de honeypot staat er en is voor mensen onzichtbaar", async ({ page 
 });
 
 test("registratie: velden zijn verplicht en de knop blijft dicht zonder captcha", async ({ page }) => {
-  await page.goto(`${APP}/register`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/register`);
 
   for (const id of ["#name", "#email", "#password", "#password_confirm"]) {
     await expect(page.locator(id), `${id} ontbreekt`).toHaveCount(1);
@@ -137,7 +138,7 @@ test("registratie: Turnstile houdt een headless browser tegen", async ({ page })
   // dus als de knop dan nog dicht zit komt dat uitsluitend doordat er geen
   // Turnstile-token is. Er wordt NIET geklikt — er wordt dus geen account
   // aangemaakt, wat er ook uit komt.
-  await page.goto(`${APP}/register`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/register`);
   await page.locator("#name").fill("Testpersoon");
   await page.locator("#email").fill(`e2e-${Date.now()}@voorbeeld.invalid`);
   await page.locator("#password").fill("een-voldoende-lang-wachtwoord");
@@ -163,14 +164,14 @@ test("login: de Turnstile-sleutel is geconfigureerd", async ({ page }) => {
   // dan meldt de frontend dat zelf op het scherm en staat het formulier open
   // voor bots. Of de widget vervolgens tekent, hangt af van wat Cloudflare van
   // de bezoeker vindt -- zie de test hierboven.
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   await expect(page.getByText("CAPTCHA configuratie ontbreekt")).toHaveCount(0);
 });
 
 test("login: Turnstile-widget staat op het inlogformulier", async ({ page }) => {
   alleenEchteBrowser("of de Turnstile-widget verschijnt");
 
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   await page.waitForTimeout(5000);
   const widget = await page.locator('iframe[src*="challenges.cloudflare.com"]').count();
   const missingKey = await page.getByText("CAPTCHA configuratie ontbreekt").count();

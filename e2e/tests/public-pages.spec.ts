@@ -1,6 +1,7 @@
 import { test, expect } from "../lib/fixtures";
 import { collectProblems, summarize } from "../lib/collect";
 import { APP, WWW, APP_PUBLIC_PATHS } from "../lib/targets";
+import { ga } from "../lib/navigatie";
 
 /**
  * 1. Beide domeinen laden schoon: geen JS-console-errors, geen mislukte
@@ -17,7 +18,7 @@ for (const { name, url } of PAGES) {
   test(`${name} laadt zonder console-errors of gebroken requests`, async ({ page }, testInfo) => {
     const problems = collectProblems(page);
 
-    const res = await page.goto(url, { waitUntil: "networkidle" });
+    const res = await ga(page, url);
     expect(res, `geen response voor ${url}`).not.toBeNull();
     expect.soft(res!.status(), `HTTP-status van ${url}`).toBeLessThan(400);
 

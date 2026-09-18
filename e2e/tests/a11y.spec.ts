@@ -4,6 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 type AxePage = ConstructorParameters<typeof AxeBuilder>[0]["page"];
 import { APP, WWW } from "../lib/targets";
 import { alleenEchteBrowser } from "../lib/openstaand";
+import { ga } from "../lib/navigatie";
 
 /**
  * 7. Toegankelijkheid op de publieke pagina's.
@@ -22,8 +23,8 @@ const PAGES = [
 
 for (const { name, url } of PAGES) {
   test(`${name}: axe-core WCAG 2.1 A/AA`, async ({ page }, testInfo) => {
-
-    await page.goto(url, { waitUntil: "networkidle" });
+    await ga(page, url);
+    // Bovenop het wachten in ga(): axe meet ook wat er na de hydratie bijkomt.
     await page.waitForTimeout(2000);
 
     // De cast is er omdat @axe-core/playwright zijn eigen, oudere playwright-core
@@ -74,7 +75,7 @@ for (const { name, url } of PAGES) {
   });
 
   test(`${name}: elke afbeelding heeft een alt-tekst`, async ({ page }) => {
-    await page.goto(url, { waitUntil: "networkidle" });
+    await ga(page, url);
     const missing = await page.evaluate(() =>
       Array.from(document.querySelectorAll("img"))
         .filter((img) => img.getAttribute("alt") === null)
@@ -95,7 +96,7 @@ for (const { name, url } of PAGES) {
 }
 
 test("login: elk invoerveld heeft een gekoppeld label", async ({ page }) => {
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   const unlabeled = await page.evaluate(() => {
     const out: string[] = [];
     document
@@ -119,7 +120,7 @@ test("login: focusvolgorde loopt van e-mail naar wachtwoord naar verzenden", asy
   // afwezigheid van een token in plaats van de focusvolgorde.
   alleenEchteBrowser("de focusvolgorde tot aan de inlogknop");
 
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   await page.waitForTimeout(2000);
 
   await page.locator("#email").focus();
@@ -152,7 +153,7 @@ test("login: focusvolgorde loopt van e-mail naar wachtwoord naar verzenden", asy
 });
 
 test("login: een gefocust element is zichtbaar gemarkeerd", async ({ page }) => {
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   const ring = await page.locator("#email").evaluate((el) => {
     el.focus();
     const cs = getComputedStyle(el);

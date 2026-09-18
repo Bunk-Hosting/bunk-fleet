@@ -1,5 +1,6 @@
 import { test, expect } from "../lib/fixtures";
 import { APP, WWW } from "../lib/targets";
+import { ga } from "../lib/navigatie";
 
 /**
  * 6. Mobiel, 390px breed. Twee dingen:
@@ -18,7 +19,7 @@ const PAGES = [
 
 for (const { name, url } of PAGES) {
   test(`${name} @390px: geen horizontale scroll`, async ({ page }, testInfo) => {
-    await page.goto(url, { waitUntil: "networkidle" });
+    await ga(page, url);
     await page.waitForTimeout(1500);
 
     const metrics = await page.evaluate(() => ({
@@ -60,7 +61,7 @@ for (const { name, url } of PAGES) {
 
   test(`${name} @390px: knoppen en links zijn groot genoeg om aan te raken`, async ({ page }, testInfo) => {
 
-    await page.goto(url, { waitUntil: "networkidle" });
+    await ga(page, url);
     await page.waitForTimeout(1500);
 
     // Twee drempels, want ze wegen niet hetzelfde:
@@ -125,7 +126,7 @@ for (const { name, url } of PAGES) {
 }
 
 test("login @390px: het formulier past en is bedienbaar", async ({ page }, testInfo) => {
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   await page.waitForTimeout(2000);
   await expect(page.locator("#email")).toBeVisible();
   await expect(page.locator("#password")).toBeVisible();

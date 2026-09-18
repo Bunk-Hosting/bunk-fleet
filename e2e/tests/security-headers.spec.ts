@@ -1,5 +1,6 @@
 import { test, expect, pwRequest } from "../lib/fixtures";
 import { APP, WWW } from "../lib/targets";
+import { ga } from "../lib/navigatie";
 
 /**
  * 2. Securityheaders, TLS en cookievlaggen op beide domeinen.
@@ -130,7 +131,7 @@ test("TLS: een browser die op http begint eindigt op https", async ({ page }) =>
 });
 
 test("cookies die vóór login worden gezet hebben Secure/HttpOnly/SameSite", async ({ page }) => {
-  await page.goto(`${APP}/login`, { waitUntil: "networkidle" });
+  await ga(page, `${APP}/login`);
   await page.waitForTimeout(2000);
   const cookies = (await page.context().cookies()).filter((c) =>
     c.domain.includes("bunkhosting.nl"),

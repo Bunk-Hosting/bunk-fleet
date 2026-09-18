@@ -49,6 +49,14 @@ export function VpsCard({ vps }: VpsCardProps) {
               {vps.package.name} &mdash; {vps.package.cpu_cores} vCPU, {vps.package.ram_gb} GB RAM
             </span>
           </div>
+          {/* Zonder deze regel is "Fout" alles wat er staat, en dan is de eerste
+              vraag van een klant niet "wat ging er mis" maar "waar is mijn
+              geld". Dat antwoord hoort niet achter een klik te zitten. */}
+          {vps.status === "ERROR" && (
+            <p className="text-destructive">
+              Aanmaken is mislukt &mdash; het bedrag staat terug op je tegoed.
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

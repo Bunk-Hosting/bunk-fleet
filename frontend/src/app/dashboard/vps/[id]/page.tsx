@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
   KeyRound,
+  AlertCircle,
 } from "lucide-react";
 import {
   Card,
@@ -516,6 +517,28 @@ export default function VpsDetailPage() {
           />
         </div>
       </div>
+
+      {/* Een mislukte aanmaak is het moment waarop een klant zich zorgen maakt
+          over zijn geld, en tot nu toe stond hier alleen het woord "Fout" in een
+          badge. De terugstorting gebeurt automatisch en in dezelfde transactie
+          als het markeren van de mislukking, dus dat kunnen we hier gewoon
+          zeggen -- en waar het te controleren valt ook. */}
+      {vps.status === "ERROR" && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+          <div className="space-y-1">
+            <p className="font-medium text-destructive">Deze VPS kon niet worden aangemaakt.</p>
+            <p className="text-muted-foreground">
+              Het bedrag is automatisch teruggestort op je tegoed; je vindt de boeking terug op{" "}
+              <Link href="/dashboard/billing" className="font-medium underline underline-offset-2">
+                je facturatiepagina
+              </Link>
+              . Je kunt hem hier verwijderen en het gewoon opnieuw proberen. Blijft het misgaan,
+              laat het ons dan weten &mdash; dan ligt het aan ons en niet aan jou.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Detail cards */}
       <div className="grid gap-6 md:grid-cols-2">
