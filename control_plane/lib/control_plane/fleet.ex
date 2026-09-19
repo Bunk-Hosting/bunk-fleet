@@ -338,11 +338,23 @@ defmodule ControlPlane.Fleet do
     cond do
       String.length(schoon) < 2 -> {:error, :invalid_region}
       String.length(schoon) > 60 -> {:error, :invalid_region}
+      not plaatsnaam?(schoon) -> {:error, :invalid_region}
       true -> bestaande_regio(schoon) || nieuwe_regio(schoon)
     end
   end
 
   def ensure_region(_), do: {:error, :invalid_region}
+
+  # Een regionaam komt van de eigenaar van een node en wordt getoond aan klanten
+  # die een VPS bestellen -- "waar moet hij draaien". Dat is door een
+  # semi-vertrouwde partij bepaalde tekst op een plek waar een vreemde hem leest.
+  #
+  # De schermen escapen hun invoer, dus dit is geen XSS-gat; het gaat erom dat
+  # een plaatsnaam een plaatsnaam is. Letters (met accenten), cijfers, spatie,
+  # koppelteken, apostrof en punt dekken alles wat een echte plaats heet --
+  # 's-Hertogenbosch, Den Haag, Saint-Denis -- en laten markup, adressen, emoji
+  # en stuurtekens buiten.
+  defp plaatsnaam?(naam), do: Regex.match?(~r/^[[:alpha:]0-9 .'\-]+$/u, naam)
 
   defp bestaande_regio(naam) do
     gezocht = String.downcase(naam)

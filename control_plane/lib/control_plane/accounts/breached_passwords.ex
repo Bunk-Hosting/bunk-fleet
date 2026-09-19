@@ -29,6 +29,8 @@ defmodule ControlPlane.Accounts.BreachedPasswords do
   """
   require Logger
 
+  alias ControlPlane.Metrics
+
   @api "https://api.pwnedpasswords.com/range/"
 
   @doc """
@@ -54,17 +56,30 @@ defmodule ControlPlane.Accounts.BreachedPasswords do
         komt_voor?(body, achtervoegsel)
 
       {:ok, %{status: status}} ->
-        Logger.warning("pwnedpasswords antwoordde #{status}; wachtwoord niet gecontroleerd")
-        false
+        overgeslagen("pwnedpasswords antwoordde #{status}")
 
       {:error, reden} ->
-        Logger.warning("pwnedpasswords onbereikbaar (#{inspect(reden)}); niet gecontroleerd")
-        false
+        overgeslagen("pwnedpasswords onbereikbaar (#{inspect(reden)})")
     end
   rescue
     exception ->
-      Logger.warning("pwnedpasswords-controle mislukt: #{Exception.message(exception)}")
-      false
+      overgeslagen("pwnedpasswords-controle mislukt: #{Exception.message(exception)}")
+  end
+
+  # Elke uitweg waarin een wachtwoord ongecontroleerd doorgaat, loopt hier langs
+  # -- zodat er geen tak kan ontstaan die stil open valt.
+  #
+  # Tellen en niet alleen loggen: een logregel gaat voorbij en een teller blijft
+  # staan. Zonder die teller zien "de controle staat al maanden uit" en "de
+  # controle werkt" er vanaf hier hetzelfde uit, en dan is het de tweede tot
+  # iemand toevallig het tegendeel merkt.
+  defp overgeslagen(reden) do
+    Logger.warning(reden <> "; wachtwoord niet gecontroleerd")
+    Metrics.count(:hibp_skipped)
+    false
+  rescue
+    # De teller mag nooit de reden zijn dat iemand niet kan registreren.
+    _ -> false
   end
 
   # Het antwoord is "ACHTERVOEGSEL:aantal" per regel. Alleen de gelijkheid telt;

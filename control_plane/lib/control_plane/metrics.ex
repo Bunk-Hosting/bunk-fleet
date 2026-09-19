@@ -22,7 +22,7 @@ defmodule ControlPlane.Metrics do
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Repo
 
-  @counters [:successes, :failures, :registrations, :captcha_refusals]
+  @counters [:successes, :failures, :registrations, :captcha_refusals, :hibp_skipped]
 
   @doc """
   Adds one to `counter` for today. Unknown counters raise rather than silently
@@ -56,7 +56,11 @@ defmodule ControlPlane.Metrics do
           successes: s.successes,
           failures: s.failures,
           registrations: s.registrations,
-          captcha_refusals: s.captcha_refusals
+          captcha_refusals: s.captcha_refusals,
+          # Hoe vaak de controle op gelekte wachtwoorden die dag is overgeslagen
+          # omdat de dienst niet bereikbaar was. Staat hier een rij getallen die
+          # niet nul zijn, dan is de controle in de praktijk uit.
+          hibp_skipped: s.hibp_skipped
         }
     )
   end
