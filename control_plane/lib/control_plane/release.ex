@@ -6,6 +6,7 @@ defmodule ControlPlane.Release do
   @app :control_plane
 
   alias ControlPlane.Credits.Reset
+  alias ControlPlane.Privacy.Export
   alias ControlPlane.Repo
 
   @doc "Runs all pending migrations for every configured repo."
@@ -59,6 +60,34 @@ defmodule ControlPlane.Release do
 
   defp afronden(regels, false) do
     IO.puts("\nProefdraai over #{length(regels)} tegoed(en). Roep aan met doen: true.")
+  end
+
+  @doc """
+  Schrijft alles wat Bunk over één persoon weet naar `pad`, als JSON.
+
+  De release-variant van `mix bunk.export_user`, want op productie draait een
+  release zonder Mix. Een inzageverzoek heeft een termijn van een maand; dat
+  haal je niet als het antwoord begint met "eerst even een omgeving met Mix
+  optuigen".
+  """
+  def export_user(email, pad) do
+    load_app()
+
+    {:ok, uitkomst, _} =
+      Ecto.Migrator.with_repo(Repo, fn _repo ->
+        case Export.verzamel(email) do
+          {:ok, gegevens} ->
+            File.write!(pad, Jason.encode!(gegevens, pretty: true))
+            IO.puts("Geschreven naar #{pad}")
+            :ok
+
+          {:error, :not_found} ->
+            IO.puts("Geen account gevonden met het adres #{email}")
+            {:error, :not_found}
+        end
+      end)
+
+    uitkomst
   end
 
   @doc "Rolls `repo` back to `version`."

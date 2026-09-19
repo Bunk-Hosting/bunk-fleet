@@ -12,6 +12,7 @@ defmodule ControlPlane.Console.Session do
 
   alias ControlPlane.Console.Keys
   alias ControlPlane.Console.Relay
+  alias ControlPlane.Console.Sessielog
   alias ControlPlane.Fleet.Vps
   alias ControlPlane.Repo
 
@@ -38,7 +39,11 @@ defmodule ControlPlane.Console.Session do
       host: host,
       port: port,
       user: user,
-      vps_id: opts[:vps_id]
+      user_id: opts[:user_id],
+      vps_id: opts[:vps_id],
+      # Wordt gezet zodra de shell er werkelijk is; een verbinding die niet tot
+      # stand komt is geen sessie en hoort niet in de administratie.
+      log_id: nil
     }
 
     {:ok, state, {:continue, :connect}}
@@ -68,7 +73,8 @@ defmodule ControlPlane.Console.Session do
 
       with {:ok, conn} <- connect(st, opts),
            {:ok, chan} <- open_shell_or_close(conn) do
-        {:noreply, %{st | conn: conn, chan: chan}}
+        log_id = Sessielog.begin(st.user_id, st.vps_id)
+        {:noreply, %{st | conn: conn, chan: chan, log_id: log_id}}
       else
         {:error, reason} ->
           notify_closed(st.owner, reason)
@@ -208,7 +214,8 @@ defmodule ControlPlane.Console.Session do
   def handle_info(_other, st), do: {:noreply, st}
 
   @impl true
-  def terminate(_reason, st) do
+  def terminate(reason, st) do
+    if is_map(st), do: Sessielog.einde(st[:log_id], reason)
     if is_map(st) and st[:conn], do: :ssh.close(st.conn)
     :ok
   end
