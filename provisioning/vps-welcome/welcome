@@ -43,4 +43,12 @@ fi
 printf "  %bEr wordt elke nacht automatisch een back-up gemaakt. Terugzetten doe je%b\n" "$G" "$R"
 printf "  %bvanuit het dashboard.%b\n" "$G" "$R"
 printf '\n'
+# Dit staat hier omdat de klant het hoort te weten voordat hij het zelf ontdekt
+# in zijn authorized_keys. Die sleutel is er voor de webterminal en kan daar niet
+# uit zonder die terminal onbruikbaar te maken -- maar hem onvermeld laten maakt
+# hem erger dan hij is.
+printf "  %bIn je authorized_keys staat een sleutel van Bunk. Die is er voor de%b\n" "$G" "$R"
+printf "  %bwebterminal in het dashboard. Elke sessie via die weg wordt vastgelegd,%b\n" "$G" "$R"
+printf "  %ben die lijst kun je opvragen.%b\n" "$G" "$R"
+printf '\n'
 printf "  %bDit bericht zie je alleen deze eerste keer.%b\n\n" "$G" "$R"

@@ -35,9 +35,15 @@ function contentSecurityPolicy(nonce: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://challenges.cloudflare.com`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    // Geen fonts.googleapis.com meer. `next/font/google` haalt de fonts bij de
+    // BUILD op en serveert ze daarna van onze eigen origin
+    // (/_next/static/media/*.woff2); er gaat in productie geen enkel verzoek
+    // naar Google. Die twee uitzonderingen verruimden de policy dus zonder dat
+    // er iets langskwam -- en ze hielden Google Ireland op de verwerkerslijst
+    // voor iets wat het niet doet.
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    "font-src 'self' data:",
     `connect-src 'self' ${API_URL} ${WS_URL} https://challenges.cloudflare.com`,
     "frame-src 'self' https://challenges.cloudflare.com",
     "frame-ancestors 'none'",
