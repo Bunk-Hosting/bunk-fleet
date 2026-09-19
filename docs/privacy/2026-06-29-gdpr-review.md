@@ -1,5 +1,20 @@
 # Bunk-Hosting — AVG/GDPR Engineering & Process Review
 
+> **Achterhaald sinds 9 september 2026. Lees dit niet als de huidige situatie.**
+>
+> Dit stuk gaat uit van het federatiemodel: leden installeren een worker op
+> hardware bij hen thuis en hosten daarop de VM's van vreemden. Dat model is
+> losgelaten. Bunk draait nu op eigen capaciteit, met één node bij een
+> betrokkene, allemaal in Nederland. Daarmee vervalt de aanname die de
+> zwaarste conclusies hieronder droeg — "de gegevens van een klant staan op de
+> machine van een vreemde".
+>
+> Wat er nog wél toe doet is de analyse per verplichting: grondslagen,
+> bewaartermijnen, de rol van verwerker bij VM-inhoud, en het onderscheid
+> tussen beveiligingslogs en de rest. Die redeneringen zijn overgenomen in
+> [verwerkingsregister.md](verwerkingsregister.md), en dát is het document dat
+> de huidige stand beschrijft.
+
 **Scope:** engineering + process recommendations (not legal advice). NL-based controller, mostly-EU data subjects. Based on the actual bunk-fleet codebase (control plane Elixir/Postgres, Go worker agent, Next.js frontend) at commit `335bb9f`.
 
 **The non-standard bit, up front:** Bunk runs a *distributed* model — members install a "worker" on hardware **in their own home** and host **other people's VMs** on it. So a tenant's data physically lives on a stranger's machine, and that tenant's traffic exits a stranger's home IP. That single fact drives most of the harder obligations below (sub-processors, residency, transparency, security-of-processing).
